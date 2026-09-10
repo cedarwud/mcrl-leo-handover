@@ -46089,3 +46089,3394 @@ index 0000000000000000000000000000000000000000..c1e9562db0b10b3e97dd58216f34fdc8
 +  read evaluation-only claim dates. Do not compute production, policy,
 +  acceptance, or EE quantities.
 
+exec
+/bin/bash -lc "jq -r '.run.trajectory | to_entries[] | [.key, .value.training_objective, .value.held_out.r2, .value.held_out.pairwise_ordering, .value.held_out.top1_accuracy] | @tsv' .scratch/decay-schedule/parity.json; sha256sum .scratch/decay-schedule/spec.md .scratch/decay-schedule/run_decay.py .scratch/decay-schedule/parity.json .scratch/decay-schedule/base-results.json .scratch/decay-schedule/higher-results.json" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+0	131.37644537702388	-2.5558552147289695	0.6066659732486982	0.0
+100	2.144771338491116	0.6984926965912139	0.5529620239152859	0.3333333333333333
+200	1.7699937894194775	0.6775526042002138	0.5650346534039348	0.25
+300	1.5452144924845055	0.646160105235497	0.5601097954194336	0.16666666666666666
+400	1.370979930641038	0.6183542687326595	0.5631862810117668	0.16666666666666666
+500	1.248174604517156	0.5979671006944387	0.5321819096158306	0.25
+2b590baac5b722f5ebd18a4b9d69bc1303b08309e07dbc0e8e767d786d3b681b  .scratch/decay-schedule/spec.md
+7b9f23e97c2e1517a62a13a92a593ad64ea164c245344ee10e8f60be34dafac8  .scratch/decay-schedule/run_decay.py
+e4d0a116274d019f5f55904682ae4c1924ca6a6e1cb4f1038aa9e305ee509891  .scratch/decay-schedule/parity.json
+52f7570fa7ea0e83a948561615d93696fcb90c52c99f6922c034ddcf2928f5f2  .scratch/decay-schedule/base-results.json
+6be2c8ecaf4ed0ebac5bbc882acb441a28ed54bfed3de741a0c2a353c7d8df8c  .scratch/decay-schedule/higher-results.json
+
+diff --git a/.scratch/decay-schedule/run_decay.py b/.scratch/decay-schedule/run_decay.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2534131be32880b4288e433a88f18ce5bc997b51
+--- /dev/null
++++ b/.scratch/decay-schedule/run_decay.py
+@@ -0,0 +1,442 @@
++#!/usr/bin/env python3
++"""C3 decay-schedule convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++ROOT = Path("/home/sat/mcrl-v025-decay-ws")
++OUT = ROOT / ".scratch/decay-schedule"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++HORIZON_RESULTS = Path("/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json")
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BASE_LR = 1e-3
++HIGHER_LR = 3e-3
++TAU = 1000
++PLATEAU_N = 3
++SCHEDULE_ORDER = ("cosine", "step", "inverse_time_tau1000", "plateau_n3")
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++    str(HORIZON_RESULTS): "b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 18:
++        raise RuntimeError(f"process niceness is not 18: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def checkpoint(sweep, heads, data):
++    predictions = []
++    objectives = []
++    norms = []
++    for fold_index, (head, test) in enumerate(zip(heads, data.anchors, strict=True)):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        loss, count = sweep.c3_loss(head, train)
++        if not math.isfinite(loss) or not sweep.parameters_finite(head):
++            raise RuntimeError(f"non-finite state at fold {fold_index + 1}")
++        prediction = sweep.np.zeros_like(test.truth)
++        prediction[test.train_indices] = head._forward(test.x)[0]
++        predictions.append(prediction)
++        objectives.append((loss, count))
++        norms.append(sweep.parameter_norm(head))
++    weighted = sum(value * count for value, count in objectives) / sum(count for _, count in objectives)
++    return {
++        "training_objective": float(weighted),
++        "held_out": sweep.c3_metric(predictions, data.anchors),
++        "parameter_l2": sweep.summarize(norms),
++    }
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def scheduled_lr(name: str, start_lr: float, update: int, plateau_lr: float) -> float:
++    t = update - 1
++    if name == "constant":
++        return start_lr
++    if name == "cosine":
++        return start_lr * (1.0 + math.cos(math.pi * t / MAX_UPDATES)) / 2.0
++    if name == "step":
++        return start_lr * (1.0 if update <= 2000 else 0.1 if update <= 3000 else 0.01)
++    if name == "inverse_time_tau1000":
++        return start_lr / (1.0 + t / TAU)
++    if name == "plateau_n3":
++        return plateau_lr
++    raise ValueError(name)
++
++
++def run_schedule(sweep, data, name: str, start_lr: float, maximum_updates: int,
++                 progress: list[int], total_work: int) -> dict[str, object]:
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    literal["learning_rate"] = start_lr
++    heads = [
++        sweep.AdamMLPHead.create(
++            anchor.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        for anchor in data.anchors
++    ]
++    trains = [
++        tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        for fold_index in range(len(data.anchors))
++    ]
++    trajectory = {"0": checkpoint(sweep, heads, data)}
++    checks = {}
++    lr_trace = {"0": start_lr}
++    first_admissible = None
++    cadence_total = []
++    cadence_update = []
++    cadence_checkpoint = []
++    cumulative_total = []
++    running_total = 0.0
++    observed_load = [guard_load()]
++    plateau_lr = start_lr
++    plateau_best = None
++    plateau_stale = 0
++    plateau_events = []
++    started = time.perf_counter()
++
++    for cadence_end in range(CADENCE, maximum_updates + 1, CADENCE):
++        cadence_started = time.perf_counter()
++        update_elapsed = 0.0
++        for update in range(cadence_end - CADENCE + 1, cadence_end + 1):
++            lr = scheduled_lr(name, start_lr, update, plateau_lr)
++            for fold_index, head in enumerate(heads):
++                head.learning_rate = lr
++                update_started = time.perf_counter()
++                with sweep.np.errstate(all="ignore"):
++                    loss_before = sweep.c3_update(head, trains[fold_index])
++                update_elapsed += time.perf_counter() - update_started
++                if not math.isfinite(loss_before) or not sweep.parameters_finite(head):
++                    raise RuntimeError(
++                        f"schedule {name} lr {start_lr} fold {fold_index + 1} "
++                        f"diverged at update {update}"
++                    )
++        checkpoint_started = time.perf_counter()
++        point = checkpoint(sweep, heads, data)
++        checkpoint_elapsed = time.perf_counter() - checkpoint_started
++        trajectory[str(cadence_end)] = point
++        check = stability(sweep, trajectory[str(cadence_end - CADENCE)], point)
++        checks[str(cadence_end)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = cadence_end
++
++        if name == "plateau_n3":
++            motion = check["changes"]["objective_relative_abs"]
++            if plateau_best is None or motion < plateau_best:
++                plateau_best = motion
++                plateau_stale = 0
++            else:
++                plateau_stale += 1
++                if plateau_stale >= PLATEAU_N:
++                    old_lr = plateau_lr
++                    plateau_lr *= 0.5
++                    plateau_events.append({
++                        "after_update": cadence_end, "old_lr": old_lr,
++                        "new_lr": plateau_lr, "trigger_motion": motion,
++                    })
++                    plateau_best = motion
++                    plateau_stale = 0
++        lr_trace[str(cadence_end)] = (
++            0.0 if name == "cosine" and cadence_end == MAX_UPDATES
++            else plateau_lr if name == "plateau_n3"
++            else scheduled_lr(name, start_lr, cadence_end, plateau_lr)
++        )
++        total_elapsed = time.perf_counter() - cadence_started
++        cadence_total.append(total_elapsed)
++        cadence_update.append(update_elapsed)
++        cadence_checkpoint.append(checkpoint_elapsed)
++        running_total += total_elapsed
++        cumulative_total.append(running_total)
++        progress[0] += CADENCE * len(heads)
++        current_load = load_average()
++        observed_load.append(current_load)
++        print(
++            f"update {progress[0]}/{total_work} schedule={name} start_lr={start_lr:g} "
++            f"destination={cadence_end}/{maximum_updates} load1={current_load:.2f}",
++            flush=True,
++        )
++        if current_load > 30.0:
++            raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    return {
++        "schedule": name,
++        "starting_learning_rate": start_lr,
++        "maximum_updates": maximum_updates,
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "learning_rate_at_cadence": lr_trace,
++        "plateau_events": plateau_events,
++        "wall_s": time.perf_counter() - started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": cadence_total,
++            "update_only_s_per_100_updates_across_12_loao_folds": cadence_update,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": cadence_checkpoint,
++            "cumulative_total_s_across_12_loao_folds": cumulative_total,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(cadence_total) / len(cadence_total),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(cadence_update) / len(cadence_update),
++        },
++        "maximum_observed_load1": max(observed_load),
++    }
++
++
++def source_state(sweep, data):
++    fixed = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    inputs = {str(anchor.path): file_sha256(anchor.path) for anchor in data.anchors}
++    return fixed, inputs
++
++
++def common_result(sweep, data, started, initial_load, before, inputs_before):
++    after, inputs_after = source_state(sweep, data)
++    changed = [path for path in (*before, *inputs_before)
++               if (before | inputs_before)[path] != (after | inputs_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    return {
++        "schema": "mcrl-v025-decay-schedule-diagnostic-v1",
++        "status": "DIAGNOSTIC_NOT_CLAIM",
++        "route": "C3",
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(anchor.path) for anchor in data.anchors],
++        },
++        "schedule_parameters": {"tau": TAU, "plateau_n": PLATEAU_N},
++        "scope": {
++            "diagnostic_not_claim": True, "ee_quantities_computed": False,
++            "selection_on_ee": False, "selection_on_predictive_levels": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "resource_policy": {
++            "python_processes": 1, "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1, "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb, "initial_load1": initial_load,
++            "final_load1": load_average(), "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before, "source_sha256_after": after,
++        "c3_input_sha256_before": inputs_before, "c3_input_sha256_after": inputs_after,
++        "changed_inputs": changed,
++    }
++
++
++def original_c3_cell():
++    payload = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    return next(cell for cell in payload["cells"]
++                if cell["route"] == "C3" and cell["learning_rate"] == BASE_LR)
++
++
++def parity(sweep, data, started, initial_load, before, inputs_before):
++    progress = [0]
++    run = run_schedule(
++        sweep, data, "constant", BASE_LR, 500, progress,
++        len(data.anchors) * 500,
++    )
++    horizon = json.loads(HORIZON_RESULTS.read_text(encoding="utf-8"))["arms"]["A"]
++    lrsweep = original_c3_cell()
++    comparisons = {}
++    for update in range(0, 501, CADENCE):
++        key = str(update)
++        fields = ("training_objective", "held_out")
++        comparisons[key] = {
++            "horizon_exact": all(run["trajectory"][key][field] == horizon["trajectory"][key][field]
++                                 for field in fields),
++            "lrsweep_exact": all(run["trajectory"][key][field] == lrsweep["trajectory"][key][field]
++                                 for field in fields),
++        }
++    reproduced = all(all(value.values()) for value in comparisons.values())
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "parity", "run": run, "comparisons": comparisons,
++                   "parity_reproduced": reproduced})
++    atomic_json(OUT / "parity.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "parity.json"),
++                      "parity_reproduced": reproduced}), flush=True)
++    if not reproduced:
++        raise RuntimeError("HORIZON Arm A parity failed; stop before schedules")
++
++
++def cap_tolerance_score(sweep, run):
++    check = run["cadence_checks"][str(MAX_UPDATES)]
++    changes = check["changes"]
++    ratios = (
++        changes["objective_relative_abs"] / sweep.STABILITY_TOLERANCES["objective_relative"],
++        changes["r2_absolute"] / sweep.STABILITY_TOLERANCES["r2_absolute"],
++        changes["pairwise_ordering_absolute"] / sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        changes["top1_accuracy_absolute"] / sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    )
++    return max(ratios)
++
++
++def select_extension_shape(sweep, runs):
++    ranked = []
++    for index, name in enumerate(SCHEDULE_ORDER):
++        run = runs[name]
++        first = run["first_admissible_update"]
++        key = (0, first, index) if first is not None else (1, cap_tolerance_score(sweep, run), index)
++        ranked.append((key, name))
++    ranked.sort()
++    return ranked[0][1], [{"schedule": name, "ranking_key": list(key)} for key, name in ranked]
++
++
++def base(sweep, data, started, initial_load, before, inputs_before):
++    parity_result = json.loads((OUT / "parity.json").read_text(encoding="utf-8"))
++    if not parity_result.get("parity_reproduced"):
++        raise RuntimeError("verified parity artifact is absent or failed")
++    progress = [0]
++    total = len(SCHEDULE_ORDER) * len(data.anchors) * MAX_UPDATES
++    runs = {name: run_schedule(sweep, data, name, BASE_LR, MAX_UPDATES, progress, total)
++            for name in SCHEDULE_ORDER}
++    shape, ranking = select_extension_shape(sweep, runs)
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "base", "parity_reproduced": True, "runs": runs,
++                   "extension_shape": shape, "extension_ranking": ranking})
++    atomic_json(OUT / "base-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "base-results.json"),
++                      "extension_shape": shape}), flush=True)
++
++
++def higher(sweep, data, started, initial_load, before, inputs_before):
++    base_result = json.loads((OUT / "base-results.json").read_text(encoding="utf-8"))
++    if not base_result.get("parity_reproduced"):
++        raise RuntimeError("base result does not carry successful parity")
++    expected_shape, ranking = select_extension_shape(sweep, base_result["runs"])
++    if expected_shape != base_result["extension_shape"]:
++        raise RuntimeError("extension shape selection drifted")
++    progress = [0]
++    run = run_schedule(
++        sweep, data, expected_shape, HIGHER_LR, MAX_UPDATES, progress,
++        len(data.anchors) * MAX_UPDATES,
++    )
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "higher", "parity_reproduced": True,
++                   "extension_shape": expected_shape, "extension_ranking": ranking,
++                   "run": run})
++    atomic_json(OUT / "higher-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "higher-results.json"),
++                      "extension_shape": expected_shape}), flush=True)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("mode", choices=("parity", "base", "higher"))
++    args = parser.parse_args()
++    OUT.mkdir(parents=True, exist_ok=True)
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    data = sweep.load_c3()
++    before, inputs_before = source_state(sweep, data)
++    started = time.perf_counter()
++    if args.mode == "parity":
++        parity(sweep, data, started, initial_load, before, inputs_before)
++    elif args.mode == "base":
++        base(sweep, data, started, initial_load, before, inputs_before)
++    else:
++        higher(sweep, data, started, initial_load, before, inputs_before)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/decay-schedule/spec.md b/.scratch/decay-schedule/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e9562db0b10b3e97dd58216f34fdc84eec34cb
+--- /dev/null
++++ b/.scratch/decay-schedule/spec.md
+@@ -0,0 +1,64 @@
++# DECAY schedule diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This protocol is fixed before any fit in this
++workspace. The diagnostic computes no EE quantity and makes no selection on
++EE or on predictive-metric levels.
++
++## Fixed source and design
++
++- Import and reuse LRSWEEP's runner, rule, and results without modification:
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`,
++  `spec.md`, and `results.json`.
++- C3 only; the twelve filenames hard-coded by LRSWEEP; identical LOAO folds;
++  model seed `V025_LEARNER/seed/1` (`6407676579069309528`); sealed `(64,64)`
++  ReLU head and every sealed Adam literal except the scheduled learning rate;
++  deterministic full-batch aggregation; 4,000-update cap; cadence 100.
++- Before schedule fitting, reproduce HORIZON Arm A's constant-`1e-3`
++  trajectory at updates 0, 100, ..., 500. Stop on any inequality.
++- At every destination cadence `k`, apply LRSWEEP's unchanged rule to
++  `k-100 -> k`: objective relative absolute motion `<=0.01`; held-out level
++  R2 absolute motion `<=0.01`; ordering absolute motion `<=0.005`; top-1
++  absolute motion `<=0.005`. All four and finite state are required.
++
++## Schedule semantics fixed before fitting
++
++Let optimizer updates be one-indexed as `k=1,...,4000`. Smooth schedules use
++`t=k-1`, so the first update uses the declared starting rate.
++
++1. `cosine`: `lr(t)=lr0*(1+cos(pi*t/4000))/2`; the schedule endpoint after
++   update 4,000 is exactly zero (the last applied update rate is the value at
++   `t=3999`).
++2. `step`: updates 1–2,000 use `lr0`; updates 2,001–3,000 use `0.1*lr0`;
++   updates 3,001–4,000 use `0.01*lr0`.
++3. `inverse_time_tau1000`: `lr(t)=lr0/(1+t/1000)`, so `tau=1000` updates.
++4. `plateau_n3`: start at `lr0`. At each cadence, compute the aggregate LOAO
++   objective's absolute relative motion. The first motion establishes the
++   best value. A later strictly smaller motion is an improvement and resets
++   the non-improvement count. After `n=3` consecutive non-improving cadences,
++   multiply the rate by 0.5 for subsequent updates, reset the count, and use
++   the triggering motion as the new post-decay best. Decisions occur only
++   after the checkpoint, never retroactively.
++
++The four base schedules start at `lr0=1e-3`. One extension starts at `3e-3`,
++the next higher rate already present in LRSWEEP's fixed grid. Its shape is
++chosen from the four base runs by this diagnostic-only ordering:
++
++1. schedules that become admissible precede schedules that do not;
++2. among admissible schedules, earlier first-admissible update precedes later;
++3. otherwise, smaller maximum cap tolerance ratio across the four unchanged
++   rule components precedes larger;
++4. exact ties use the declared order above.
++
++This ordering exists only to assign the mandated higher-start extension. It
++does not select a production schedule and does not use predictive levels.
++
++## Resources and scope
++
++- One Python process, `/home/sat/mcrl-leo-handover/.venv/bin/python` only,
++  niceness 18, all named BLAS thread variables one, address-space limit one
++  byte below 3 GiB, and measured peak RSS below 3 GiB.
++- Print progress as `update k/N` and print peak RSS. Pause if one-minute load
++  exceeds 30 at a cadence boundary.
++- Read only LRSWEEP's twelve named development anchors. Do not discover or
++  read evaluation-only claim dates. Do not compute production, policy,
++  acceptance, or EE quantities.
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-decay-ws/DECAY-SCHEDULE-2026-09-10.md
+diff --git a/.scratch/decay-schedule/run_decay.py b/.scratch/decay-schedule/run_decay.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2534131be32880b4288e433a88f18ce5bc997b51
+--- /dev/null
++++ b/.scratch/decay-schedule/run_decay.py
+@@ -0,0 +1,442 @@
++#!/usr/bin/env python3
++"""C3 decay-schedule convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++ROOT = Path("/home/sat/mcrl-v025-decay-ws")
++OUT = ROOT / ".scratch/decay-schedule"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++HORIZON_RESULTS = Path("/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json")
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BASE_LR = 1e-3
++HIGHER_LR = 3e-3
++TAU = 1000
++PLATEAU_N = 3
++SCHEDULE_ORDER = ("cosine", "step", "inverse_time_tau1000", "plateau_n3")
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++    str(HORIZON_RESULTS): "b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 18:
++        raise RuntimeError(f"process niceness is not 18: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def checkpoint(sweep, heads, data):
++    predictions = []
++    objectives = []
++    norms = []
++    for fold_index, (head, test) in enumerate(zip(heads, data.anchors, strict=True)):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        loss, count = sweep.c3_loss(head, train)
++        if not math.isfinite(loss) or not sweep.parameters_finite(head):
++            raise RuntimeError(f"non-finite state at fold {fold_index + 1}")
++        prediction = sweep.np.zeros_like(test.truth)
++        prediction[test.train_indices] = head._forward(test.x)[0]
++        predictions.append(prediction)
++        objectives.append((loss, count))
++        norms.append(sweep.parameter_norm(head))
++    weighted = sum(value * count for value, count in objectives) / sum(count for _, count in objectives)
++    return {
++        "training_objective": float(weighted),
++        "held_out": sweep.c3_metric(predictions, data.anchors),
++        "parameter_l2": sweep.summarize(norms),
++    }
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def scheduled_lr(name: str, start_lr: float, update: int, plateau_lr: float) -> float:
++    t = update - 1
++    if name == "constant":
++        return start_lr
++    if name == "cosine":
++        return start_lr * (1.0 + math.cos(math.pi * t / MAX_UPDATES)) / 2.0
++    if name == "step":
++        return start_lr * (1.0 if update <= 2000 else 0.1 if update <= 3000 else 0.01)
++    if name == "inverse_time_tau1000":
++        return start_lr / (1.0 + t / TAU)
++    if name == "plateau_n3":
++        return plateau_lr
++    raise ValueError(name)
++
++
++def run_schedule(sweep, data, name: str, start_lr: float, maximum_updates: int,
++                 progress: list[int], total_work: int) -> dict[str, object]:
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    literal["learning_rate"] = start_lr
++    heads = [
++        sweep.AdamMLPHead.create(
++            anchor.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        for anchor in data.anchors
++    ]
++    trains = [
++        tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        for fold_index in range(len(data.anchors))
++    ]
++    trajectory = {"0": checkpoint(sweep, heads, data)}
++    checks = {}
++    lr_trace = {"0": start_lr}
++    first_admissible = None
++    cadence_total = []
++    cadence_update = []
++    cadence_checkpoint = []
++    cumulative_total = []
++    running_total = 0.0
++    observed_load = [guard_load()]
++    plateau_lr = start_lr
++    plateau_best = None
++    plateau_stale = 0
++    plateau_events = []
++    started = time.perf_counter()
++
++    for cadence_end in range(CADENCE, maximum_updates + 1, CADENCE):
++        cadence_started = time.perf_counter()
++        update_elapsed = 0.0
++        for update in range(cadence_end - CADENCE + 1, cadence_end + 1):
++            lr = scheduled_lr(name, start_lr, update, plateau_lr)
++            for fold_index, head in enumerate(heads):
++                head.learning_rate = lr
++                update_started = time.perf_counter()
++                with sweep.np.errstate(all="ignore"):
++                    loss_before = sweep.c3_update(head, trains[fold_index])
++                update_elapsed += time.perf_counter() - update_started
++                if not math.isfinite(loss_before) or not sweep.parameters_finite(head):
++                    raise RuntimeError(
++                        f"schedule {name} lr {start_lr} fold {fold_index + 1} "
++                        f"diverged at update {update}"
++                    )
++        checkpoint_started = time.perf_counter()
++        point = checkpoint(sweep, heads, data)
++        checkpoint_elapsed = time.perf_counter() - checkpoint_started
++        trajectory[str(cadence_end)] = point
++        check = stability(sweep, trajectory[str(cadence_end - CADENCE)], point)
++        checks[str(cadence_end)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = cadence_end
++
++        if name == "plateau_n3":
++            motion = check["changes"]["objective_relative_abs"]
++            if plateau_best is None or motion < plateau_best:
++                plateau_best = motion
++                plateau_stale = 0
++            else:
++                plateau_stale += 1
++                if plateau_stale >= PLATEAU_N:
++                    old_lr = plateau_lr
++                    plateau_lr *= 0.5
++                    plateau_events.append({
++                        "after_update": cadence_end, "old_lr": old_lr,
++                        "new_lr": plateau_lr, "trigger_motion": motion,
++                    })
++                    plateau_best = motion
++                    plateau_stale = 0
++        lr_trace[str(cadence_end)] = (
++            0.0 if name == "cosine" and cadence_end == MAX_UPDATES
++            else plateau_lr if name == "plateau_n3"
++            else scheduled_lr(name, start_lr, cadence_end, plateau_lr)
++        )
++        total_elapsed = time.perf_counter() - cadence_started
++        cadence_total.append(total_elapsed)
++        cadence_update.append(update_elapsed)
++        cadence_checkpoint.append(checkpoint_elapsed)
++        running_total += total_elapsed
++        cumulative_total.append(running_total)
++        progress[0] += CADENCE * len(heads)
++        current_load = load_average()
++        observed_load.append(current_load)
++        print(
++            f"update {progress[0]}/{total_work} schedule={name} start_lr={start_lr:g} "
++            f"destination={cadence_end}/{maximum_updates} load1={current_load:.2f}",
++            flush=True,
++        )
++        if current_load > 30.0:
++            raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    return {
++        "schedule": name,
++        "starting_learning_rate": start_lr,
++        "maximum_updates": maximum_updates,
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "learning_rate_at_cadence": lr_trace,
++        "plateau_events": plateau_events,
++        "wall_s": time.perf_counter() - started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": cadence_total,
++            "update_only_s_per_100_updates_across_12_loao_folds": cadence_update,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": cadence_checkpoint,
++            "cumulative_total_s_across_12_loao_folds": cumulative_total,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(cadence_total) / len(cadence_total),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(cadence_update) / len(cadence_update),
++        },
++        "maximum_observed_load1": max(observed_load),
++    }
++
++
++def source_state(sweep, data):
++    fixed = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    inputs = {str(anchor.path): file_sha256(anchor.path) for anchor in data.anchors}
++    return fixed, inputs
++
++
++def common_result(sweep, data, started, initial_load, before, inputs_before):
++    after, inputs_after = source_state(sweep, data)
++    changed = [path for path in (*before, *inputs_before)
++               if (before | inputs_before)[path] != (after | inputs_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    return {
++        "schema": "mcrl-v025-decay-schedule-diagnostic-v1",
++        "status": "DIAGNOSTIC_NOT_CLAIM",
++        "route": "C3",
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(anchor.path) for anchor in data.anchors],
++        },
++        "schedule_parameters": {"tau": TAU, "plateau_n": PLATEAU_N},
++        "scope": {
++            "diagnostic_not_claim": True, "ee_quantities_computed": False,
++            "selection_on_ee": False, "selection_on_predictive_levels": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "resource_policy": {
++            "python_processes": 1, "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1, "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb, "initial_load1": initial_load,
++            "final_load1": load_average(), "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before, "source_sha256_after": after,
++        "c3_input_sha256_before": inputs_before, "c3_input_sha256_after": inputs_after,
++        "changed_inputs": changed,
++    }
++
++
++def original_c3_cell():
++    payload = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    return next(cell for cell in payload["cells"]
++                if cell["route"] == "C3" and cell["learning_rate"] == BASE_LR)
++
++
++def parity(sweep, data, started, initial_load, before, inputs_before):
++    progress = [0]
++    run = run_schedule(
++        sweep, data, "constant", BASE_LR, 500, progress,
++        len(data.anchors) * 500,
++    )
++    horizon = json.loads(HORIZON_RESULTS.read_text(encoding="utf-8"))["arms"]["A"]
++    lrsweep = original_c3_cell()
++    comparisons = {}
++    for update in range(0, 501, CADENCE):
++        key = str(update)
++        fields = ("training_objective", "held_out")
++        comparisons[key] = {
++            "horizon_exact": all(run["trajectory"][key][field] == horizon["trajectory"][key][field]
++                                 for field in fields),
++            "lrsweep_exact": all(run["trajectory"][key][field] == lrsweep["trajectory"][key][field]
++                                 for field in fields),
++        }
++    reproduced = all(all(value.values()) for value in comparisons.values())
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "parity", "run": run, "comparisons": comparisons,
++                   "parity_reproduced": reproduced})
++    atomic_json(OUT / "parity.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "parity.json"),
++                      "parity_reproduced": reproduced}), flush=True)
++    if not reproduced:
++        raise RuntimeError("HORIZON Arm A parity failed; stop before schedules")
++
++
++def cap_tolerance_score(sweep, run):
++    check = run["cadence_checks"][str(MAX_UPDATES)]
++    changes = check["changes"]
++    ratios = (
++        changes["objective_relative_abs"] / sweep.STABILITY_TOLERANCES["objective_relative"],
++        changes["r2_absolute"] / sweep.STABILITY_TOLERANCES["r2_absolute"],
++        changes["pairwise_ordering_absolute"] / sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        changes["top1_accuracy_absolute"] / sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    )
++    return max(ratios)
++
++
++def select_extension_shape(sweep, runs):
++    ranked = []
++    for index, name in enumerate(SCHEDULE_ORDER):
++        run = runs[name]
++        first = run["first_admissible_update"]
++        key = (0, first, index) if first is not None else (1, cap_tolerance_score(sweep, run), index)
++        ranked.append((key, name))
++    ranked.sort()
++    return ranked[0][1], [{"schedule": name, "ranking_key": list(key)} for key, name in ranked]
++
++
++def base(sweep, data, started, initial_load, before, inputs_before):
++    parity_result = json.loads((OUT / "parity.json").read_text(encoding="utf-8"))
++    if not parity_result.get("parity_reproduced"):
++        raise RuntimeError("verified parity artifact is absent or failed")
++    progress = [0]
++    total = len(SCHEDULE_ORDER) * len(data.anchors) * MAX_UPDATES
++    runs = {name: run_schedule(sweep, data, name, BASE_LR, MAX_UPDATES, progress, total)
++            for name in SCHEDULE_ORDER}
++    shape, ranking = select_extension_shape(sweep, runs)
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "base", "parity_reproduced": True, "runs": runs,
++                   "extension_shape": shape, "extension_ranking": ranking})
++    atomic_json(OUT / "base-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "base-results.json"),
++                      "extension_shape": shape}), flush=True)
++
++
++def higher(sweep, data, started, initial_load, before, inputs_before):
++    base_result = json.loads((OUT / "base-results.json").read_text(encoding="utf-8"))
++    if not base_result.get("parity_reproduced"):
++        raise RuntimeError("base result does not carry successful parity")
++    expected_shape, ranking = select_extension_shape(sweep, base_result["runs"])
++    if expected_shape != base_result["extension_shape"]:
++        raise RuntimeError("extension shape selection drifted")
++    progress = [0]
++    run = run_schedule(
++        sweep, data, expected_shape, HIGHER_LR, MAX_UPDATES, progress,
++        len(data.anchors) * MAX_UPDATES,
++    )
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "higher", "parity_reproduced": True,
++                   "extension_shape": expected_shape, "extension_ranking": ranking,
++                   "run": run})
++    atomic_json(OUT / "higher-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "higher-results.json"),
++                      "extension_shape": expected_shape}), flush=True)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("mode", choices=("parity", "base", "higher"))
++    args = parser.parse_args()
++    OUT.mkdir(parents=True, exist_ok=True)
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    data = sweep.load_c3()
++    before, inputs_before = source_state(sweep, data)
++    started = time.perf_counter()
++    if args.mode == "parity":
++        parity(sweep, data, started, initial_load, before, inputs_before)
++    elif args.mode == "base":
++        base(sweep, data, started, initial_load, before, inputs_before)
++    else:
++        higher(sweep, data, started, initial_load, before, inputs_before)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/decay-schedule/spec.md b/.scratch/decay-schedule/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e9562db0b10b3e97dd58216f34fdc84eec34cb
+--- /dev/null
++++ b/.scratch/decay-schedule/spec.md
+@@ -0,0 +1,64 @@
++# DECAY schedule diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This protocol is fixed before any fit in this
++workspace. The diagnostic computes no EE quantity and makes no selection on
++EE or on predictive-metric levels.
++
++## Fixed source and design
++
++- Import and reuse LRSWEEP's runner, rule, and results without modification:
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`,
++  `spec.md`, and `results.json`.
++- C3 only; the twelve filenames hard-coded by LRSWEEP; identical LOAO folds;
++  model seed `V025_LEARNER/seed/1` (`6407676579069309528`); sealed `(64,64)`
++  ReLU head and every sealed Adam literal except the scheduled learning rate;
++  deterministic full-batch aggregation; 4,000-update cap; cadence 100.
++- Before schedule fitting, reproduce HORIZON Arm A's constant-`1e-3`
++  trajectory at updates 0, 100, ..., 500. Stop on any inequality.
++- At every destination cadence `k`, apply LRSWEEP's unchanged rule to
++  `k-100 -> k`: objective relative absolute motion `<=0.01`; held-out level
++  R2 absolute motion `<=0.01`; ordering absolute motion `<=0.005`; top-1
++  absolute motion `<=0.005`. All four and finite state are required.
++
++## Schedule semantics fixed before fitting
++
++Let optimizer updates be one-indexed as `k=1,...,4000`. Smooth schedules use
++`t=k-1`, so the first update uses the declared starting rate.
++
++1. `cosine`: `lr(t)=lr0*(1+cos(pi*t/4000))/2`; the schedule endpoint after
++   update 4,000 is exactly zero (the last applied update rate is the value at
++   `t=3999`).
++2. `step`: updates 1–2,000 use `lr0`; updates 2,001–3,000 use `0.1*lr0`;
++   updates 3,001–4,000 use `0.01*lr0`.
++3. `inverse_time_tau1000`: `lr(t)=lr0/(1+t/1000)`, so `tau=1000` updates.
++4. `plateau_n3`: start at `lr0`. At each cadence, compute the aggregate LOAO
++   objective's absolute relative motion. The first motion establishes the
++   best value. A later strictly smaller motion is an improvement and resets
++   the non-improvement count. After `n=3` consecutive non-improving cadences,
++   multiply the rate by 0.5 for subsequent updates, reset the count, and use
++   the triggering motion as the new post-decay best. Decisions occur only
++   after the checkpoint, never retroactively.
++
++The four base schedules start at `lr0=1e-3`. One extension starts at `3e-3`,
++the next higher rate already present in LRSWEEP's fixed grid. Its shape is
++chosen from the four base runs by this diagnostic-only ordering:
++
++1. schedules that become admissible precede schedules that do not;
++2. among admissible schedules, earlier first-admissible update precedes later;
++3. otherwise, smaller maximum cap tolerance ratio across the four unchanged
++   rule components precedes larger;
++4. exact ties use the declared order above.
++
++This ordering exists only to assign the mandated higher-start extension. It
++does not select a production schedule and does not use predictive levels.
++
++## Resources and scope
++
++- One Python process, `/home/sat/mcrl-leo-handover/.venv/bin/python` only,
++  niceness 18, all named BLAS thread variables one, address-space limit one
++  byte below 3 GiB, and measured peak RSS below 3 GiB.
++- Print progress as `update k/N` and print peak RSS. Pause if one-minute load
++  exceeds 30 at a cadence boundary.
++- Read only LRSWEEP's twelve named development anchors. Do not discover or
++  read evaluation-only claim dates. Do not compute production, policy,
++  acceptance, or EE quantities.
+diff --git a/DECAY-SCHEDULE-2026-09-10.md b/DECAY-SCHEDULE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b58714afad4bbe9c59a86180dd5aeda7712c5748
+--- /dev/null
++++ b/DECAY-SCHEDULE-2026-09-10.md
+@@ -0,0 +1,176 @@
++**Parity with HORIZON Arm A reproduced exactly; first admissible updates were cosine `1e-3`: 3,200, step `1e-3`: 2,200, inverse-time (`tau=1000`) `1e-3`: `NONE`, plateau (`n=3`) `1e-3`: 2,800, and the step `3e-3` extension: 2,300; estimated `16 seeds x 5 arms` costs for the admissible schedules are cosine `0.47–0.55`, step `1e-3` `0.28–0.32`, plateau `0.36–0.40`, and step `3e-3` `0.32–0.35` CPU-hours.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Answer
++
++[VERIFIED BY RUNNING CODE] Three of the four schedules starting at the current
++`1e-3` literal reached the unchanged convergence criterion before the
++4,000-update cap. The required higher-start extension also reached it.
++Inverse-time did not. These are all the admissible schedules; this diagnostic
++does not name a winner or select a production schedule.
++
++| schedule | starting rate | fixed parameter | first admissible update | all four checks at cap |
++|:---|---:|:---|---:|:---:|
++| cosine | `1e-3` | endpoint zero at 4,000 | **3,200** | yes |
++| step decay | `1e-3` | factor 0.1 after 2,000 and after 3,000 | **2,200** | yes |
++| inverse-time | `1e-3` | `tau=1000` | **NONE** | no |
++| plateau decay | `1e-3` | factor 0.5, `n=3` | **2,800** | yes |
++| step-decay extension | `3e-3` | same step shape | **2,300** | yes |
++
++[VERIFIED BY RUNNING CODE] Inverse-time passes three of four components at
++4,000 and still returns `NONE`. Its objective motion is **1.9460%** against a
++1% tolerance, an excess of **0.9460 percentage points** (or 0.009460 in the
++relative-motion quantity). Its R2, ordering, and top-1 motions are 0.005363,
++0.002967, and 0, within their unchanged 0.01, 0.005, and 0.005 tolerances.
++
++Loss and held-out metrics here are convergence diagnostics only. **No EE
++quantity was computed, and neither EE nor predictive-metric level selected
++anything.**
++
++## Parity gate
++
++[VERIFIED BY RUNNING CODE] Before fitting a decay schedule, a fresh
++constant-`1e-3` run reproduced HORIZON Arm A and the original LRSWEEP C3 cell
++exactly at every checkpoint from 0 through 500. Equality covered the training
++objective and the complete held-out metric dictionaries, not rounded display
++values.
++
++| update | objective | held-out R2 | ordering | top-1 |
++|---:|---:|---:|---:|---:|
++| 0 | 131.376445 | -2.555855 | 0.606666 | 0.000000 |
++| 100 | 2.144771 | 0.698493 | 0.552962 | 0.333333 |
++| 200 | 1.769994 | 0.677553 | 0.565035 | 0.250000 |
++| 300 | 1.545214 | 0.646160 | 0.560110 | 0.166667 |
++| 400 | 1.370980 | 0.618354 | 0.563186 | 0.166667 |
++| 500 | 1.248175 | 0.597967 | 0.532182 | 0.250000 |
++
++## Unchanged rule and schedule definitions
++
++[VERIFIED BY RUNNING CODE] At every destination cadence `k=100,...,4000`, the
++runner applied LRSWEEP's rule to `k-100 -> k`: objective relative absolute
++motion `<=0.01`, level-R2 absolute motion `<=0.01`, ordering absolute motion
++`<=0.005`, and top-1 absolute motion `<=0.005`. All four checks and finite
++objective/parameters were required together.
++
++[VERIFIED BY RUNNING CODE] All runs used C3, the twelve fixed LRSWEEP anchors
++and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU head, every other sealed
++Adam literal, full-batch gradient aggregation, and cadence 100.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] With one-indexed update `k` and
++`t=k-1`, the smooth schedules were:
++
++- cosine: `lr(t)=lr0*(1+cos(pi*t/4000))/2`, with the schedule endpoint set to
++  zero after update 4,000;
++- inverse-time: `lr(t)=lr0/(1+t/1000)`, hence `tau=1000`;
++- step: updates 1–2,000 at `lr0`, 2,001–3,000 at `0.1*lr0`, and 3,001–4,000
++  at `0.01*lr0`;
++- plateau: factor 0.5 after `n=3` consecutive cadence motions that do not set
++  a new best objective-motion value, with patience reset after each decay.
++
++[VERIFIED BY RUNNING CODE] Plateau decayed after updates 1,700, 2,200, 2,700,
++3,200, and 3,700, ending at `3.125e-5`. Decisions used the aggregate LOAO
++training objective and affected only subsequent updates.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] The mandated higher start was
++`3e-3`, the next higher rate in LRSWEEP's already-fixed grid. Step shape was
++assigned to that extension because its base run had the earliest
++first-admissible cadence under the frozen extension-ranking rule (2,200,
++versus plateau 2,800 and cosine 3,200; inverse-time was `NONE`). That assignment
++uses convergence timing only; it is not a predictive-quality or production
++selection. The extension first became admissible at 2,300, so increasing the
++start did not produce an earlier admissible cadence in this diagnostic.
++
++## Motions at the cap
++
++[VERIFIED BY RUNNING CODE] The last five objective motions are for destinations
++3,600, 3,700, 3,800, 3,900, and 4,000, respectively.
++
++| schedule | last five objective motions | loss at 3,900 | loss at 4,000 |
++|:---|:---|---:|---:|
++| cosine `1e-3` | 0.3233%, 0.2058%, 0.1093%, 0.0430%, 0.0067% | 0.377309 | 0.377284 |
++| step `1e-3` | 0.0878%, 0.0910%, 0.0952%, 0.0978%, 0.1021% | 0.437017 | 0.436571 |
++| inverse-time `1e-3` | 2.0713%, 2.0488%, 1.9798%, 1.8231%, 1.9460% | 0.414423 | 0.406359 |
++| plateau `1e-3` | 0.5704%, 0.5846%, 0.3181%, 0.3153%, 0.3251% | 0.398286 | 0.396991 |
++| step `3e-3` extension | 0.1054%, 0.1093%, 0.1143%, 0.1205%, 0.1249% | 0.469897 | 0.469310 |
++
++[VERIFIED BY RUNNING CODE] At each admissible schedule's first passing
++cadence, the four motions were:
++
++| schedule | update | objective | R2 | ordering | top-1 |
++|:---|---:|---:|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.9866% | 0.000439 | 0.000042 | 0 |
++| step `1e-3` | 2,200 | 0.4939% | 0.001951 | 0.000378 | 0 |
++| plateau `1e-3` | 2,800 | 0.8965% | 0.003735 | 0.000436 | 0 |
++| step `3e-3` extension | 2,300 | 0.6858% | 0.000965 | 0.000368 | 0 |
++
++## Wall time and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall seconds per 100 updates are end-to-end cap
++wall divided by 40 for the complete twelve-fold, one-seed diagnostic. The
++cadence-timed means differ by less than 0.001 s from the displayed values.
++
++| schedule | cap wall | wall s/100 updates |
++|:---|---:|---:|
++| cosine `1e-3` | 328.47 s | 8.212 |
++| step `1e-3` | 282.28 s | 7.057 |
++| inverse-time `1e-3` | 288.04 s | 7.201 |
++| plateau `1e-3` | 287.35 s | 7.184 |
++| step `3e-3` extension | 306.44 s | 7.661 |
++
++[DERIVED ON PAPER] A `16 seeds x 5 arms` production set contains 80 C3 heads.
++The lower estimate uses mean update-only time per LOAO fold through the first
++admissible cadence. The upper estimate uses cumulative end-to-end per-fold
++time through that cadence and multiplies by `12/11` for production training
++on all twelve anchors rather than each fold's eleven. Both assume serial
++single-thread execution, the same dimensions, no shared-head speedup, and
++negligible orchestration/serialization.
++
++| admissible schedule | first update | production CPU-hours | updates versus current 500 |
++|:---|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.47–0.55 | 6.4x |
++| step `1e-3` | 2,200 | 0.28–0.32 | 4.4x |
++| plateau `1e-3` | 2,800 | 0.36–0.40 | 5.6x |
++| step `3e-3` extension | 2,300 | 0.32–0.35 | 4.6x |
++
++[DERIVED ON PAPER] Yes, four tested runs reach admissibility before 4,000, so
++stopping at the first admissible cadence is cheaper than taking those runs to
++the 4,000-update cap. **No tested schedule reaches admissibility by update
++500.** Therefore none is cheaper than the current 500-update configuration;
++the earliest requires 2,200 updates, or 4.4 times as many. Reaching before
++4,000 and being cheaper than 500 are not equivalent comparisons.
++
++## Interpretation
++
++[INFERRED] Decay is the first of the three tested optimization levers that
++makes the already-declared criterion reachable for this learner: three base
++schedule shapes and the required higher-start extension are admissible. The
++all-`NONE` consequence in the prompt therefore does not apply. This does not
++establish predictive superiority, an EE result, or a production choice.
++
++[INFERRED] Inverse-time with `tau=1000` remains under-decayed for the declared
++cap: its late objective motion stays near 2% while the three held-out motion
++checks pass. The rule is not relaxed, and the result remains `NONE`.
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] The parity, four-base-schedule, and higher-start
++invocations ran sequentially, never exceeding one diagnostic Python process.
++Each used only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 18,
++all named BLAS thread variables equal to one, and an address-space limit of
++3,221,225,471 bytes (one byte below 3 GiB). Progress printed as
++`update k/N`. The maximum measured peak across invocations was
++`PEAK_RSS_KB=86028` (about 84.0 MiB). No load pause or divergence occurred.
++
++[VERIFIED BY RUNNING CODE] Only the twelve filenames fixed in LRSWEEP were
++loaded. No evaluation-only claim date was discovered or read. All sealed
++source and C3 input hashes matched before and after every invocation;
++`changed_inputs` is empty. Nothing under `/home/sat/mcrl-leo-handover` was
++modified.
++
++Machine-readable results are in `.scratch/decay-schedule/parity.json`,
++`.scratch/decay-schedule/base-results.json`, and
++`.scratch/decay-schedule/higher-results.json`. The pre-run protocol is
++`.scratch/decay-schedule/spec.md`; the isolated runner is
++`.scratch/decay-schedule/run_decay.py`.
+
+diff --git a/.scratch/decay-schedule/run_decay.py b/.scratch/decay-schedule/run_decay.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2534131be32880b4288e433a88f18ce5bc997b51
+--- /dev/null
++++ b/.scratch/decay-schedule/run_decay.py
+@@ -0,0 +1,442 @@
++#!/usr/bin/env python3
++"""C3 decay-schedule convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++ROOT = Path("/home/sat/mcrl-v025-decay-ws")
++OUT = ROOT / ".scratch/decay-schedule"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++HORIZON_RESULTS = Path("/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json")
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BASE_LR = 1e-3
++HIGHER_LR = 3e-3
++TAU = 1000
++PLATEAU_N = 3
++SCHEDULE_ORDER = ("cosine", "step", "inverse_time_tau1000", "plateau_n3")
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++    str(HORIZON_RESULTS): "b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 18:
++        raise RuntimeError(f"process niceness is not 18: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def checkpoint(sweep, heads, data):
++    predictions = []
++    objectives = []
++    norms = []
++    for fold_index, (head, test) in enumerate(zip(heads, data.anchors, strict=True)):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        loss, count = sweep.c3_loss(head, train)
++        if not math.isfinite(loss) or not sweep.parameters_finite(head):
++            raise RuntimeError(f"non-finite state at fold {fold_index + 1}")
++        prediction = sweep.np.zeros_like(test.truth)
++        prediction[test.train_indices] = head._forward(test.x)[0]
++        predictions.append(prediction)
++        objectives.append((loss, count))
++        norms.append(sweep.parameter_norm(head))
++    weighted = sum(value * count for value, count in objectives) / sum(count for _, count in objectives)
++    return {
++        "training_objective": float(weighted),
++        "held_out": sweep.c3_metric(predictions, data.anchors),
++        "parameter_l2": sweep.summarize(norms),
++    }
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def scheduled_lr(name: str, start_lr: float, update: int, plateau_lr: float) -> float:
++    t = update - 1
++    if name == "constant":
++        return start_lr
++    if name == "cosine":
++        return start_lr * (1.0 + math.cos(math.pi * t / MAX_UPDATES)) / 2.0
++    if name == "step":
++        return start_lr * (1.0 if update <= 2000 else 0.1 if update <= 3000 else 0.01)
++    if name == "inverse_time_tau1000":
++        return start_lr / (1.0 + t / TAU)
++    if name == "plateau_n3":
++        return plateau_lr
++    raise ValueError(name)
++
++
++def run_schedule(sweep, data, name: str, start_lr: float, maximum_updates: int,
++                 progress: list[int], total_work: int) -> dict[str, object]:
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    literal["learning_rate"] = start_lr
++    heads = [
++        sweep.AdamMLPHead.create(
++            anchor.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        for anchor in data.anchors
++    ]
++    trains = [
++        tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        for fold_index in range(len(data.anchors))
++    ]
++    trajectory = {"0": checkpoint(sweep, heads, data)}
++    checks = {}
++    lr_trace = {"0": start_lr}
++    first_admissible = None
++    cadence_total = []
++    cadence_update = []
++    cadence_checkpoint = []
++    cumulative_total = []
++    running_total = 0.0
++    observed_load = [guard_load()]
++    plateau_lr = start_lr
++    plateau_best = None
++    plateau_stale = 0
++    plateau_events = []
++    started = time.perf_counter()
++
++    for cadence_end in range(CADENCE, maximum_updates + 1, CADENCE):
++        cadence_started = time.perf_counter()
++        update_elapsed = 0.0
++        for update in range(cadence_end - CADENCE + 1, cadence_end + 1):
++            lr = scheduled_lr(name, start_lr, update, plateau_lr)
++            for fold_index, head in enumerate(heads):
++                head.learning_rate = lr
++                update_started = time.perf_counter()
++                with sweep.np.errstate(all="ignore"):
++                    loss_before = sweep.c3_update(head, trains[fold_index])
++                update_elapsed += time.perf_counter() - update_started
++                if not math.isfinite(loss_before) or not sweep.parameters_finite(head):
++                    raise RuntimeError(
++                        f"schedule {name} lr {start_lr} fold {fold_index + 1} "
++                        f"diverged at update {update}"
++                    )
++        checkpoint_started = time.perf_counter()
++        point = checkpoint(sweep, heads, data)
++        checkpoint_elapsed = time.perf_counter() - checkpoint_started
++        trajectory[str(cadence_end)] = point
++        check = stability(sweep, trajectory[str(cadence_end - CADENCE)], point)
++        checks[str(cadence_end)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = cadence_end
++
++        if name == "plateau_n3":
++            motion = check["changes"]["objective_relative_abs"]
++            if plateau_best is None or motion < plateau_best:
++                plateau_best = motion
++                plateau_stale = 0
++            else:
++                plateau_stale += 1
++                if plateau_stale >= PLATEAU_N:
++                    old_lr = plateau_lr
++                    plateau_lr *= 0.5
++                    plateau_events.append({
++                        "after_update": cadence_end, "old_lr": old_lr,
++                        "new_lr": plateau_lr, "trigger_motion": motion,
++                    })
++                    plateau_best = motion
++                    plateau_stale = 0
++        lr_trace[str(cadence_end)] = (
++            0.0 if name == "cosine" and cadence_end == MAX_UPDATES
++            else plateau_lr if name == "plateau_n3"
++            else scheduled_lr(name, start_lr, cadence_end, plateau_lr)
++        )
++        total_elapsed = time.perf_counter() - cadence_started
++        cadence_total.append(total_elapsed)
++        cadence_update.append(update_elapsed)
++        cadence_checkpoint.append(checkpoint_elapsed)
++        running_total += total_elapsed
++        cumulative_total.append(running_total)
++        progress[0] += CADENCE * len(heads)
++        current_load = load_average()
++        observed_load.append(current_load)
++        print(
++            f"update {progress[0]}/{total_work} schedule={name} start_lr={start_lr:g} "
++            f"destination={cadence_end}/{maximum_updates} load1={current_load:.2f}",
++            flush=True,
++        )
++        if current_load > 30.0:
++            raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    return {
++        "schedule": name,
++        "starting_learning_rate": start_lr,
++        "maximum_updates": maximum_updates,
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "learning_rate_at_cadence": lr_trace,
++        "plateau_events": plateau_events,
++        "wall_s": time.perf_counter() - started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": cadence_total,
++            "update_only_s_per_100_updates_across_12_loao_folds": cadence_update,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": cadence_checkpoint,
++            "cumulative_total_s_across_12_loao_folds": cumulative_total,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(cadence_total) / len(cadence_total),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(cadence_update) / len(cadence_update),
++        },
++        "maximum_observed_load1": max(observed_load),
++    }
++
++
++def source_state(sweep, data):
++    fixed = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    inputs = {str(anchor.path): file_sha256(anchor.path) for anchor in data.anchors}
++    return fixed, inputs
++
++
++def common_result(sweep, data, started, initial_load, before, inputs_before):
++    after, inputs_after = source_state(sweep, data)
++    changed = [path for path in (*before, *inputs_before)
++               if (before | inputs_before)[path] != (after | inputs_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    return {
++        "schema": "mcrl-v025-decay-schedule-diagnostic-v1",
++        "status": "DIAGNOSTIC_NOT_CLAIM",
++        "route": "C3",
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(anchor.path) for anchor in data.anchors],
++        },
++        "schedule_parameters": {"tau": TAU, "plateau_n": PLATEAU_N},
++        "scope": {
++            "diagnostic_not_claim": True, "ee_quantities_computed": False,
++            "selection_on_ee": False, "selection_on_predictive_levels": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "resource_policy": {
++            "python_processes": 1, "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1, "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb, "initial_load1": initial_load,
++            "final_load1": load_average(), "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before, "source_sha256_after": after,
++        "c3_input_sha256_before": inputs_before, "c3_input_sha256_after": inputs_after,
++        "changed_inputs": changed,
++    }
++
++
++def original_c3_cell():
++    payload = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    return next(cell for cell in payload["cells"]
++                if cell["route"] == "C3" and cell["learning_rate"] == BASE_LR)
++
++
++def parity(sweep, data, started, initial_load, before, inputs_before):
++    progress = [0]
++    run = run_schedule(
++        sweep, data, "constant", BASE_LR, 500, progress,
++        len(data.anchors) * 500,
++    )
++    horizon = json.loads(HORIZON_RESULTS.read_text(encoding="utf-8"))["arms"]["A"]
++    lrsweep = original_c3_cell()
++    comparisons = {}
++    for update in range(0, 501, CADENCE):
++        key = str(update)
++        fields = ("training_objective", "held_out")
++        comparisons[key] = {
++            "horizon_exact": all(run["trajectory"][key][field] == horizon["trajectory"][key][field]
++                                 for field in fields),
++            "lrsweep_exact": all(run["trajectory"][key][field] == lrsweep["trajectory"][key][field]
++                                 for field in fields),
++        }
++    reproduced = all(all(value.values()) for value in comparisons.values())
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "parity", "run": run, "comparisons": comparisons,
++                   "parity_reproduced": reproduced})
++    atomic_json(OUT / "parity.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "parity.json"),
++                      "parity_reproduced": reproduced}), flush=True)
++    if not reproduced:
++        raise RuntimeError("HORIZON Arm A parity failed; stop before schedules")
++
++
++def cap_tolerance_score(sweep, run):
++    check = run["cadence_checks"][str(MAX_UPDATES)]
++    changes = check["changes"]
++    ratios = (
++        changes["objective_relative_abs"] / sweep.STABILITY_TOLERANCES["objective_relative"],
++        changes["r2_absolute"] / sweep.STABILITY_TOLERANCES["r2_absolute"],
++        changes["pairwise_ordering_absolute"] / sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        changes["top1_accuracy_absolute"] / sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    )
++    return max(ratios)
++
++
++def select_extension_shape(sweep, runs):
++    ranked = []
++    for index, name in enumerate(SCHEDULE_ORDER):
++        run = runs[name]
++        first = run["first_admissible_update"]
++        key = (0, first, index) if first is not None else (1, cap_tolerance_score(sweep, run), index)
++        ranked.append((key, name))
++    ranked.sort()
++    return ranked[0][1], [{"schedule": name, "ranking_key": list(key)} for key, name in ranked]
++
++
++def base(sweep, data, started, initial_load, before, inputs_before):
++    parity_result = json.loads((OUT / "parity.json").read_text(encoding="utf-8"))
++    if not parity_result.get("parity_reproduced"):
++        raise RuntimeError("verified parity artifact is absent or failed")
++    progress = [0]
++    total = len(SCHEDULE_ORDER) * len(data.anchors) * MAX_UPDATES
++    runs = {name: run_schedule(sweep, data, name, BASE_LR, MAX_UPDATES, progress, total)
++            for name in SCHEDULE_ORDER}
++    shape, ranking = select_extension_shape(sweep, runs)
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "base", "parity_reproduced": True, "runs": runs,
++                   "extension_shape": shape, "extension_ranking": ranking})
++    atomic_json(OUT / "base-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "base-results.json"),
++                      "extension_shape": shape}), flush=True)
++
++
++def higher(sweep, data, started, initial_load, before, inputs_before):
++    base_result = json.loads((OUT / "base-results.json").read_text(encoding="utf-8"))
++    if not base_result.get("parity_reproduced"):
++        raise RuntimeError("base result does not carry successful parity")
++    expected_shape, ranking = select_extension_shape(sweep, base_result["runs"])
++    if expected_shape != base_result["extension_shape"]:
++        raise RuntimeError("extension shape selection drifted")
++    progress = [0]
++    run = run_schedule(
++        sweep, data, expected_shape, HIGHER_LR, MAX_UPDATES, progress,
++        len(data.anchors) * MAX_UPDATES,
++    )
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "higher", "parity_reproduced": True,
++                   "extension_shape": expected_shape, "extension_ranking": ranking,
++                   "run": run})
++    atomic_json(OUT / "higher-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "higher-results.json"),
++                      "extension_shape": expected_shape}), flush=True)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("mode", choices=("parity", "base", "higher"))
++    args = parser.parse_args()
++    OUT.mkdir(parents=True, exist_ok=True)
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    data = sweep.load_c3()
++    before, inputs_before = source_state(sweep, data)
++    started = time.perf_counter()
++    if args.mode == "parity":
++        parity(sweep, data, started, initial_load, before, inputs_before)
++    elif args.mode == "base":
++        base(sweep, data, started, initial_load, before, inputs_before)
++    else:
++        higher(sweep, data, started, initial_load, before, inputs_before)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/decay-schedule/spec.md b/.scratch/decay-schedule/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e9562db0b10b3e97dd58216f34fdc84eec34cb
+--- /dev/null
++++ b/.scratch/decay-schedule/spec.md
+@@ -0,0 +1,64 @@
++# DECAY schedule diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This protocol is fixed before any fit in this
++workspace. The diagnostic computes no EE quantity and makes no selection on
++EE or on predictive-metric levels.
++
++## Fixed source and design
++
++- Import and reuse LRSWEEP's runner, rule, and results without modification:
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`,
++  `spec.md`, and `results.json`.
++- C3 only; the twelve filenames hard-coded by LRSWEEP; identical LOAO folds;
++  model seed `V025_LEARNER/seed/1` (`6407676579069309528`); sealed `(64,64)`
++  ReLU head and every sealed Adam literal except the scheduled learning rate;
++  deterministic full-batch aggregation; 4,000-update cap; cadence 100.
++- Before schedule fitting, reproduce HORIZON Arm A's constant-`1e-3`
++  trajectory at updates 0, 100, ..., 500. Stop on any inequality.
++- At every destination cadence `k`, apply LRSWEEP's unchanged rule to
++  `k-100 -> k`: objective relative absolute motion `<=0.01`; held-out level
++  R2 absolute motion `<=0.01`; ordering absolute motion `<=0.005`; top-1
++  absolute motion `<=0.005`. All four and finite state are required.
++
++## Schedule semantics fixed before fitting
++
++Let optimizer updates be one-indexed as `k=1,...,4000`. Smooth schedules use
++`t=k-1`, so the first update uses the declared starting rate.
++
++1. `cosine`: `lr(t)=lr0*(1+cos(pi*t/4000))/2`; the schedule endpoint after
++   update 4,000 is exactly zero (the last applied update rate is the value at
++   `t=3999`).
++2. `step`: updates 1–2,000 use `lr0`; updates 2,001–3,000 use `0.1*lr0`;
++   updates 3,001–4,000 use `0.01*lr0`.
++3. `inverse_time_tau1000`: `lr(t)=lr0/(1+t/1000)`, so `tau=1000` updates.
++4. `plateau_n3`: start at `lr0`. At each cadence, compute the aggregate LOAO
++   objective's absolute relative motion. The first motion establishes the
++   best value. A later strictly smaller motion is an improvement and resets
++   the non-improvement count. After `n=3` consecutive non-improving cadences,
++   multiply the rate by 0.5 for subsequent updates, reset the count, and use
++   the triggering motion as the new post-decay best. Decisions occur only
++   after the checkpoint, never retroactively.
++
++The four base schedules start at `lr0=1e-3`. One extension starts at `3e-3`,
++the next higher rate already present in LRSWEEP's fixed grid. Its shape is
++chosen from the four base runs by this diagnostic-only ordering:
++
++1. schedules that become admissible precede schedules that do not;
++2. among admissible schedules, earlier first-admissible update precedes later;
++3. otherwise, smaller maximum cap tolerance ratio across the four unchanged
++   rule components precedes larger;
++4. exact ties use the declared order above.
++
++This ordering exists only to assign the mandated higher-start extension. It
++does not select a production schedule and does not use predictive levels.
++
++## Resources and scope
++
++- One Python process, `/home/sat/mcrl-leo-handover/.venv/bin/python` only,
++  niceness 18, all named BLAS thread variables one, address-space limit one
++  byte below 3 GiB, and measured peak RSS below 3 GiB.
++- Print progress as `update k/N` and print peak RSS. Pause if one-minute load
++  exceeds 30 at a cadence boundary.
++- Read only LRSWEEP's twelve named development anchors. Do not discover or
++  read evaluation-only claim dates. Do not compute production, policy,
++  acceptance, or EE quantities.
+diff --git a/DECAY-SCHEDULE-2026-09-10.md b/DECAY-SCHEDULE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b58714afad4bbe9c59a86180dd5aeda7712c5748
+--- /dev/null
++++ b/DECAY-SCHEDULE-2026-09-10.md
+@@ -0,0 +1,176 @@
++**Parity with HORIZON Arm A reproduced exactly; first admissible updates were cosine `1e-3`: 3,200, step `1e-3`: 2,200, inverse-time (`tau=1000`) `1e-3`: `NONE`, plateau (`n=3`) `1e-3`: 2,800, and the step `3e-3` extension: 2,300; estimated `16 seeds x 5 arms` costs for the admissible schedules are cosine `0.47–0.55`, step `1e-3` `0.28–0.32`, plateau `0.36–0.40`, and step `3e-3` `0.32–0.35` CPU-hours.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Answer
++
++[VERIFIED BY RUNNING CODE] Three of the four schedules starting at the current
++`1e-3` literal reached the unchanged convergence criterion before the
++4,000-update cap. The required higher-start extension also reached it.
++Inverse-time did not. These are all the admissible schedules; this diagnostic
++does not name a winner or select a production schedule.
++
++| schedule | starting rate | fixed parameter | first admissible update | all four checks at cap |
++|:---|---:|:---|---:|:---:|
++| cosine | `1e-3` | endpoint zero at 4,000 | **3,200** | yes |
++| step decay | `1e-3` | factor 0.1 after 2,000 and after 3,000 | **2,200** | yes |
++| inverse-time | `1e-3` | `tau=1000` | **NONE** | no |
++| plateau decay | `1e-3` | factor 0.5, `n=3` | **2,800** | yes |
++| step-decay extension | `3e-3` | same step shape | **2,300** | yes |
++
++[VERIFIED BY RUNNING CODE] Inverse-time passes three of four components at
++4,000 and still returns `NONE`. Its objective motion is **1.9460%** against a
++1% tolerance, an excess of **0.9460 percentage points** (or 0.009460 in the
++relative-motion quantity). Its R2, ordering, and top-1 motions are 0.005363,
++0.002967, and 0, within their unchanged 0.01, 0.005, and 0.005 tolerances.
++
++Loss and held-out metrics here are convergence diagnostics only. **No EE
++quantity was computed, and neither EE nor predictive-metric level selected
++anything.**
++
++## Parity gate
++
++[VERIFIED BY RUNNING CODE] Before fitting a decay schedule, a fresh
++constant-`1e-3` run reproduced HORIZON Arm A and the original LRSWEEP C3 cell
++exactly at every checkpoint from 0 through 500. Equality covered the training
++objective and the complete held-out metric dictionaries, not rounded display
++values.
++
++| update | objective | held-out R2 | ordering | top-1 |
++|---:|---:|---:|---:|---:|
++| 0 | 131.376445 | -2.555855 | 0.606666 | 0.000000 |
++| 100 | 2.144771 | 0.698493 | 0.552962 | 0.333333 |
++| 200 | 1.769994 | 0.677553 | 0.565035 | 0.250000 |
++| 300 | 1.545214 | 0.646160 | 0.560110 | 0.166667 |
++| 400 | 1.370980 | 0.618354 | 0.563186 | 0.166667 |
++| 500 | 1.248175 | 0.597967 | 0.532182 | 0.250000 |
++
++## Unchanged rule and schedule definitions
++
++[VERIFIED BY RUNNING CODE] At every destination cadence `k=100,...,4000`, the
++runner applied LRSWEEP's rule to `k-100 -> k`: objective relative absolute
++motion `<=0.01`, level-R2 absolute motion `<=0.01`, ordering absolute motion
++`<=0.005`, and top-1 absolute motion `<=0.005`. All four checks and finite
++objective/parameters were required together.
++
++[VERIFIED BY RUNNING CODE] All runs used C3, the twelve fixed LRSWEEP anchors
++and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU head, every other sealed
++Adam literal, full-batch gradient aggregation, and cadence 100.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] With one-indexed update `k` and
++`t=k-1`, the smooth schedules were:
++
++- cosine: `lr(t)=lr0*(1+cos(pi*t/4000))/2`, with the schedule endpoint set to
++  zero after update 4,000;
++- inverse-time: `lr(t)=lr0/(1+t/1000)`, hence `tau=1000`;
++- step: updates 1–2,000 at `lr0`, 2,001–3,000 at `0.1*lr0`, and 3,001–4,000
++  at `0.01*lr0`;
++- plateau: factor 0.5 after `n=3` consecutive cadence motions that do not set
++  a new best objective-motion value, with patience reset after each decay.
++
++[VERIFIED BY RUNNING CODE] Plateau decayed after updates 1,700, 2,200, 2,700,
++3,200, and 3,700, ending at `3.125e-5`. Decisions used the aggregate LOAO
++training objective and affected only subsequent updates.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] The mandated higher start was
++`3e-3`, the next higher rate in LRSWEEP's already-fixed grid. Step shape was
++assigned to that extension because its base run had the earliest
++first-admissible cadence under the frozen extension-ranking rule (2,200,
++versus plateau 2,800 and cosine 3,200; inverse-time was `NONE`). That assignment
++uses convergence timing only; it is not a predictive-quality or production
++selection. The extension first became admissible at 2,300, so increasing the
++start did not produce an earlier admissible cadence in this diagnostic.
++
++## Motions at the cap
++
++[VERIFIED BY RUNNING CODE] The last five objective motions are for destinations
++3,600, 3,700, 3,800, 3,900, and 4,000, respectively.
++
++| schedule | last five objective motions | loss at 3,900 | loss at 4,000 |
++|:---|:---|---:|---:|
++| cosine `1e-3` | 0.3233%, 0.2058%, 0.1093%, 0.0430%, 0.0067% | 0.377309 | 0.377284 |
++| step `1e-3` | 0.0878%, 0.0910%, 0.0952%, 0.0978%, 0.1021% | 0.437017 | 0.436571 |
++| inverse-time `1e-3` | 2.0713%, 2.0488%, 1.9798%, 1.8231%, 1.9460% | 0.414423 | 0.406359 |
++| plateau `1e-3` | 0.5704%, 0.5846%, 0.3181%, 0.3153%, 0.3251% | 0.398286 | 0.396991 |
++| step `3e-3` extension | 0.1054%, 0.1093%, 0.1143%, 0.1205%, 0.1249% | 0.469897 | 0.469310 |
++
++[VERIFIED BY RUNNING CODE] At each admissible schedule's first passing
++cadence, the four motions were:
++
++| schedule | update | objective | R2 | ordering | top-1 |
++|:---|---:|---:|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.9866% | 0.000439 | 0.000042 | 0 |
++| step `1e-3` | 2,200 | 0.4939% | 0.001951 | 0.000378 | 0 |
++| plateau `1e-3` | 2,800 | 0.8965% | 0.003735 | 0.000436 | 0 |
++| step `3e-3` extension | 2,300 | 0.6858% | 0.000965 | 0.000368 | 0 |
++
++## Wall time and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall seconds per 100 updates are end-to-end cap
++wall divided by 40 for the complete twelve-fold, one-seed diagnostic. The
++cadence-timed means differ by less than 0.001 s from the displayed values.
++
++| schedule | cap wall | wall s/100 updates |
++|:---|---:|---:|
++| cosine `1e-3` | 328.47 s | 8.212 |
++| step `1e-3` | 282.28 s | 7.057 |
++| inverse-time `1e-3` | 288.04 s | 7.201 |
++| plateau `1e-3` | 287.35 s | 7.184 |
++| step `3e-3` extension | 306.44 s | 7.661 |
++
++[DERIVED ON PAPER] A `16 seeds x 5 arms` production set contains 80 C3 heads.
++The lower estimate uses mean update-only time per LOAO fold through the first
++admissible cadence. The upper estimate uses cumulative end-to-end per-fold
++time through that cadence and multiplies by `12/11` for production training
++on all twelve anchors rather than each fold's eleven. Both assume serial
++single-thread execution, the same dimensions, no shared-head speedup, and
++negligible orchestration/serialization.
++
++| admissible schedule | first update | production CPU-hours | updates versus current 500 |
++|:---|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.47–0.55 | 6.4x |
++| step `1e-3` | 2,200 | 0.28–0.32 | 4.4x |
++| plateau `1e-3` | 2,800 | 0.36–0.40 | 5.6x |
++| step `3e-3` extension | 2,300 | 0.32–0.35 | 4.6x |
++
++[DERIVED ON PAPER] Yes, four tested runs reach admissibility before 4,000, so
++stopping at the first admissible cadence is cheaper than taking those runs to
++the 4,000-update cap. **No tested schedule reaches admissibility by update
++500.** Therefore none is cheaper than the current 500-update configuration;
++the earliest requires 2,200 updates, or 4.4 times as many. Reaching before
++4,000 and being cheaper than 500 are not equivalent comparisons.
++
++## Interpretation
++
++[INFERRED] Decay is the first of the three tested optimization levers that
++makes the already-declared criterion reachable for this learner: three base
++schedule shapes and the required higher-start extension are admissible. The
++all-`NONE` consequence in the prompt therefore does not apply. This does not
++establish predictive superiority, an EE result, or a production choice.
++
++[INFERRED] Inverse-time with `tau=1000` remains under-decayed for the declared
++cap: its late objective motion stays near 2% while the three held-out motion
++checks pass. The rule is not relaxed, and the result remains `NONE`.
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] The parity, four-base-schedule, and higher-start
++invocations ran sequentially, never exceeding one diagnostic Python process.
++Each used only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 18,
++all named BLAS thread variables equal to one, and an address-space limit of
++3,221,225,471 bytes (one byte below 3 GiB). Progress printed as
++`update k/N`. The maximum measured peak across invocations was
++`PEAK_RSS_KB=86028` (about 84.0 MiB). No load pause or divergence occurred.
++
++[VERIFIED BY RUNNING CODE] Only the twelve filenames fixed in LRSWEEP were
++loaded. No evaluation-only claim date was discovered or read. All sealed
++source and C3 input hashes matched before and after every invocation;
++`changed_inputs` is empty. Nothing under `/home/sat/mcrl-leo-handover` was
++modified.
++
++Machine-readable results are in `.scratch/decay-schedule/parity.json`,
++`.scratch/decay-schedule/base-results.json`, and
++`.scratch/decay-schedule/higher-results.json`. The pre-run protocol is
++`.scratch/decay-schedule/spec.md`; the isolated runner is
++`.scratch/decay-schedule/run_decay.py`.
+
+codex
+The report is drafted with the unchanged-rule failures, all admissible schedules, cap-shape records, and production arithmetic separated into run-verified, paper-derived, and inferred claims. I’m doing a final integrity pass on the JSON, report path, and process cleanup.
+exec
+/bin/bash -lc "jq empty .scratch/decay-schedule/parity.json .scratch/decay-schedule/base-results.json .scratch/decay-schedule/higher-results.json; sed -n '1,12p' DECAY-SCHEDULE-2026-09-10.md; rg -n \"NONE|first admissible|PEAK_RSS|No EE|No tested schedule|changed_inputs\" DECAY-SCHEDULE-2026-09-10.md; pgrep -af '/home/sat/mcrl-v025-decay-ws/.scratch/decay-schedule/run_decay.py' || true; git status --short" in /home/sat/mcrl-v025-decay-ws
+ succeeded in 0ms:
+**Parity with HORIZON Arm A reproduced exactly; first admissible updates were cosine `1e-3`: 3,200, step `1e-3`: 2,200, inverse-time (`tau=1000`) `1e-3`: `NONE`, plateau (`n=3`) `1e-3`: 2,800, and the step `3e-3` extension: 2,300; estimated `16 seeds x 5 arms` costs for the admissible schedules are cosine `0.47–0.55`, step `1e-3` `0.28–0.32`, plateau `0.36–0.40`, and step `3e-3` `0.32–0.35` CPU-hours.**
+
+`DIAGNOSTIC_NOT_CLAIM` — development material only.
+
+## Answer
+
+[VERIFIED BY RUNNING CODE] Three of the four schedules starting at the current
+`1e-3` literal reached the unchanged convergence criterion before the
+4,000-update cap. The required higher-start extension also reached it.
+Inverse-time did not. These are all the admissible schedules; this diagnostic
+does not name a winner or select a production schedule.
+
+1:**Parity with HORIZON Arm A reproduced exactly; first admissible updates were cosine `1e-3`: 3,200, step `1e-3`: 2,200, inverse-time (`tau=1000`) `1e-3`: `NONE`, plateau (`n=3`) `1e-3`: 2,800, and the step `3e-3` extension: 2,300; estimated `16 seeds x 5 arms` costs for the admissible schedules are cosine `0.47–0.55`, step `1e-3` `0.28–0.32`, plateau `0.36–0.40`, and step `3e-3` `0.32–0.35` CPU-hours.**
+13:| schedule | starting rate | fixed parameter | first admissible update | all four checks at cap |
+17:| inverse-time | `1e-3` | `tau=1000` | **NONE** | no |
+22:4,000 and still returns `NONE`. Its objective motion is **1.9460%** against a
+27:Loss and held-out metrics here are convergence diagnostics only. **No EE
+80:versus plateau 2,800 and cosine 3,200; inverse-time was `NONE`). That assignment
+138:stopping at the first admissible cadence is cheaper than taking those runs to
+139:the 4,000-update cap. **No tested schedule reaches admissibility by update
+149:all-`NONE` consequence in the prompt therefore does not apply. This does not
+154:checks pass. The rule is not relaxed, and the result remains `NONE`.
+164:`PEAK_RSS_KB=86028` (about 84.0 MiB). No load pause or divergence occurred.
+169:`changed_inputs` is empty. Nothing under `/home/sat/mcrl-leo-handover` was
+1 codex-linux-sandbox --sandbox-policy-cwd /home/sat/mcrl-v025-decay-ws --command-cwd /home/sat/mcrl-v025-decay-ws --permission-profile {"type":"managed","file_system":{"type":"restricted","entries":[{"path":{"type":"special","value":{"kind":"root"}},"access":"read"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-decay-ws"},"access":"write"},{"path":{"type":"special","value":{"kind":"slash_tmp"}},"access":"write"},{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-decay-ws/.git"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-decay-ws/.agents"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-decay-ws/.codex"},"access":"read","missing_path_behavior":"skip"}]},"network":"restricted"} --apply-seccomp-then-exec -- /bin/bash -c __CODEX_SNAPSHOT_OVERRIDE_SET_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS+x}" __CODEX_SNAPSHOT_OVERRIDE_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS-}" __CODEX_SNAPSHOT_OVERRIDE_SET_1="${CODEX_PERMISSION_PROFILE+x}" __CODEX_SNAPSHOT_OVERRIDE_1="${CODEX_PERMISSION_PROFILE-}" __CODEX_SNAPSHOT_OVERRIDE_SET_2="${CODEX_PLUGIN_METRICS_OUTPUT+x}" __CODEX_SNAPSHOT_OVERRIDE_2="${CODEX_PLUGIN_METRICS_OUTPUT-}" __CODEX_SNAPSHOT_OVERRIDE_SET_3="${CODEX_SESSION_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_3="${CODEX_SESSION_ID-}" __CODEX_SNAPSHOT_OVERRIDE_SET_4="${CODEX_THREAD_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_4="${CODEX_THREAD_ID-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0="${ALL_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_0="${ALL_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1="${BUNDLE_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_1="${BUNDLE_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2="${BUNDLE_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_2="${BUNDLE_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3="${BUNDLE_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_3="${BUNDLE_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4="${BUNDLE_SSL_CA_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_4="${BUNDLE_SSL_CA_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5="${CARGO_HTTP_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_5="${CARGO_HTTP_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6="${CODEX_CA_CERTIFICATE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_6="${CODEX_CA_CERTIFICATE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8="${CODEX_NETWORK_PROXY_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_8="${CODEX_NETWORK_PROXY_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9="${CODEX_NETWORK_PROXY_ATTRIBUTION+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_9="${CODEX_NETWORK_PROXY_ATTRIBUTION-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12="${CURL_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_12="${CURL_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13="${DOCKER_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_13="${DOCKER_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14="${DOCKER_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_14="${DOCKER_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15="${ELECTRON_GET_USE_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_15="${ELECTRON_GET_USE_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16="${FTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_16="${FTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17="${GIT_SSL_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_17="${GIT_SSL_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18="${HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_18="${HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19="${HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_19="${HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20="${NODE_EXTRA_CA_CERTS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_20="${NODE_EXTRA_CA_CERTS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21="${NODE_USE_ENV_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_21="${NODE_USE_ENV_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22="${NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_22="${NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23="${NPM_CONFIG_CAFILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_23="${NPM_CONFIG_CAFILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24="${NPM_CONFIG_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_24="${NPM_CONFIG_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25="${NPM_CONFIG_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_25="${NPM_CONFIG_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26="${NPM_CONFIG_NOPROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_26="${NPM_CONFIG_NOPROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27="${NPM_CONFIG_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_27="${NPM_CONFIG_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28="${PIP_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_28="${PIP_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29="${PIP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_29="${PIP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30="${REQUESTS_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_30="${REQUESTS_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31="${SSL_CERT_FILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_31="${SSL_CERT_FILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32="${WSS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_32="${WSS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33="${WS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_33="${WS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34="${YARN_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_34="${YARN_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35="${YARN_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_35="${YARN_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36="${YARN_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_36="${YARN_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37="${all_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_37="${all_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38="${ftp_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_38="${ftp_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39="${http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_39="${http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40="${https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_40="${https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41="${no_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_41="${no_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42="${npm_config_cafile+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_42="${npm_config_cafile-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43="${npm_config_http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_43="${npm_config_http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44="${npm_config_https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_44="${npm_config_https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45="${npm_config_noproxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_45="${npm_config_noproxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46="${npm_config_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_46="${npm_config_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47="${ws_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_47="${ws_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48="${wss_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_48="${wss_proxy-}" __CODEX_SNAPSHOT_PROXY_ENV_SET="${CODEX_NETWORK_PROXY_ACTIVE+x}"  if . '/home/sat/.codex/shell_snapshots/01a08c02-fb67-7892-91ef-af177d2773bb.1789055400820142584.sh' >/dev/null 2>&1; then :; fi  if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_0}" ]; then export CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS="${__CODEX_SNAPSHOT_OVERRIDE_0}"; else unset CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_1}" ]; then export CODEX_PERMISSION_PROFILE="${__CODEX_SNAPSHOT_OVERRIDE_1}"; else unset CODEX_PERMISSION_PROFILE; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_2}" ]; then export CODEX_PLUGIN_METRICS_OUTPUT="${__CODEX_SNAPSHOT_OVERRIDE_2}"; else unset CODEX_PLUGIN_METRICS_OUTPUT; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_3}" ]; then export CODEX_SESSION_ID="${__CODEX_SNAPSHOT_OVERRIDE_3}"; else unset CODEX_SESSION_ID; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_4}" ]; then export CODEX_THREAD_ID="${__CODEX_SNAPSHOT_OVERRIDE_4}"; else unset CODEX_THREAD_ID; fi if [ -n "$__CODEX_SNAPSHOT_PROXY_ENV_SET" ] || [ -n "${CODEX_NETWORK_PROXY_ACTIVE+x}" ]; then if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0}" ]; then export ALL_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_0}"; else unset ALL_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1}" ]; then export BUNDLE_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_1}"; else unset BUNDLE_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2}" ]; then export BUNDLE_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_2}"; else unset BUNDLE_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3}" ]; then export BUNDLE_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_3}"; else unset BUNDLE_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4}" ]; then export BUNDLE_SSL_CA_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_4}"; else unset BUNDLE_SSL_CA_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5}" ]; then export CARGO_HTTP_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_5}"; else unset CARGO_HTTP_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6}" ]; then export CODEX_CA_CERTIFICATE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_6}"; else unset CODEX_CA_CERTIFICATE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7}" ]; then export CODEX_NETWORK_ALLOW_LOCAL_BINDING="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_7}"; else unset CODEX_NETWORK_ALLOW_LOCAL_BINDING; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8}" ]; then export CODEX_NETWORK_PROXY_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_8}"; else unset CODEX_NETWORK_PROXY_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9}" ]; then export CODEX_NETWORK_PROXY_ATTRIBUTION="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_9}"; else unset CODEX_NETWORK_PROXY_ATTRIBUTION; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10}" ]; then export CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_10}"; else unset CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11}" ]; then export CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_11}"; else unset CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12}" ]; then export CURL_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_12}"; else unset CURL_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13}" ]; then export DOCKER_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_13}"; else unset DOCKER_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14}" ]; then export DOCKER_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_14}"; else unset DOCKER_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15}" ]; then export ELECTRON_GET_USE_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_15}"; else unset ELECTRON_GET_USE_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16}" ]; then export FTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_16}"; else unset FTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17}" ]; then export GIT_SSL_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_17}"; else unset GIT_SSL_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18}" ]; then export HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_18}"; else unset HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19}" ]; then export HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_19}"; else unset HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20}" ]; then export NODE_EXTRA_CA_CERTS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_20}"; else unset NODE_EXTRA_CA_CERTS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21}" ]; then export NODE_USE_ENV_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_21}"; else unset NODE_USE_ENV_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22}" ]; then export NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_22}"; else unset NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23}" ]; then export NPM_CONFIG_CAFILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_23}"; else unset NPM_CONFIG_CAFILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24}" ]; then export NPM_CONFIG_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_24}"; else unset NPM_CONFIG_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25}" ]; then export NPM_CONFIG_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_25}"; else unset NPM_CONFIG_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26}" ]; then export NPM_CONFIG_NOPROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_26}"; else unset NPM_CONFIG_NOPROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27}" ]; then export NPM_CONFIG_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_27}"; else unset NPM_CONFIG_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28}" ]; then export PIP_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_28}"; else unset PIP_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29}" ]; then export PIP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_29}"; else unset PIP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30}" ]; then export REQUESTS_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_30}"; else unset REQUESTS_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31}" ]; then export SSL_CERT_FILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_31}"; else unset SSL_CERT_FILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32}" ]; then export WSS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_32}"; else unset WSS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33}" ]; then export WS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_33}"; else unset WS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34}" ]; then export YARN_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_34}"; else unset YARN_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35}" ]; then export YARN_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_35}"; else unset YARN_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36}" ]; then export YARN_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_36}"; else unset YARN_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37}" ]; then export all_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_37}"; else unset all_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38}" ]; then export ftp_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_38}"; else unset ftp_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39}" ]; then export http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_39}"; else unset http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40}" ]; then export https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_40}"; else unset https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41}" ]; then export no_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_41}"; else unset no_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42}" ]; then export npm_config_cafile="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_42}"; else unset npm_config_cafile; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43}" ]; then export npm_config_http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_43}"; else unset npm_config_http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44}" ]; then export npm_config_https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_44}"; else unset npm_config_https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45}" ]; then export npm_config_noproxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_45}"; else unset npm_config_noproxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46}" ]; then export npm_config_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_46}"; else unset npm_config_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47}" ]; then export ws_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_47}"; else unset ws_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48}" ]; then export wss_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_48}"; else unset wss_proxy; fi fi if [ -n "${PATH:-}" ]; then export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path':"$PATH"; else export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path'; fi  exec '/bin/bash' -c 'jq empty .scratch/decay-schedule/parity.json .scratch/decay-schedule/base-results.json .scratch/decay-schedule/higher-results.json; sed -n '"'"'1,12p'"'"' DECAY-SCHEDULE-2026-09-10.md; rg -n "NONE|first admissible|PEAK_RSS|No EE|No tested schedule|changed_inputs" DECAY-SCHEDULE-2026-09-10.md; pgrep -af '"'"'/home/sat/mcrl-v025-decay-ws/.scratch/decay-schedule/run_decay.py'"'"' || true; git status --short'
+2 /bin/bash -c jq empty .scratch/decay-schedule/parity.json .scratch/decay-schedule/base-results.json .scratch/decay-schedule/higher-results.json; sed -n '1,12p' DECAY-SCHEDULE-2026-09-10.md; rg -n "NONE|first admissible|PEAK_RSS|No EE|No tested schedule|changed_inputs" DECAY-SCHEDULE-2026-09-10.md; pgrep -af '/home/sat/mcrl-v025-decay-ws/.scratch/decay-schedule/run_decay.py' || true; git status --short
+?? .scratch/
+?? DECAY-SCHEDULE-2026-09-10.md
+
+diff --git a/.scratch/decay-schedule/run_decay.py b/.scratch/decay-schedule/run_decay.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2534131be32880b4288e433a88f18ce5bc997b51
+--- /dev/null
++++ b/.scratch/decay-schedule/run_decay.py
+@@ -0,0 +1,442 @@
++#!/usr/bin/env python3
++"""C3 decay-schedule convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++ROOT = Path("/home/sat/mcrl-v025-decay-ws")
++OUT = ROOT / ".scratch/decay-schedule"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++HORIZON_RESULTS = Path("/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json")
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BASE_LR = 1e-3
++HIGHER_LR = 3e-3
++TAU = 1000
++PLATEAU_N = 3
++SCHEDULE_ORDER = ("cosine", "step", "inverse_time_tau1000", "plateau_n3")
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++    str(HORIZON_RESULTS): "b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 18:
++        raise RuntimeError(f"process niceness is not 18: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def checkpoint(sweep, heads, data):
++    predictions = []
++    objectives = []
++    norms = []
++    for fold_index, (head, test) in enumerate(zip(heads, data.anchors, strict=True)):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        loss, count = sweep.c3_loss(head, train)
++        if not math.isfinite(loss) or not sweep.parameters_finite(head):
++            raise RuntimeError(f"non-finite state at fold {fold_index + 1}")
++        prediction = sweep.np.zeros_like(test.truth)
++        prediction[test.train_indices] = head._forward(test.x)[0]
++        predictions.append(prediction)
++        objectives.append((loss, count))
++        norms.append(sweep.parameter_norm(head))
++    weighted = sum(value * count for value, count in objectives) / sum(count for _, count in objectives)
++    return {
++        "training_objective": float(weighted),
++        "held_out": sweep.c3_metric(predictions, data.anchors),
++        "parameter_l2": sweep.summarize(norms),
++    }
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def scheduled_lr(name: str, start_lr: float, update: int, plateau_lr: float) -> float:
++    t = update - 1
++    if name == "constant":
++        return start_lr
++    if name == "cosine":
++        return start_lr * (1.0 + math.cos(math.pi * t / MAX_UPDATES)) / 2.0
++    if name == "step":
++        return start_lr * (1.0 if update <= 2000 else 0.1 if update <= 3000 else 0.01)
++    if name == "inverse_time_tau1000":
++        return start_lr / (1.0 + t / TAU)
++    if name == "plateau_n3":
++        return plateau_lr
++    raise ValueError(name)
++
++
++def run_schedule(sweep, data, name: str, start_lr: float, maximum_updates: int,
++                 progress: list[int], total_work: int) -> dict[str, object]:
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    literal["learning_rate"] = start_lr
++    heads = [
++        sweep.AdamMLPHead.create(
++            anchor.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        for anchor in data.anchors
++    ]
++    trains = [
++        tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        for fold_index in range(len(data.anchors))
++    ]
++    trajectory = {"0": checkpoint(sweep, heads, data)}
++    checks = {}
++    lr_trace = {"0": start_lr}
++    first_admissible = None
++    cadence_total = []
++    cadence_update = []
++    cadence_checkpoint = []
++    cumulative_total = []
++    running_total = 0.0
++    observed_load = [guard_load()]
++    plateau_lr = start_lr
++    plateau_best = None
++    plateau_stale = 0
++    plateau_events = []
++    started = time.perf_counter()
++
++    for cadence_end in range(CADENCE, maximum_updates + 1, CADENCE):
++        cadence_started = time.perf_counter()
++        update_elapsed = 0.0
++        for update in range(cadence_end - CADENCE + 1, cadence_end + 1):
++            lr = scheduled_lr(name, start_lr, update, plateau_lr)
++            for fold_index, head in enumerate(heads):
++                head.learning_rate = lr
++                update_started = time.perf_counter()
++                with sweep.np.errstate(all="ignore"):
++                    loss_before = sweep.c3_update(head, trains[fold_index])
++                update_elapsed += time.perf_counter() - update_started
++                if not math.isfinite(loss_before) or not sweep.parameters_finite(head):
++                    raise RuntimeError(
++                        f"schedule {name} lr {start_lr} fold {fold_index + 1} "
++                        f"diverged at update {update}"
++                    )
++        checkpoint_started = time.perf_counter()
++        point = checkpoint(sweep, heads, data)
++        checkpoint_elapsed = time.perf_counter() - checkpoint_started
++        trajectory[str(cadence_end)] = point
++        check = stability(sweep, trajectory[str(cadence_end - CADENCE)], point)
++        checks[str(cadence_end)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = cadence_end
++
++        if name == "plateau_n3":
++            motion = check["changes"]["objective_relative_abs"]
++            if plateau_best is None or motion < plateau_best:
++                plateau_best = motion
++                plateau_stale = 0
++            else:
++                plateau_stale += 1
++                if plateau_stale >= PLATEAU_N:
++                    old_lr = plateau_lr
++                    plateau_lr *= 0.5
++                    plateau_events.append({
++                        "after_update": cadence_end, "old_lr": old_lr,
++                        "new_lr": plateau_lr, "trigger_motion": motion,
++                    })
++                    plateau_best = motion
++                    plateau_stale = 0
++        lr_trace[str(cadence_end)] = (
++            0.0 if name == "cosine" and cadence_end == MAX_UPDATES
++            else plateau_lr if name == "plateau_n3"
++            else scheduled_lr(name, start_lr, cadence_end, plateau_lr)
++        )
++        total_elapsed = time.perf_counter() - cadence_started
++        cadence_total.append(total_elapsed)
++        cadence_update.append(update_elapsed)
++        cadence_checkpoint.append(checkpoint_elapsed)
++        running_total += total_elapsed
++        cumulative_total.append(running_total)
++        progress[0] += CADENCE * len(heads)
++        current_load = load_average()
++        observed_load.append(current_load)
++        print(
++            f"update {progress[0]}/{total_work} schedule={name} start_lr={start_lr:g} "
++            f"destination={cadence_end}/{maximum_updates} load1={current_load:.2f}",
++            flush=True,
++        )
++        if current_load > 30.0:
++            raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    return {
++        "schedule": name,
++        "starting_learning_rate": start_lr,
++        "maximum_updates": maximum_updates,
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "learning_rate_at_cadence": lr_trace,
++        "plateau_events": plateau_events,
++        "wall_s": time.perf_counter() - started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": cadence_total,
++            "update_only_s_per_100_updates_across_12_loao_folds": cadence_update,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": cadence_checkpoint,
++            "cumulative_total_s_across_12_loao_folds": cumulative_total,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(cadence_total) / len(cadence_total),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(cadence_update) / len(cadence_update),
++        },
++        "maximum_observed_load1": max(observed_load),
++    }
++
++
++def source_state(sweep, data):
++    fixed = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    inputs = {str(anchor.path): file_sha256(anchor.path) for anchor in data.anchors}
++    return fixed, inputs
++
++
++def common_result(sweep, data, started, initial_load, before, inputs_before):
++    after, inputs_after = source_state(sweep, data)
++    changed = [path for path in (*before, *inputs_before)
++               if (before | inputs_before)[path] != (after | inputs_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    return {
++        "schema": "mcrl-v025-decay-schedule-diagnostic-v1",
++        "status": "DIAGNOSTIC_NOT_CLAIM",
++        "route": "C3",
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(anchor.path) for anchor in data.anchors],
++        },
++        "schedule_parameters": {"tau": TAU, "plateau_n": PLATEAU_N},
++        "scope": {
++            "diagnostic_not_claim": True, "ee_quantities_computed": False,
++            "selection_on_ee": False, "selection_on_predictive_levels": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "resource_policy": {
++            "python_processes": 1, "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1, "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb, "initial_load1": initial_load,
++            "final_load1": load_average(), "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before, "source_sha256_after": after,
++        "c3_input_sha256_before": inputs_before, "c3_input_sha256_after": inputs_after,
++        "changed_inputs": changed,
++    }
++
++
++def original_c3_cell():
++    payload = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    return next(cell for cell in payload["cells"]
++                if cell["route"] == "C3" and cell["learning_rate"] == BASE_LR)
++
++
++def parity(sweep, data, started, initial_load, before, inputs_before):
++    progress = [0]
++    run = run_schedule(
++        sweep, data, "constant", BASE_LR, 500, progress,
++        len(data.anchors) * 500,
++    )
++    horizon = json.loads(HORIZON_RESULTS.read_text(encoding="utf-8"))["arms"]["A"]
++    lrsweep = original_c3_cell()
++    comparisons = {}
++    for update in range(0, 501, CADENCE):
++        key = str(update)
++        fields = ("training_objective", "held_out")
++        comparisons[key] = {
++            "horizon_exact": all(run["trajectory"][key][field] == horizon["trajectory"][key][field]
++                                 for field in fields),
++            "lrsweep_exact": all(run["trajectory"][key][field] == lrsweep["trajectory"][key][field]
++                                 for field in fields),
++        }
++    reproduced = all(all(value.values()) for value in comparisons.values())
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "parity", "run": run, "comparisons": comparisons,
++                   "parity_reproduced": reproduced})
++    atomic_json(OUT / "parity.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "parity.json"),
++                      "parity_reproduced": reproduced}), flush=True)
++    if not reproduced:
++        raise RuntimeError("HORIZON Arm A parity failed; stop before schedules")
++
++
++def cap_tolerance_score(sweep, run):
++    check = run["cadence_checks"][str(MAX_UPDATES)]
++    changes = check["changes"]
++    ratios = (
++        changes["objective_relative_abs"] / sweep.STABILITY_TOLERANCES["objective_relative"],
++        changes["r2_absolute"] / sweep.STABILITY_TOLERANCES["r2_absolute"],
++        changes["pairwise_ordering_absolute"] / sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        changes["top1_accuracy_absolute"] / sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    )
++    return max(ratios)
++
++
++def select_extension_shape(sweep, runs):
++    ranked = []
++    for index, name in enumerate(SCHEDULE_ORDER):
++        run = runs[name]
++        first = run["first_admissible_update"]
++        key = (0, first, index) if first is not None else (1, cap_tolerance_score(sweep, run), index)
++        ranked.append((key, name))
++    ranked.sort()
++    return ranked[0][1], [{"schedule": name, "ranking_key": list(key)} for key, name in ranked]
++
++
++def base(sweep, data, started, initial_load, before, inputs_before):
++    parity_result = json.loads((OUT / "parity.json").read_text(encoding="utf-8"))
++    if not parity_result.get("parity_reproduced"):
++        raise RuntimeError("verified parity artifact is absent or failed")
++    progress = [0]
++    total = len(SCHEDULE_ORDER) * len(data.anchors) * MAX_UPDATES
++    runs = {name: run_schedule(sweep, data, name, BASE_LR, MAX_UPDATES, progress, total)
++            for name in SCHEDULE_ORDER}
++    shape, ranking = select_extension_shape(sweep, runs)
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "base", "parity_reproduced": True, "runs": runs,
++                   "extension_shape": shape, "extension_ranking": ranking})
++    atomic_json(OUT / "base-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "base-results.json"),
++                      "extension_shape": shape}), flush=True)
++
++
++def higher(sweep, data, started, initial_load, before, inputs_before):
++    base_result = json.loads((OUT / "base-results.json").read_text(encoding="utf-8"))
++    if not base_result.get("parity_reproduced"):
++        raise RuntimeError("base result does not carry successful parity")
++    expected_shape, ranking = select_extension_shape(sweep, base_result["runs"])
++    if expected_shape != base_result["extension_shape"]:
++        raise RuntimeError("extension shape selection drifted")
++    progress = [0]
++    run = run_schedule(
++        sweep, data, expected_shape, HIGHER_LR, MAX_UPDATES, progress,
++        len(data.anchors) * MAX_UPDATES,
++    )
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "higher", "parity_reproduced": True,
++                   "extension_shape": expected_shape, "extension_ranking": ranking,
++                   "run": run})
++    atomic_json(OUT / "higher-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "higher-results.json"),
++                      "extension_shape": expected_shape}), flush=True)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("mode", choices=("parity", "base", "higher"))
++    args = parser.parse_args()
++    OUT.mkdir(parents=True, exist_ok=True)
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    data = sweep.load_c3()
++    before, inputs_before = source_state(sweep, data)
++    started = time.perf_counter()
++    if args.mode == "parity":
++        parity(sweep, data, started, initial_load, before, inputs_before)
++    elif args.mode == "base":
++        base(sweep, data, started, initial_load, before, inputs_before)
++    else:
++        higher(sweep, data, started, initial_load, before, inputs_before)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/decay-schedule/spec.md b/.scratch/decay-schedule/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e9562db0b10b3e97dd58216f34fdc84eec34cb
+--- /dev/null
++++ b/.scratch/decay-schedule/spec.md
+@@ -0,0 +1,64 @@
++# DECAY schedule diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This protocol is fixed before any fit in this
++workspace. The diagnostic computes no EE quantity and makes no selection on
++EE or on predictive-metric levels.
++
++## Fixed source and design
++
++- Import and reuse LRSWEEP's runner, rule, and results without modification:
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`,
++  `spec.md`, and `results.json`.
++- C3 only; the twelve filenames hard-coded by LRSWEEP; identical LOAO folds;
++  model seed `V025_LEARNER/seed/1` (`6407676579069309528`); sealed `(64,64)`
++  ReLU head and every sealed Adam literal except the scheduled learning rate;
++  deterministic full-batch aggregation; 4,000-update cap; cadence 100.
++- Before schedule fitting, reproduce HORIZON Arm A's constant-`1e-3`
++  trajectory at updates 0, 100, ..., 500. Stop on any inequality.
++- At every destination cadence `k`, apply LRSWEEP's unchanged rule to
++  `k-100 -> k`: objective relative absolute motion `<=0.01`; held-out level
++  R2 absolute motion `<=0.01`; ordering absolute motion `<=0.005`; top-1
++  absolute motion `<=0.005`. All four and finite state are required.
++
++## Schedule semantics fixed before fitting
++
++Let optimizer updates be one-indexed as `k=1,...,4000`. Smooth schedules use
++`t=k-1`, so the first update uses the declared starting rate.
++
++1. `cosine`: `lr(t)=lr0*(1+cos(pi*t/4000))/2`; the schedule endpoint after
++   update 4,000 is exactly zero (the last applied update rate is the value at
++   `t=3999`).
++2. `step`: updates 1–2,000 use `lr0`; updates 2,001–3,000 use `0.1*lr0`;
++   updates 3,001–4,000 use `0.01*lr0`.
++3. `inverse_time_tau1000`: `lr(t)=lr0/(1+t/1000)`, so `tau=1000` updates.
++4. `plateau_n3`: start at `lr0`. At each cadence, compute the aggregate LOAO
++   objective's absolute relative motion. The first motion establishes the
++   best value. A later strictly smaller motion is an improvement and resets
++   the non-improvement count. After `n=3` consecutive non-improving cadences,
++   multiply the rate by 0.5 for subsequent updates, reset the count, and use
++   the triggering motion as the new post-decay best. Decisions occur only
++   after the checkpoint, never retroactively.
++
++The four base schedules start at `lr0=1e-3`. One extension starts at `3e-3`,
++the next higher rate already present in LRSWEEP's fixed grid. Its shape is
++chosen from the four base runs by this diagnostic-only ordering:
++
++1. schedules that become admissible precede schedules that do not;
++2. among admissible schedules, earlier first-admissible update precedes later;
++3. otherwise, smaller maximum cap tolerance ratio across the four unchanged
++   rule components precedes larger;
++4. exact ties use the declared order above.
++
++This ordering exists only to assign the mandated higher-start extension. It
++does not select a production schedule and does not use predictive levels.
++
++## Resources and scope
++
++- One Python process, `/home/sat/mcrl-leo-handover/.venv/bin/python` only,
++  niceness 18, all named BLAS thread variables one, address-space limit one
++  byte below 3 GiB, and measured peak RSS below 3 GiB.
++- Print progress as `update k/N` and print peak RSS. Pause if one-minute load
++  exceeds 30 at a cadence boundary.
++- Read only LRSWEEP's twelve named development anchors. Do not discover or
++  read evaluation-only claim dates. Do not compute production, policy,
++  acceptance, or EE quantities.
+diff --git a/DECAY-SCHEDULE-2026-09-10.md b/DECAY-SCHEDULE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b58714afad4bbe9c59a86180dd5aeda7712c5748
+--- /dev/null
++++ b/DECAY-SCHEDULE-2026-09-10.md
+@@ -0,0 +1,176 @@
++**Parity with HORIZON Arm A reproduced exactly; first admissible updates were cosine `1e-3`: 3,200, step `1e-3`: 2,200, inverse-time (`tau=1000`) `1e-3`: `NONE`, plateau (`n=3`) `1e-3`: 2,800, and the step `3e-3` extension: 2,300; estimated `16 seeds x 5 arms` costs for the admissible schedules are cosine `0.47–0.55`, step `1e-3` `0.28–0.32`, plateau `0.36–0.40`, and step `3e-3` `0.32–0.35` CPU-hours.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Answer
++
++[VERIFIED BY RUNNING CODE] Three of the four schedules starting at the current
++`1e-3` literal reached the unchanged convergence criterion before the
++4,000-update cap. The required higher-start extension also reached it.
++Inverse-time did not. These are all the admissible schedules; this diagnostic
++does not name a winner or select a production schedule.
++
++| schedule | starting rate | fixed parameter | first admissible update | all four checks at cap |
++|:---|---:|:---|---:|:---:|
++| cosine | `1e-3` | endpoint zero at 4,000 | **3,200** | yes |
++| step decay | `1e-3` | factor 0.1 after 2,000 and after 3,000 | **2,200** | yes |
++| inverse-time | `1e-3` | `tau=1000` | **NONE** | no |
++| plateau decay | `1e-3` | factor 0.5, `n=3` | **2,800** | yes |
++| step-decay extension | `3e-3` | same step shape | **2,300** | yes |
++
++[VERIFIED BY RUNNING CODE] Inverse-time passes three of four components at
++4,000 and still returns `NONE`. Its objective motion is **1.9460%** against a
++1% tolerance, an excess of **0.9460 percentage points** (or 0.009460 in the
++relative-motion quantity). Its R2, ordering, and top-1 motions are 0.005363,
++0.002967, and 0, within their unchanged 0.01, 0.005, and 0.005 tolerances.
++
++Loss and held-out metrics here are convergence diagnostics only. **No EE
++quantity was computed, and neither EE nor predictive-metric level selected
++anything.**
++
++## Parity gate
++
++[VERIFIED BY RUNNING CODE] Before fitting a decay schedule, a fresh
++constant-`1e-3` run reproduced HORIZON Arm A and the original LRSWEEP C3 cell
++exactly at every checkpoint from 0 through 500. Equality covered the training
++objective and the complete held-out metric dictionaries, not rounded display
++values.
++
++| update | objective | held-out R2 | ordering | top-1 |
++|---:|---:|---:|---:|---:|
++| 0 | 131.376445 | -2.555855 | 0.606666 | 0.000000 |
++| 100 | 2.144771 | 0.698493 | 0.552962 | 0.333333 |
++| 200 | 1.769994 | 0.677553 | 0.565035 | 0.250000 |
++| 300 | 1.545214 | 0.646160 | 0.560110 | 0.166667 |
++| 400 | 1.370980 | 0.618354 | 0.563186 | 0.166667 |
++| 500 | 1.248175 | 0.597967 | 0.532182 | 0.250000 |
++
++## Unchanged rule and schedule definitions
++
++[VERIFIED BY RUNNING CODE] At every destination cadence `k=100,...,4000`, the
++runner applied LRSWEEP's rule to `k-100 -> k`: objective relative absolute
++motion `<=0.01`, level-R2 absolute motion `<=0.01`, ordering absolute motion
++`<=0.005`, and top-1 absolute motion `<=0.005`. All four checks and finite
++objective/parameters were required together.
++
++[VERIFIED BY RUNNING CODE] All runs used C3, the twelve fixed LRSWEEP anchors
++and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU head, every other sealed
++Adam literal, full-batch gradient aggregation, and cadence 100.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] With one-indexed update `k` and
++`t=k-1`, the smooth schedules were:
++
++- cosine: `lr(t)=lr0*(1+cos(pi*t/4000))/2`, with the schedule endpoint set to
++  zero after update 4,000;
++- inverse-time: `lr(t)=lr0/(1+t/1000)`, hence `tau=1000`;
++- step: updates 1–2,000 at `lr0`, 2,001–3,000 at `0.1*lr0`, and 3,001–4,000
++  at `0.01*lr0`;
++- plateau: factor 0.5 after `n=3` consecutive cadence motions that do not set
++  a new best objective-motion value, with patience reset after each decay.
++
++[VERIFIED BY RUNNING CODE] Plateau decayed after updates 1,700, 2,200, 2,700,
++3,200, and 3,700, ending at `3.125e-5`. Decisions used the aggregate LOAO
++training objective and affected only subsequent updates.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] The mandated higher start was
++`3e-3`, the next higher rate in LRSWEEP's already-fixed grid. Step shape was
++assigned to that extension because its base run had the earliest
++first-admissible cadence under the frozen extension-ranking rule (2,200,
++versus plateau 2,800 and cosine 3,200; inverse-time was `NONE`). That assignment
++uses convergence timing only; it is not a predictive-quality or production
++selection. The extension first became admissible at 2,300, so increasing the
++start did not produce an earlier admissible cadence in this diagnostic.
++
++## Motions at the cap
++
++[VERIFIED BY RUNNING CODE] The last five objective motions are for destinations
++3,600, 3,700, 3,800, 3,900, and 4,000, respectively.
++
++| schedule | last five objective motions | loss at 3,900 | loss at 4,000 |
++|:---|:---|---:|---:|
++| cosine `1e-3` | 0.3233%, 0.2058%, 0.1093%, 0.0430%, 0.0067% | 0.377309 | 0.377284 |
++| step `1e-3` | 0.0878%, 0.0910%, 0.0952%, 0.0978%, 0.1021% | 0.437017 | 0.436571 |
++| inverse-time `1e-3` | 2.0713%, 2.0488%, 1.9798%, 1.8231%, 1.9460% | 0.414423 | 0.406359 |
++| plateau `1e-3` | 0.5704%, 0.5846%, 0.3181%, 0.3153%, 0.3251% | 0.398286 | 0.396991 |
++| step `3e-3` extension | 0.1054%, 0.1093%, 0.1143%, 0.1205%, 0.1249% | 0.469897 | 0.469310 |
++
++[VERIFIED BY RUNNING CODE] At each admissible schedule's first passing
++cadence, the four motions were:
++
++| schedule | update | objective | R2 | ordering | top-1 |
++|:---|---:|---:|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.9866% | 0.000439 | 0.000042 | 0 |
++| step `1e-3` | 2,200 | 0.4939% | 0.001951 | 0.000378 | 0 |
++| plateau `1e-3` | 2,800 | 0.8965% | 0.003735 | 0.000436 | 0 |
++| step `3e-3` extension | 2,300 | 0.6858% | 0.000965 | 0.000368 | 0 |
++
++## Wall time and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall seconds per 100 updates are end-to-end cap
++wall divided by 40 for the complete twelve-fold, one-seed diagnostic. The
++cadence-timed means differ by less than 0.001 s from the displayed values.
++
++| schedule | cap wall | wall s/100 updates |
++|:---|---:|---:|
++| cosine `1e-3` | 328.47 s | 8.212 |
++| step `1e-3` | 282.28 s | 7.057 |
++| inverse-time `1e-3` | 288.04 s | 7.201 |
++| plateau `1e-3` | 287.35 s | 7.184 |
++| step `3e-3` extension | 306.44 s | 7.661 |
++
++[DERIVED ON PAPER] A `16 seeds x 5 arms` production set contains 80 C3 heads.
++The lower estimate uses mean update-only time per LOAO fold through the first
++admissible cadence. The upper estimate uses cumulative end-to-end per-fold
++time through that cadence and multiplies by `12/11` for production training
++on all twelve anchors rather than each fold's eleven. Both assume serial
++single-thread execution, the same dimensions, no shared-head speedup, and
++negligible orchestration/serialization.
++
++| admissible schedule | first update | production CPU-hours | updates versus current 500 |
++|:---|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.47–0.55 | 6.4x |
++| step `1e-3` | 2,200 | 0.28–0.32 | 4.4x |
++| plateau `1e-3` | 2,800 | 0.36–0.40 | 5.6x |
++| step `3e-3` extension | 2,300 | 0.32–0.35 | 4.6x |
++
++[DERIVED ON PAPER] Yes, four tested runs reach admissibility before 4,000, so
++stopping at the first admissible cadence is cheaper than taking those runs to
++the 4,000-update cap. **No tested schedule reaches admissibility by update
++500.** Therefore none is cheaper than the current 500-update configuration;
++the earliest requires 2,200 updates, or 4.4 times as many. Reaching before
++4,000 and being cheaper than 500 are not equivalent comparisons.
++
++## Interpretation
++
++[INFERRED] Decay is the first of the three tested optimization levers that
++makes the already-declared criterion reachable for this learner: three base
++schedule shapes and the required higher-start extension are admissible. The
++all-`NONE` consequence in the prompt therefore does not apply. This does not
++establish predictive superiority, an EE result, or a production choice.
++
++[INFERRED] Inverse-time with `tau=1000` remains under-decayed for the declared
++cap: its late objective motion stays near 2% while the three held-out motion
++checks pass. The rule is not relaxed, and the result remains `NONE`.
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] The parity, four-base-schedule, and higher-start
++invocations ran sequentially, never exceeding one diagnostic Python process.
++Each used only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 18,
++all named BLAS thread variables equal to one, and an address-space limit of
++3,221,225,471 bytes (one byte below 3 GiB). Progress printed as
++`update k/N`. The maximum measured peak across invocations was
++`PEAK_RSS_KB=86028` (about 84.0 MiB). No load pause or divergence occurred.
++
++[VERIFIED BY RUNNING CODE] Only the twelve filenames fixed in LRSWEEP were
++loaded. No evaluation-only claim date was discovered or read. All sealed
++source and C3 input hashes matched before and after every invocation;
++`changed_inputs` is empty. Nothing under `/home/sat/mcrl-leo-handover` was
++modified.
++
++Machine-readable results are in `.scratch/decay-schedule/parity.json`,
++`.scratch/decay-schedule/base-results.json`, and
++`.scratch/decay-schedule/higher-results.json`. The pre-run protocol is
++`.scratch/decay-schedule/spec.md`; the isolated runner is
++`.scratch/decay-schedule/run_decay.py`.
+
+codex
+Completed the diagnostic and wrote [DECAY-SCHEDULE-2026-09-10.md](/home/sat/mcrl-v025-decay-ws/DECAY-SCHEDULE-2026-09-10.md).
+
+Key result: parity reproduced exactly. First admissible updates were:
+
+- Step `1e-3`: 2,200
+- Step `3e-3`: 2,300
+- Plateau: 2,800
+- Cosine: 3,200
+- Inverse-time: `NONE`—objective motion remained 1.946% versus 1%
+
+All admissible schedules pass before 4,000, but none by 500; the earliest requires 4.4× the current update count. Estimated production costs range from 0.28–0.55 CPU-hours depending on schedule.
+
+No EE quantity was computed or used. Maximum peak RSS was 86,028 KiB; runs used one nice-18, single-threaded Python process with unchanged inputs.
+diff --git a/.scratch/decay-schedule/run_decay.py b/.scratch/decay-schedule/run_decay.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..2534131be32880b4288e433a88f18ce5bc997b51
+--- /dev/null
++++ b/.scratch/decay-schedule/run_decay.py
+@@ -0,0 +1,442 @@
++#!/usr/bin/env python3
++"""C3 decay-schedule convergence diagnostic; computes no EE quantity."""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++ROOT = Path("/home/sat/mcrl-v025-decay-ws")
++OUT = ROOT / ".scratch/decay-schedule"
++SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2-ws")
++SOURCE_RUNNER = SOURCE_ROOT / ".scratch/lr-convergence-sweep/run_sweep.py"
++SOURCE_SPEC = SOURCE_ROOT / ".scratch/lr-convergence-sweep/spec.md"
++SOURCE_RESULTS = SOURCE_ROOT / ".scratch/lr-convergence-sweep/results.json"
++SOURCE_LEARNER = SOURCE_ROOT / "src/mcrl/stagec_v025/learner.py"
++HORIZON_RESULTS = Path("/home/sat/mcrl-v025-horizon-ws/.scratch/horizon-lever/results.json")
++EXPECTED_PYTHON = Path("/home/sat/mcrl-leo-handover/.venv/bin/python").resolve()
++THREAD_ENV = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++RSS_LIMIT_BYTES = 3 * 1024**3 - 1
++MAX_UPDATES = 4000
++CADENCE = 100
++BASE_LR = 1e-3
++HIGHER_LR = 3e-3
++TAU = 1000
++PLATEAU_N = 3
++SCHEDULE_ORDER = ("cosine", "step", "inverse_time_tau1000", "plateau_n3")
++EXPECTED_HASHES = {
++    str(SOURCE_RUNNER): "dde9a8e93a54d67dbe601a47465e47108fb27f57e5b7d9213cf3a8a1a0300fc6",
++    str(SOURCE_SPEC): "0484ffbf3ea2447e0bb0067a8067739c069c1550d48dc0629b9fbf3af20f9b19",
++    str(SOURCE_RESULTS): "9424c6d8c00906e5b86f9ed9d00e4c8b2e8a8bd3a598f3f61677c6eafaf84861",
++    str(SOURCE_LEARNER): "09fc781b273f42fce3913c57150187a18f05b100155027c53e023abae3f46a01",
++    str(HORIZON_RESULTS): "b05fed675d137b95cefffcad745fda1a67cdffc816f3ba3d7f43b08cd0ff7c62",
++}
++
++
++class LoadPause(RuntimeError):
++    pass
++
++
++def file_sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as stream:
++        for block in iter(lambda: stream.read(1 << 20), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def atomic_json(path: Path, payload: object) -> None:
++    temporary = path.with_suffix(path.suffix + ".tmp")
++    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
++    temporary.replace(path)
++
++
++def verify_runtime() -> None:
++    if Path(sys.executable).resolve() != EXPECTED_PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    wrong = {name: os.environ.get(name) for name in THREAD_ENV if os.environ.get(name) != "1"}
++    if wrong:
++        raise RuntimeError(f"BLAS/thread environment not pinned: {wrong}")
++    if os.getpriority(os.PRIO_PROCESS, 0) != 18:
++        raise RuntimeError(f"process niceness is not 18: {os.getpriority(os.PRIO_PROCESS, 0)}")
++    actual = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    if actual != EXPECTED_HASHES:
++        raise RuntimeError(f"sealed source hash mismatch: {actual}")
++
++
++def load_average() -> float:
++    return float(Path("/proc/loadavg").read_text(encoding="ascii").split()[0])
++
++
++def guard_load() -> float:
++    value = load_average()
++    if value > 30.0:
++        raise LoadPause(f"one-minute load average {value:.2f} exceeds 30")
++    return value
++
++
++def import_sweep():
++    sys.path.insert(0, str(SOURCE_ROOT / "src"))
++    spec = importlib.util.spec_from_file_location("sealed_lr_sweep", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load sealed LRSWEEP harness")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    resource.setrlimit(resource.RLIMIT_AS, (RSS_LIMIT_BYTES, RSS_LIMIT_BYTES))
++    return module
++
++
++def checkpoint(sweep, heads, data):
++    predictions = []
++    objectives = []
++    norms = []
++    for fold_index, (head, test) in enumerate(zip(heads, data.anchors, strict=True)):
++        train = tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        loss, count = sweep.c3_loss(head, train)
++        if not math.isfinite(loss) or not sweep.parameters_finite(head):
++            raise RuntimeError(f"non-finite state at fold {fold_index + 1}")
++        prediction = sweep.np.zeros_like(test.truth)
++        prediction[test.train_indices] = head._forward(test.x)[0]
++        predictions.append(prediction)
++        objectives.append((loss, count))
++        norms.append(sweep.parameter_norm(head))
++    weighted = sum(value * count for value, count in objectives) / sum(count for _, count in objectives)
++    return {
++        "training_objective": float(weighted),
++        "held_out": sweep.c3_metric(predictions, data.anchors),
++        "parameter_l2": sweep.summarize(norms),
++    }
++
++
++def stability(sweep, left: dict[str, object], right: dict[str, object]) -> dict[str, object]:
++    changes = {
++        "objective_relative_abs": abs(right["training_objective"] - left["training_objective"])
++        / max(abs(left["training_objective"]), 1e-12),
++        "r2_absolute": abs(right["held_out"]["r2"] - left["held_out"]["r2"]),
++        "pairwise_ordering_absolute": abs(
++            right["held_out"]["pairwise_ordering"] - left["held_out"]["pairwise_ordering"]
++        ),
++        "top1_accuracy_absolute": abs(
++            right["held_out"]["top1_accuracy"] - left["held_out"]["top1_accuracy"]
++        ),
++    }
++    passed = {
++        "objective": changes["objective_relative_abs"] <= sweep.STABILITY_TOLERANCES["objective_relative"],
++        "r2": changes["r2_absolute"] <= sweep.STABILITY_TOLERANCES["r2_absolute"],
++        "pairwise_ordering": changes["pairwise_ordering_absolute"]
++        <= sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        "top1_accuracy": changes["top1_accuracy_absolute"]
++        <= sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    }
++    return {"changes": changes, "passed": passed, "admissible": all(passed.values())}
++
++
++def scheduled_lr(name: str, start_lr: float, update: int, plateau_lr: float) -> float:
++    t = update - 1
++    if name == "constant":
++        return start_lr
++    if name == "cosine":
++        return start_lr * (1.0 + math.cos(math.pi * t / MAX_UPDATES)) / 2.0
++    if name == "step":
++        return start_lr * (1.0 if update <= 2000 else 0.1 if update <= 3000 else 0.01)
++    if name == "inverse_time_tau1000":
++        return start_lr / (1.0 + t / TAU)
++    if name == "plateau_n3":
++        return plateau_lr
++    raise ValueError(name)
++
++
++def run_schedule(sweep, data, name: str, start_lr: float, maximum_updates: int,
++                 progress: list[int], total_work: int) -> dict[str, object]:
++    literal = dict(sweep.LEGACY_TRAINER_LITERALS["C3"])
++    literal["learning_rate"] = start_lr
++    heads = [
++        sweep.AdamMLPHead.create(
++            anchor.x.shape[1], literal, sweep.np.random.default_rng(sweep.SEED)
++        )
++        for anchor in data.anchors
++    ]
++    trains = [
++        tuple(anchor for index, anchor in enumerate(data.anchors) if index != fold_index)
++        for fold_index in range(len(data.anchors))
++    ]
++    trajectory = {"0": checkpoint(sweep, heads, data)}
++    checks = {}
++    lr_trace = {"0": start_lr}
++    first_admissible = None
++    cadence_total = []
++    cadence_update = []
++    cadence_checkpoint = []
++    cumulative_total = []
++    running_total = 0.0
++    observed_load = [guard_load()]
++    plateau_lr = start_lr
++    plateau_best = None
++    plateau_stale = 0
++    plateau_events = []
++    started = time.perf_counter()
++
++    for cadence_end in range(CADENCE, maximum_updates + 1, CADENCE):
++        cadence_started = time.perf_counter()
++        update_elapsed = 0.0
++        for update in range(cadence_end - CADENCE + 1, cadence_end + 1):
++            lr = scheduled_lr(name, start_lr, update, plateau_lr)
++            for fold_index, head in enumerate(heads):
++                head.learning_rate = lr
++                update_started = time.perf_counter()
++                with sweep.np.errstate(all="ignore"):
++                    loss_before = sweep.c3_update(head, trains[fold_index])
++                update_elapsed += time.perf_counter() - update_started
++                if not math.isfinite(loss_before) or not sweep.parameters_finite(head):
++                    raise RuntimeError(
++                        f"schedule {name} lr {start_lr} fold {fold_index + 1} "
++                        f"diverged at update {update}"
++                    )
++        checkpoint_started = time.perf_counter()
++        point = checkpoint(sweep, heads, data)
++        checkpoint_elapsed = time.perf_counter() - checkpoint_started
++        trajectory[str(cadence_end)] = point
++        check = stability(sweep, trajectory[str(cadence_end - CADENCE)], point)
++        checks[str(cadence_end)] = check
++        if first_admissible is None and check["admissible"]:
++            first_admissible = cadence_end
++
++        if name == "plateau_n3":
++            motion = check["changes"]["objective_relative_abs"]
++            if plateau_best is None or motion < plateau_best:
++                plateau_best = motion
++                plateau_stale = 0
++            else:
++                plateau_stale += 1
++                if plateau_stale >= PLATEAU_N:
++                    old_lr = plateau_lr
++                    plateau_lr *= 0.5
++                    plateau_events.append({
++                        "after_update": cadence_end, "old_lr": old_lr,
++                        "new_lr": plateau_lr, "trigger_motion": motion,
++                    })
++                    plateau_best = motion
++                    plateau_stale = 0
++        lr_trace[str(cadence_end)] = (
++            0.0 if name == "cosine" and cadence_end == MAX_UPDATES
++            else plateau_lr if name == "plateau_n3"
++            else scheduled_lr(name, start_lr, cadence_end, plateau_lr)
++        )
++        total_elapsed = time.perf_counter() - cadence_started
++        cadence_total.append(total_elapsed)
++        cadence_update.append(update_elapsed)
++        cadence_checkpoint.append(checkpoint_elapsed)
++        running_total += total_elapsed
++        cumulative_total.append(running_total)
++        progress[0] += CADENCE * len(heads)
++        current_load = load_average()
++        observed_load.append(current_load)
++        print(
++            f"update {progress[0]}/{total_work} schedule={name} start_lr={start_lr:g} "
++            f"destination={cadence_end}/{maximum_updates} load1={current_load:.2f}",
++            flush=True,
++        )
++        if current_load > 30.0:
++            raise LoadPause(f"one-minute load average {current_load:.2f} exceeds 30")
++
++    return {
++        "schedule": name,
++        "starting_learning_rate": start_lr,
++        "maximum_updates": maximum_updates,
++        "trajectory": trajectory,
++        "cadence_checks": checks,
++        "first_admissible_update": first_admissible,
++        "learning_rate_at_cadence": lr_trace,
++        "plateau_events": plateau_events,
++        "wall_s": time.perf_counter() - started,
++        "timing": {
++            "total_s_per_100_updates_across_12_loao_folds": cadence_total,
++            "update_only_s_per_100_updates_across_12_loao_folds": cadence_update,
++            "checkpoint_s_per_100_updates_across_12_loao_folds": cadence_checkpoint,
++            "cumulative_total_s_across_12_loao_folds": cumulative_total,
++            "mean_total_s_per_100_updates_across_12_loao_folds": sum(cadence_total) / len(cadence_total),
++            "mean_update_only_s_per_100_updates_across_12_loao_folds": sum(cadence_update) / len(cadence_update),
++        },
++        "maximum_observed_load1": max(observed_load),
++    }
++
++
++def source_state(sweep, data):
++    fixed = {path: file_sha256(Path(path)) for path in EXPECTED_HASHES}
++    inputs = {str(anchor.path): file_sha256(anchor.path) for anchor in data.anchors}
++    return fixed, inputs
++
++
++def common_result(sweep, data, started, initial_load, before, inputs_before):
++    after, inputs_after = source_state(sweep, data)
++    changed = [path for path in (*before, *inputs_before)
++               if (before | inputs_before)[path] != (after | inputs_after)[path]]
++    peak_kb = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
++    if peak_kb * 1024 >= 3 * 1024**3:
++        raise RuntimeError(f"peak RSS cap exceeded: {peak_kb} KiB")
++    return {
++        "schema": "mcrl-v025-decay-schedule-diagnostic-v1",
++        "status": "DIAGNOSTIC_NOT_CLAIM",
++        "route": "C3",
++        "model_seed_domain": "V025_LEARNER/seed/1",
++        "model_seed": sweep.SEED,
++        "cadence_updates": CADENCE,
++        "stability_tolerances": sweep.STABILITY_TOLERANCES,
++        "inventory": {
++            "anchors": len(data.anchors),
++            "rows": sum(anchor.truth.size for anchor in data.anchors),
++            "trainable_rows": sum(anchor.train_indices.size for anchor in data.anchors),
++            "input_files": [str(anchor.path) for anchor in data.anchors],
++        },
++        "schedule_parameters": {"tau": TAU, "plateau_n": PLATEAU_N},
++        "scope": {
++            "diagnostic_not_claim": True, "ee_quantities_computed": False,
++            "selection_on_ee": False, "selection_on_predictive_levels": False,
++            "metrics_use": "convergence diagnostics only; never evidence about EE",
++        },
++        "resource_policy": {
++            "python_processes": 1, "nice": os.getpriority(os.PRIO_PROCESS, 0),
++            "blas_threads": 1, "rlimit_as_bytes": resource.getrlimit(resource.RLIMIT_AS)[0],
++            "peak_rss_kb": peak_kb, "initial_load1": initial_load,
++            "final_load1": load_average(), "elapsed_wall_s": time.perf_counter() - started,
++        },
++        "source_sha256_before": before, "source_sha256_after": after,
++        "c3_input_sha256_before": inputs_before, "c3_input_sha256_after": inputs_after,
++        "changed_inputs": changed,
++    }
++
++
++def original_c3_cell():
++    payload = json.loads(SOURCE_RESULTS.read_text(encoding="utf-8"))
++    return next(cell for cell in payload["cells"]
++                if cell["route"] == "C3" and cell["learning_rate"] == BASE_LR)
++
++
++def parity(sweep, data, started, initial_load, before, inputs_before):
++    progress = [0]
++    run = run_schedule(
++        sweep, data, "constant", BASE_LR, 500, progress,
++        len(data.anchors) * 500,
++    )
++    horizon = json.loads(HORIZON_RESULTS.read_text(encoding="utf-8"))["arms"]["A"]
++    lrsweep = original_c3_cell()
++    comparisons = {}
++    for update in range(0, 501, CADENCE):
++        key = str(update)
++        fields = ("training_objective", "held_out")
++        comparisons[key] = {
++            "horizon_exact": all(run["trajectory"][key][field] == horizon["trajectory"][key][field]
++                                 for field in fields),
++            "lrsweep_exact": all(run["trajectory"][key][field] == lrsweep["trajectory"][key][field]
++                                 for field in fields),
++        }
++    reproduced = all(all(value.values()) for value in comparisons.values())
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "parity", "run": run, "comparisons": comparisons,
++                   "parity_reproduced": reproduced})
++    atomic_json(OUT / "parity.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "parity.json"),
++                      "parity_reproduced": reproduced}), flush=True)
++    if not reproduced:
++        raise RuntimeError("HORIZON Arm A parity failed; stop before schedules")
++
++
++def cap_tolerance_score(sweep, run):
++    check = run["cadence_checks"][str(MAX_UPDATES)]
++    changes = check["changes"]
++    ratios = (
++        changes["objective_relative_abs"] / sweep.STABILITY_TOLERANCES["objective_relative"],
++        changes["r2_absolute"] / sweep.STABILITY_TOLERANCES["r2_absolute"],
++        changes["pairwise_ordering_absolute"] / sweep.STABILITY_TOLERANCES["pairwise_ordering_absolute"],
++        changes["top1_accuracy_absolute"] / sweep.STABILITY_TOLERANCES["top1_accuracy_absolute"],
++    )
++    return max(ratios)
++
++
++def select_extension_shape(sweep, runs):
++    ranked = []
++    for index, name in enumerate(SCHEDULE_ORDER):
++        run = runs[name]
++        first = run["first_admissible_update"]
++        key = (0, first, index) if first is not None else (1, cap_tolerance_score(sweep, run), index)
++        ranked.append((key, name))
++    ranked.sort()
++    return ranked[0][1], [{"schedule": name, "ranking_key": list(key)} for key, name in ranked]
++
++
++def base(sweep, data, started, initial_load, before, inputs_before):
++    parity_result = json.loads((OUT / "parity.json").read_text(encoding="utf-8"))
++    if not parity_result.get("parity_reproduced"):
++        raise RuntimeError("verified parity artifact is absent or failed")
++    progress = [0]
++    total = len(SCHEDULE_ORDER) * len(data.anchors) * MAX_UPDATES
++    runs = {name: run_schedule(sweep, data, name, BASE_LR, MAX_UPDATES, progress, total)
++            for name in SCHEDULE_ORDER}
++    shape, ranking = select_extension_shape(sweep, runs)
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "base", "parity_reproduced": True, "runs": runs,
++                   "extension_shape": shape, "extension_ranking": ranking})
++    atomic_json(OUT / "base-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "base-results.json"),
++                      "extension_shape": shape}), flush=True)
++
++
++def higher(sweep, data, started, initial_load, before, inputs_before):
++    base_result = json.loads((OUT / "base-results.json").read_text(encoding="utf-8"))
++    if not base_result.get("parity_reproduced"):
++        raise RuntimeError("base result does not carry successful parity")
++    expected_shape, ranking = select_extension_shape(sweep, base_result["runs"])
++    if expected_shape != base_result["extension_shape"]:
++        raise RuntimeError("extension shape selection drifted")
++    progress = [0]
++    run = run_schedule(
++        sweep, data, expected_shape, HIGHER_LR, MAX_UPDATES, progress,
++        len(data.anchors) * MAX_UPDATES,
++    )
++    result = common_result(sweep, data, started, initial_load, before, inputs_before)
++    result.update({"mode": "higher", "parity_reproduced": True,
++                   "extension_shape": expected_shape, "extension_ranking": ranking,
++                   "run": run})
++    atomic_json(OUT / "higher-results.json", result)
++    print(f"PEAK_RSS_KB={result['resource_policy']['peak_rss_kb']}", flush=True)
++    print(json.dumps({"written": str(OUT / "higher-results.json"),
++                      "extension_shape": expected_shape}), flush=True)
++
++
++def main() -> None:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("mode", choices=("parity", "base", "higher"))
++    args = parser.parse_args()
++    OUT.mkdir(parents=True, exist_ok=True)
++    verify_runtime()
++    initial_load = guard_load()
++    sweep = import_sweep()
++    verify_runtime()
++    data = sweep.load_c3()
++    before, inputs_before = source_state(sweep, data)
++    started = time.perf_counter()
++    if args.mode == "parity":
++        parity(sweep, data, started, initial_load, before, inputs_before)
++    elif args.mode == "base":
++        base(sweep, data, started, initial_load, before, inputs_before)
++    else:
++        higher(sweep, data, started, initial_load, before, inputs_before)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/.scratch/decay-schedule/spec.md b/.scratch/decay-schedule/spec.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..c1e9562db0b10b3e97dd58216f34fdc84eec34cb
+--- /dev/null
++++ b/.scratch/decay-schedule/spec.md
+@@ -0,0 +1,64 @@
++# DECAY schedule diagnostic protocol — 2026-09-10
++
++`DIAGNOSTIC_NOT_CLAIM`. This protocol is fixed before any fit in this
++workspace. The diagnostic computes no EE quantity and makes no selection on
++EE or on predictive-metric levels.
++
++## Fixed source and design
++
++- Import and reuse LRSWEEP's runner, rule, and results without modification:
++  `/home/sat/mcrl-v025-c1c2-ws/.scratch/lr-convergence-sweep/run_sweep.py`,
++  `spec.md`, and `results.json`.
++- C3 only; the twelve filenames hard-coded by LRSWEEP; identical LOAO folds;
++  model seed `V025_LEARNER/seed/1` (`6407676579069309528`); sealed `(64,64)`
++  ReLU head and every sealed Adam literal except the scheduled learning rate;
++  deterministic full-batch aggregation; 4,000-update cap; cadence 100.
++- Before schedule fitting, reproduce HORIZON Arm A's constant-`1e-3`
++  trajectory at updates 0, 100, ..., 500. Stop on any inequality.
++- At every destination cadence `k`, apply LRSWEEP's unchanged rule to
++  `k-100 -> k`: objective relative absolute motion `<=0.01`; held-out level
++  R2 absolute motion `<=0.01`; ordering absolute motion `<=0.005`; top-1
++  absolute motion `<=0.005`. All four and finite state are required.
++
++## Schedule semantics fixed before fitting
++
++Let optimizer updates be one-indexed as `k=1,...,4000`. Smooth schedules use
++`t=k-1`, so the first update uses the declared starting rate.
++
++1. `cosine`: `lr(t)=lr0*(1+cos(pi*t/4000))/2`; the schedule endpoint after
++   update 4,000 is exactly zero (the last applied update rate is the value at
++   `t=3999`).
++2. `step`: updates 1–2,000 use `lr0`; updates 2,001–3,000 use `0.1*lr0`;
++   updates 3,001–4,000 use `0.01*lr0`.
++3. `inverse_time_tau1000`: `lr(t)=lr0/(1+t/1000)`, so `tau=1000` updates.
++4. `plateau_n3`: start at `lr0`. At each cadence, compute the aggregate LOAO
++   objective's absolute relative motion. The first motion establishes the
++   best value. A later strictly smaller motion is an improvement and resets
++   the non-improvement count. After `n=3` consecutive non-improving cadences,
++   multiply the rate by 0.5 for subsequent updates, reset the count, and use
++   the triggering motion as the new post-decay best. Decisions occur only
++   after the checkpoint, never retroactively.
++
++The four base schedules start at `lr0=1e-3`. One extension starts at `3e-3`,
++the next higher rate already present in LRSWEEP's fixed grid. Its shape is
++chosen from the four base runs by this diagnostic-only ordering:
++
++1. schedules that become admissible precede schedules that do not;
++2. among admissible schedules, earlier first-admissible update precedes later;
++3. otherwise, smaller maximum cap tolerance ratio across the four unchanged
++   rule components precedes larger;
++4. exact ties use the declared order above.
++
++This ordering exists only to assign the mandated higher-start extension. It
++does not select a production schedule and does not use predictive levels.
++
++## Resources and scope
++
++- One Python process, `/home/sat/mcrl-leo-handover/.venv/bin/python` only,
++  niceness 18, all named BLAS thread variables one, address-space limit one
++  byte below 3 GiB, and measured peak RSS below 3 GiB.
++- Print progress as `update k/N` and print peak RSS. Pause if one-minute load
++  exceeds 30 at a cadence boundary.
++- Read only LRSWEEP's twelve named development anchors. Do not discover or
++  read evaluation-only claim dates. Do not compute production, policy,
++  acceptance, or EE quantities.
+diff --git a/DECAY-SCHEDULE-2026-09-10.md b/DECAY-SCHEDULE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..b58714afad4bbe9c59a86180dd5aeda7712c5748
+--- /dev/null
++++ b/DECAY-SCHEDULE-2026-09-10.md
+@@ -0,0 +1,176 @@
++**Parity with HORIZON Arm A reproduced exactly; first admissible updates were cosine `1e-3`: 3,200, step `1e-3`: 2,200, inverse-time (`tau=1000`) `1e-3`: `NONE`, plateau (`n=3`) `1e-3`: 2,800, and the step `3e-3` extension: 2,300; estimated `16 seeds x 5 arms` costs for the admissible schedules are cosine `0.47–0.55`, step `1e-3` `0.28–0.32`, plateau `0.36–0.40`, and step `3e-3` `0.32–0.35` CPU-hours.**
++
++`DIAGNOSTIC_NOT_CLAIM` — development material only.
++
++## Answer
++
++[VERIFIED BY RUNNING CODE] Three of the four schedules starting at the current
++`1e-3` literal reached the unchanged convergence criterion before the
++4,000-update cap. The required higher-start extension also reached it.
++Inverse-time did not. These are all the admissible schedules; this diagnostic
++does not name a winner or select a production schedule.
++
++| schedule | starting rate | fixed parameter | first admissible update | all four checks at cap |
++|:---|---:|:---|---:|:---:|
++| cosine | `1e-3` | endpoint zero at 4,000 | **3,200** | yes |
++| step decay | `1e-3` | factor 0.1 after 2,000 and after 3,000 | **2,200** | yes |
++| inverse-time | `1e-3` | `tau=1000` | **NONE** | no |
++| plateau decay | `1e-3` | factor 0.5, `n=3` | **2,800** | yes |
++| step-decay extension | `3e-3` | same step shape | **2,300** | yes |
++
++[VERIFIED BY RUNNING CODE] Inverse-time passes three of four components at
++4,000 and still returns `NONE`. Its objective motion is **1.9460%** against a
++1% tolerance, an excess of **0.9460 percentage points** (or 0.009460 in the
++relative-motion quantity). Its R2, ordering, and top-1 motions are 0.005363,
++0.002967, and 0, within their unchanged 0.01, 0.005, and 0.005 tolerances.
++
++Loss and held-out metrics here are convergence diagnostics only. **No EE
++quantity was computed, and neither EE nor predictive-metric level selected
++anything.**
++
++## Parity gate
++
++[VERIFIED BY RUNNING CODE] Before fitting a decay schedule, a fresh
++constant-`1e-3` run reproduced HORIZON Arm A and the original LRSWEEP C3 cell
++exactly at every checkpoint from 0 through 500. Equality covered the training
++objective and the complete held-out metric dictionaries, not rounded display
++values.
++
++| update | objective | held-out R2 | ordering | top-1 |
++|---:|---:|---:|---:|---:|
++| 0 | 131.376445 | -2.555855 | 0.606666 | 0.000000 |
++| 100 | 2.144771 | 0.698493 | 0.552962 | 0.333333 |
++| 200 | 1.769994 | 0.677553 | 0.565035 | 0.250000 |
++| 300 | 1.545214 | 0.646160 | 0.560110 | 0.166667 |
++| 400 | 1.370980 | 0.618354 | 0.563186 | 0.166667 |
++| 500 | 1.248175 | 0.597967 | 0.532182 | 0.250000 |
++
++## Unchanged rule and schedule definitions
++
++[VERIFIED BY RUNNING CODE] At every destination cadence `k=100,...,4000`, the
++runner applied LRSWEEP's rule to `k-100 -> k`: objective relative absolute
++motion `<=0.01`, level-R2 absolute motion `<=0.01`, ordering absolute motion
++`<=0.005`, and top-1 absolute motion `<=0.005`. All four checks and finite
++objective/parameters were required together.
++
++[VERIFIED BY RUNNING CODE] All runs used C3, the twelve fixed LRSWEEP anchors
++and identical LOAO folds, model seed `V025_LEARNER/seed/1`
++(`6407676579069309528`), the sealed `(64,64)` ReLU head, every other sealed
++Adam literal, full-batch gradient aggregation, and cadence 100.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] With one-indexed update `k` and
++`t=k-1`, the smooth schedules were:
++
++- cosine: `lr(t)=lr0*(1+cos(pi*t/4000))/2`, with the schedule endpoint set to
++  zero after update 4,000;
++- inverse-time: `lr(t)=lr0/(1+t/1000)`, hence `tau=1000`;
++- step: updates 1–2,000 at `lr0`, 2,001–3,000 at `0.1*lr0`, and 3,001–4,000
++  at `0.01*lr0`;
++- plateau: factor 0.5 after `n=3` consecutive cadence motions that do not set
++  a new best objective-motion value, with patience reset after each decay.
++
++[VERIFIED BY RUNNING CODE] Plateau decayed after updates 1,700, 2,200, 2,700,
++3,200, and 3,700, ending at `3.125e-5`. Decisions used the aggregate LOAO
++training objective and affected only subsequent updates.
++
++[DERIVED ON PAPER, FIXED BEFORE RUNNING] The mandated higher start was
++`3e-3`, the next higher rate in LRSWEEP's already-fixed grid. Step shape was
++assigned to that extension because its base run had the earliest
++first-admissible cadence under the frozen extension-ranking rule (2,200,
++versus plateau 2,800 and cosine 3,200; inverse-time was `NONE`). That assignment
++uses convergence timing only; it is not a predictive-quality or production
++selection. The extension first became admissible at 2,300, so increasing the
++start did not produce an earlier admissible cadence in this diagnostic.
++
++## Motions at the cap
++
++[VERIFIED BY RUNNING CODE] The last five objective motions are for destinations
++3,600, 3,700, 3,800, 3,900, and 4,000, respectively.
++
++| schedule | last five objective motions | loss at 3,900 | loss at 4,000 |
++|:---|:---|---:|---:|
++| cosine `1e-3` | 0.3233%, 0.2058%, 0.1093%, 0.0430%, 0.0067% | 0.377309 | 0.377284 |
++| step `1e-3` | 0.0878%, 0.0910%, 0.0952%, 0.0978%, 0.1021% | 0.437017 | 0.436571 |
++| inverse-time `1e-3` | 2.0713%, 2.0488%, 1.9798%, 1.8231%, 1.9460% | 0.414423 | 0.406359 |
++| plateau `1e-3` | 0.5704%, 0.5846%, 0.3181%, 0.3153%, 0.3251% | 0.398286 | 0.396991 |
++| step `3e-3` extension | 0.1054%, 0.1093%, 0.1143%, 0.1205%, 0.1249% | 0.469897 | 0.469310 |
++
++[VERIFIED BY RUNNING CODE] At each admissible schedule's first passing
++cadence, the four motions were:
++
++| schedule | update | objective | R2 | ordering | top-1 |
++|:---|---:|---:|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.9866% | 0.000439 | 0.000042 | 0 |
++| step `1e-3` | 2,200 | 0.4939% | 0.001951 | 0.000378 | 0 |
++| plateau `1e-3` | 2,800 | 0.8965% | 0.003735 | 0.000436 | 0 |
++| step `3e-3` extension | 2,300 | 0.6858% | 0.000965 | 0.000368 | 0 |
++
++## Wall time and production extrapolation
++
++[VERIFIED BY RUNNING CODE] Wall seconds per 100 updates are end-to-end cap
++wall divided by 40 for the complete twelve-fold, one-seed diagnostic. The
++cadence-timed means differ by less than 0.001 s from the displayed values.
++
++| schedule | cap wall | wall s/100 updates |
++|:---|---:|---:|
++| cosine `1e-3` | 328.47 s | 8.212 |
++| step `1e-3` | 282.28 s | 7.057 |
++| inverse-time `1e-3` | 288.04 s | 7.201 |
++| plateau `1e-3` | 287.35 s | 7.184 |
++| step `3e-3` extension | 306.44 s | 7.661 |
++
++[DERIVED ON PAPER] A `16 seeds x 5 arms` production set contains 80 C3 heads.
++The lower estimate uses mean update-only time per LOAO fold through the first
++admissible cadence. The upper estimate uses cumulative end-to-end per-fold
++time through that cadence and multiplies by `12/11` for production training
++on all twelve anchors rather than each fold's eleven. Both assume serial
++single-thread execution, the same dimensions, no shared-head speedup, and
++negligible orchestration/serialization.
++
++| admissible schedule | first update | production CPU-hours | updates versus current 500 |
++|:---|---:|---:|---:|
++| cosine `1e-3` | 3,200 | 0.47–0.55 | 6.4x |
++| step `1e-3` | 2,200 | 0.28–0.32 | 4.4x |
++| plateau `1e-3` | 2,800 | 0.36–0.40 | 5.6x |
++| step `3e-3` extension | 2,300 | 0.32–0.35 | 4.6x |
++
++[DERIVED ON PAPER] Yes, four tested runs reach admissibility before 4,000, so
++stopping at the first admissible cadence is cheaper than taking those runs to
++the 4,000-update cap. **No tested schedule reaches admissibility by update
++500.** Therefore none is cheaper than the current 500-update configuration;
++the earliest requires 2,200 updates, or 4.4 times as many. Reaching before
++4,000 and being cheaper than 500 are not equivalent comparisons.
++
++## Interpretation
++
++[INFERRED] Decay is the first of the three tested optimization levers that
++makes the already-declared criterion reachable for this learner: three base
++schedule shapes and the required higher-start extension are admissible. The
++all-`NONE` consequence in the prompt therefore does not apply. This does not
++establish predictive superiority, an EE result, or a production choice.
++
++[INFERRED] Inverse-time with `tau=1000` remains under-decayed for the declared
++cap: its late objective motion stays near 2% while the three held-out motion
++checks pass. The rule is not relaxed, and the result remains `NONE`.
++
++## Execution and integrity record
++
++[VERIFIED BY RUNNING CODE] The parity, four-base-schedule, and higher-start
++invocations ran sequentially, never exceeding one diagnostic Python process.
++Each used only `/home/sat/mcrl-leo-handover/.venv/bin/python`, niceness 18,
++all named BLAS thread variables equal to one, and an address-space limit of
++3,221,225,471 bytes (one byte below 3 GiB). Progress printed as
++`update k/N`. The maximum measured peak across invocations was
++`PEAK_RSS_KB=86028` (about 84.0 MiB). No load pause or divergence occurred.
++
++[VERIFIED BY RUNNING CODE] Only the twelve filenames fixed in LRSWEEP were
++loaded. No evaluation-only claim date was discovered or read. All sealed
++source and C3 input hashes matched before and after every invocation;
++`changed_inputs` is empty. Nothing under `/home/sat/mcrl-leo-handover` was
++modified.
++
++Machine-readable results are in `.scratch/decay-schedule/parity.json`,
++`.scratch/decay-schedule/base-results.json`, and
++`.scratch/decay-schedule/higher-results.json`. The pre-run protocol is
++`.scratch/decay-schedule/spec.md`; the isolated runner is
++`.scratch/decay-schedule/run_decay.py`.
+
+tokens used
+152,541

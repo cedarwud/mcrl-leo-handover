@@ -7540,3 +7540,2416 @@ exec
 3	100	BASE:nearest-eligible	CFG:0:62045:55;1:62045:64;2:61002:63;3:57502:37;4:57502:38;5:62045:64;6:65028:44;7:62045:43;8:57502:60;9:61002:67;10:61002:63;11:57502:26;12:61002:51;13:65028:21;14:63319:39;15:61002:63;16:57502:61;17:57502:60;18:57502:48;19:62045:54;20:62045:27;21:57502:37;22:62045:42;23:62045:16;24:62045:31;25:62045:39;26:57502:59;27:65028:55;28:62045:27;29:62045:67;30:62045:65;31:62045:67;32:62045:16;33:57502:59;34:62045:55;35:61002:62;36:63319:51;37:61002:51;38:62045:30;39:57502:38;40:62045:28;41:62045:64;42:62045:19;43:62045:19;44:62045:30;45:62045:29;46:61002:62;47:57502:37;48:62045:29;49:62045:66;50:57502:36;51:61002:61;52:63319:38;53:57502:47;54:65028:32;55:57502:49;56:62045:18;57:57502:24;58:65028:55;59:62045:53;60:57502:26;61:57502:60;62:62045:39;63:62045:27;64:57502:49;65:62045:30;66:57502:38;67:62045:18;68:62045:42;69:57502:25;70:61002:63;71:61002:61;72:62045:30;73:62045:30;74:62045:19;75:57502:25;76:57502:59;77:65028:42;78:65028:21;79:63319:61;80:57502:15;81:63319:15;82:57502:37;83:62045:43;84:62045:42;85:57502:48;86:65028:44;87:62045:16;88:61002:62;89:57502:37;90:65028:43;91:57502:36;92:57502:61;93:62045:52;94:62045:40;95:57502:26;96:62045:52;97:62045:65;98:61002:62;99:57502:14
 4	100	BASE:stay-if-possible	CFG:0:62045:55;1:62045:64;2:61002:63;3:57502:37;4:57502:38;5:62045:64;6:65028:44;7:62045:43;8:57502:60;9:61002:67;10:61002:63;11:57502:26;12:61002:51;13:65028:21;14:63319:39;15:61002:63;16:57502:61;17:57502:60;18:57502:48;19:62045:54;20:62045:27;21:57502:37;22:62045:42;23:62045:16;24:62045:31;25:62045:39;26:57502:59;27:65028:55;28:62045:27;29:62045:67;30:62045:65;31:62045:67;32:62045:16;33:57502:59;34:62045:55;35:61002:62;36:63319:51;37:61002:51;38:62045:30;39:57502:38;40:62045:28;41:62045:64;42:62045:19;43:62045:19;44:62045:30;45:62045:29;46:61002:62;47:57502:37;48:62045:29;49:62045:66;50:57502:36;51:61002:61;52:63319:38;53:57502:47;54:65028:32;55:57502:49;56:62045:18;57:57502:24;58:65028:55;59:62045:53;60:57502:26;61:57502:60;62:62045:39;63:62045:27;64:57502:49;65:62045:30;66:57502:38;67:62045:18;68:62045:42;69:57502:25;70:61002:63;71:61002:61;72:62045:30;73:62045:30;74:62045:19;75:57502:25;76:57502:59;77:65028:42;78:65028:21;79:63319:61;80:57502:15;81:63319:15;82:57502:37;83:62045:43;84:62045:42;85:57502:48;86:65028:44;87:62045:16;88:61002:62;89:57502:37;90:65028:43;91:57502:36;92:57502:61;93:62045:52;94:62045:40;95:57502:26;96:62045:52;97:62045:65;98:61002:62;99:57502:14
 
+exec
+/bin/bash -lc "rg -n \"class SetScore|def set_score_decomposition|interaction_bits|joint_change_bits\" /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/targets.py
+sed -n '1,260p' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/targets.py
+rg -n \"PAIRWISE_TOP_K_USERS|TOP_PROPOSALS|OCCUPANT_SUBSET_MAX_SIZE|JOINT_CANDIDATE\" /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py" in /home/sat/mcrl-v025-basin-ws
+ succeeded in 0ms:
+425:class SetScoreDecomposition:
+428:    ``d_by_user``, ``interaction_bits`` and ``joint_change_bits`` are in the
+436:    interaction_bits: Fraction
+439:    joint_change_bits: Fraction
+451:def set_score_decomposition(
+"""V0.25 C1/C2/C3 targets with one explicit calibrated energy price."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from fractions import Fraction
+import itertools
+import math
+from typing import Callable, Iterable, Literal, Mapping, Sequence
+
+from mcrl.errors import MCRLContractError
+
+from .calibration import assert_calibration_prices
+from .constants_v025 import (
+    BEAM_RF_CAP_W,
+    DECISION_INTERVAL_S,
+    FORECAST_OFFSETS,
+    PHI_SAME_SATELLITE,
+    PHI_SATELLITE_CHANGE,
+)
+from .endpoint import EndpointTotals, StepEndpoint, exact, pool, reward_core
+
+
+PhysicalIdentity = tuple[int, int]
+TransitionKind = Literal[
+    "unchanged",
+    "beam_change",
+    "satellite_change",
+    "cell_rekey",
+    "initial_entry",
+    "reentry",
+    "exit",
+]
+
+
+@dataclass(frozen=True)
+class HandoverEvent:
+    user_id: int
+    kind: TransitionKind
+    before: PhysicalIdentity | None
+    after: PhysicalIdentity | None
+    cell_rekey: bool = False
+
+
+def classify_physical_transition(
+    *,
+    user_id: int,
+    before: PhysicalIdentity | None,
+    after: PhysicalIdentity | None,
+    cell_rekey: bool,
+    was_previously_served: bool,
+) -> HandoverEvent:
+    """Classify by physical NORAD/beam-chain, never action slot/cell ID."""
+
+    if before is None and after is None:
+        kind: TransitionKind = "unchanged"
+    elif before is None:
+        kind = "reentry" if was_previously_served else "initial_entry"
+    elif after is None:
+        kind = "exit"
+    elif before[0] != after[0]:
+        kind = "satellite_change"
+    elif before[1] != after[1]:
+        kind = "beam_change"
+    elif cell_rekey:
+        kind = "cell_rekey"
+    else:
+        kind = "unchanged"
+    return HandoverEvent(user_id, kind, before, after, cell_rekey)
+
+
+def phi_qos(events: Iterable[HandoverEvent]) -> Fraction:
+    """Return the explicit dimensionless Phi preference (higher is better)."""
+
+    score = 0.0
+    for event in events:
+        if event.kind == "satellite_change":
+            score -= PHI_SATELLITE_CHANGE
+        elif event.kind == "beam_change":
+            score -= PHI_SAME_SATELLITE
+    return exact(score)
+
+
+@dataclass(frozen=True)
+class NetworkOutcome:
+    """One whole-network physical profile used by every teacher."""
+
+    bits: Fraction
+    joules: Fraction
+    phi: Fraction
+    decoding_availability: Fraction
+    useful_availability: Fraction
+    per_user_bits: tuple[tuple[int, Fraction], ...] = ()
+
+    @classmethod
+    def build(
+        cls,
+        *,
+        bits: int | float | str | Fraction,
+        joules: int | float | str | Fraction,
+        phi: int | float | str | Fraction,
+        decoding_availability: int | float | str | Fraction,
+        useful_availability: int | float | str | Fraction,
+        per_user_bits: Mapping[int, int | float | str | Fraction] | None = None,
+    ) -> "NetworkOutcome":
+        result = cls(
+            exact(bits),
+            exact(joules),
+            exact(phi),
+            exact(decoding_availability),
+            exact(useful_availability),
+            tuple(
+                sorted(
+                    (int(user), exact(value))
+                    for user, value in ({} if per_user_bits is None else per_user_bits).items()
+                )
+            ),
+        )
+        if result.bits < 0 or result.joules < 0:
+            raise MCRLContractError("network bits/joules must be nonnegative")
+        if result.bits > 0 and result.joules == 0:
+            raise MCRLContractError("positive network bits at zero energy is invalid")
+        if not 0 <= result.useful_availability <= result.decoding_availability <= 1:
+            raise MCRLContractError("network availability is outside [0,1]")
+        if result.per_user_bits and sum((value for _, value in result.per_user_bits), Fraction()) != result.bits:
+            raise MCRLContractError("per-user bits do not sum to whole-network bits")
+        return result
+
+
+def network_objective(
+    outcome: NetworkOutcome,
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> Fraction:
+    """F = B - eta_ref E for the whole network; Phi stays separate."""
+
+    eta, _kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    return outcome.bits - eta * outcome.joules
+
+
+@dataclass(frozen=True)
+class C1Label:
+    difference_surplus_bits: Fraction
+    phi_difference: Fraction
+    normalized_total: Fraction
+
+
+def c1_difference_surplus(
+    candidate: NetworkOutcome,
+    default: NetworkOutcome,
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> C1Label:
+    """Whole-network C1 difference versus the declared default action."""
+
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    core = (candidate.bits - default.bits) - eta * (candidate.joules - default.joules)
+    # Phi_1=.5 and Phi_2=1 are prices in κ-bit units.  Dividing the physical
+    # surplus by κ and then adding Phi therefore keeps the target dimensionless.
+    phi = candidate.phi - default.phi
+    return C1Label(core, phi, core / kappa + phi)
+
+
+@dataclass(frozen=True)
+class OffsetProjection:
+    offset_index: int
+    valid: bool
+    survives: bool
+    outcome: NetworkOutcome
+    background_power_recomputed: bool
+    required_power_w: float | None
+    power_cap_w: float | None
+    min_decoding_margin_db: float
+    mean_acm_se_bit_s_hz: float
+
+    def __post_init__(self) -> None:
+        if self.offset_index not in range(1, FORECAST_OFFSETS + 1):
+            raise MCRLContractError("forecast offset is outside the frozen three offsets")
+        if not self.background_power_recomputed:
+            raise MCRLContractError("projection reused stale background powers")
+        if not math.isfinite(self.min_decoding_margin_db) or not math.isfinite(self.mean_acm_se_bit_s_hz):
+            raise MCRLContractError("projection margin/SE must be finite")
+        if (self.required_power_w is None) != (self.power_cap_w is None):
+            raise MCRLContractError("required power and cap must be supplied together")
+        if self.required_power_w is not None and (
+            not math.isfinite(self.required_power_w)
+            or not math.isfinite(self.power_cap_w)
+            or self.required_power_w < 0.0
+            or self.power_cap_w <= 0.0
+        ):
+            raise MCRLContractError("invalid projected required-power/cap values")
+
+    @property
+    def required_power_cap_margin_w(self) -> float | None:
+        if self.required_power_w is None or self.power_cap_w is None:
+            return None
+        return self.power_cap_w - self.required_power_w
+
+
+ProjectionEvaluator = Callable[[int, float, Mapping[int, PhysicalIdentity | None], bool], OffsetProjection]
+
+
+def project_three_offsets(
+    *,
+    assignments: Mapping[int, PhysicalIdentity | None],
+    evaluator: ProjectionEvaluator,
+    architecture: str,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+) -> tuple[OffsetProjection, ...]:
+    """Project three physical offsets and force background re-optimisation."""
+
+    assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    rows = tuple(
+        evaluator(index, index * DECISION_INTERVAL_S, assignments, True)
+        for index in range(1, FORECAST_OFFSETS + 1)
+    )
+    if architecture in {"a-r", "a′-r"} and any(
+        row.required_power_w is None or row.power_cap_w is None for row in rows
+    ):
+        raise MCRLContractError("rate-target forecast lacks required-power/cap fields")
+    return rows
+
+
+@dataclass(frozen=True)
+class C2Label:
+    forecast_surplus_bits: Fraction
+    lost_offsets: int
+    persistence_penalty_bits: Fraction
+    normalized_total: Fraction
+    projections: tuple[OffsetProjection, ...]
+
+
+def c2_persistence_forecast(
+    candidate: Sequence[OffsetProjection],
+    default: Sequence[OffsetProjection],
+    *,
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction | None = None,
+    kappa_bits_per_user_s: int | float | str | Fraction | None = None,
+    horizon_offsets: int = FORECAST_OFFSETS,
+) -> C2Label:
+/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:50:OCCUPANT_SUBSET_MAX_SIZE = 4
+/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:52:JOINT_CANDIDATE_CAP = 4_096
+/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:483:        for size in range(2, min(OCCUPANT_SUBSET_MAX_SIZE, len(occupants)) + 1):
+/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:528:    if len(ordered) > JOINT_CANDIDATE_CAP:
+/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:529:        raise RuntimeError(f"joint catalogue {len(ordered)} exceeds {JOINT_CANDIDATE_CAP}")
+/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:750:            "joint_candidate_cap": JOINT_CANDIDATE_CAP,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:154:TOP_PROPOSALS = 2
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:159:PAIRWISE_TOP_K_USERS = 10
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:203:            "top_k_users_by_nominal_unilateral_surplus": PAIRWISE_TOP_K_USERS,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:204:            "top_legal_options_per_user": TOP_PROPOSALS,
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:622:        )[:PAIRWISE_TOP_K_USERS]
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:625:        for proposal_rank in range(TOP_PROPOSALS):
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:635:            for first_row in unilaterals[first][:TOP_PROPOSALS]:
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:636:                for second_row in unilaterals[second][:TOP_PROPOSALS]:
+/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2029:        )[:TOP_PROPOSALS]
+
+exec
+/bin/bash -lc "sed -n '410,540p' /home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/targets.py
+sed -n '560,680p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py" in /home/sat/mcrl-v025-basin-ws
+ succeeded in 0ms:
+        for size in range(n):
+            weight = Fraction(factorial(size) * factorial(n - size - 1), factorial(n))
+            for subset_tuple in itertools.combinations(others, size):
+                subset = frozenset(subset_tuple)
+                shapley += weight * (
+                    values[subset | {user}] - values[subset]
+                )
+        singleton = values[frozenset((user,))] - empty
+        credits.append((user, shapley - singleton))
+    if sum((credit for _, credit in credits), Fraction()) != interaction:
+        raise MCRLContractError("Shapley interaction credits do not conserve set interaction")
+    return C3SetInteraction(users, interaction, tuple(credits))
+
+
+@dataclass(frozen=True)
+class SetScoreDecomposition:
+    """Executable v1.5 decomposition of one complete changed-user set.
+
+    ``d_by_user``, ``interaction_bits`` and ``joint_change_bits`` are in the
+    physical F units (bits at the frozen energy price). ``c1`` and ``c3`` are
+    the dimensionless physical identity terms; ``factor_c1`` adds the separate
+    dimensionless Phi preference for the factor-arm selector.
+    """
+
+    coalition_users: tuple[int, ...]
+    d_by_user: tuple[tuple[int, Fraction], ...]
+    interaction_bits: Fraction
+    shapley_interaction_by_user: tuple[tuple[int, Fraction], ...]
+    credit_split: str
+    joint_change_bits: Fraction
+    phi_difference: Fraction
+    c1: Fraction
+    c3: Fraction
+
+    @property
+    def factor_c1(self) -> Fraction:
+        """C1 selector value: exact physical singleton core plus Phi."""
+
+        return self.c1 + self.phi_difference
+
+
+def set_score_decomposition(
+    *,
+    coalition_users: Sequence[int],
+    outcomes_by_subset: Mapping[frozenset[int], NetworkOutcome],
+    lambda_bits_per_j: int | float | str | Fraction,
+    eta_ref: int | float | str | Fraction,
+    kappa_bits_per_user_step: int | float | str | Fraction,
+    phi_difference: int | float | str | Fraction = 0,
+) -> SetScoreDecomposition:
+    """Compute the O(|A|) set decomposition and bounded reporting credit.
+
+    The physical decomposition needs only the empty, singleton, and complete
+    coalition outcomes.  Exact Shapley credit is a reporting-only supplement
+    when ``|A| <= 4`` and the caller supplies the complete small powerset.
+    Large coalitions never enumerate subsets and explicitly report that no
+    per-user split was computed.
+    """
+
+    users = tuple(sorted(int(user) for user in coalition_users))
+    if len(set(users)) != len(users):
+        raise MCRLContractError("set-score coalition users must be unique")
+    sparse_required = {
+        frozenset(),
+        frozenset(users),
+        *(frozenset((user,)) for user in users),
+    }
+    supplied = set(outcomes_by_subset)
+    if not sparse_required <= supplied:
+        raise MCRLContractError(
+            "set-score decomposition needs empty, singleton, and complete outcomes"
+        )
+    eta, kappa = assert_calibration_prices(
+        lambda_bits_per_j=lambda_bits_per_j,
+        eta_ref=eta_ref,
+        kappa_bits_per_user_step=kappa_bits_per_user_step,
+    )
+    phi = exact(phi_difference)
+    values = {
+        subset: outcome.bits - eta * outcome.joules
+        for subset, outcome in outcomes_by_subset.items()
+    }
+    base = values[frozenset()]
+    d_by_user = tuple(
+        (user, values[frozenset((user,))] - base) for user in users
+    )
+    joint = values[frozenset(users)] - base
+    interaction = joint - sum((value for _user, value in d_by_user), Fraction())
+    complete_powerset = {
+        frozenset(subset)
+        for size in range(len(users) + 1)
+        for subset in itertools.combinations(users, size)
+    }
+    if len(users) < 2:
+        credits = tuple((user, Fraction()) for user in users)
+        credit_split = "EXACT_TRIVIAL"
+    elif len(users) <= 4 and supplied == complete_powerset:
+        allocated = c3_set_interaction(
+            coalition_users=users,
+            outcomes_by_subset=outcomes_by_subset,
+            lambda_bits_per_j=lambda_bits_per_j,
+            eta_ref=eta_ref,
+            kappa_bits_per_user_step=kappa_bits_per_user_step,
+        )
+        credits = allocated.z3_by_user
+        credit_split = "EXACT_SHAPLEY_SMALL_SET"
+    else:
+        credits = ()
+        credit_split = "NOT_COMPUTED_LARGE_SET" if len(users) > 4 else "NOT_SUPPLIED_SMALL_SET"
+    if credits and sum((value for _user, value in credits), Fraction()) != interaction:
+        raise MCRLContractError("set-score Shapley credits do not conserve Psi_A")
+    c1 = sum((value for _user, value in d_by_user), Fraction()) / kappa
+    c3 = interaction / kappa
+    if c1 + c3 != joint / kappa:
+        raise MCRLContractError("C1 + C3 does not equal the complete F change")
+    return SetScoreDecomposition(
+        users,
+        d_by_user,
+        interaction,
+        credits,
+        credit_split,
+        joint,
+        phi,
+        c1,
+        c3,
+    )
+
+
+@dataclass(frozen=True)
+class MatchedAnchorDecomposition:
+    eta0: Fraction
+        options, census = all_options, raw_census
+    else:
+        options, census = _selection_shortlist(
+            tape, step_index, run_setting=active_run
+        )
+    factors = tuple(options[user] if options[user] else (None,) for user in users)
+    rows: list[Configuration] = [base]
+    base_map = base.mapping
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        for product in itertools.product(*factors):
+            mapping = dict(zip(users, product, strict=True))
+            if mapping == base_map:
+                continue
+            rows.append(_configuration(base, mapping, kind="complete-cartesian"))
+        mode = "complete-cartesian"
+    else:
+        # (i) every legal unilateral move; an option-less user keeps the
+        # explicit null action and never collapses the other users' catalogue.
+        unilaterals: dict[int, list[Configuration]] = {user: [] for user in users}
+        for user in users:
+            for identity in options[user]:
+                if identity == base_map[user]:
+                    continue
+                mapping = dict(base_map)
+                mapping[user] = identity
+                row = _configuration(base, mapping, kind="unilateral")
+                rows.append(row)
+                unilaterals[user].append(row)
+
+        # Rank users by the best exact nonlinear nominal single-user surplus
+        # at the decision instant.  The one-boundary result is held over the
+        # step only for this causal selection-time ranking.
+        rank_setting = _setting("a-r0") if setting is None else setting
+        nominal = StepEvaluator(
+            tape,
+            rank_setting,
+            step_index,
+            transition_from=base,
+            field="nominal",
+            counter=counter,
+            run_setting=active_run,
+            boundary_indices=(0,),
+        )
+        rank_rows = [base] + [row for values in unilaterals.values() for row in values]
+        nominal.evaluate_many(rank_rows)
+        nominal_base = nominal.evaluate(base)
+        eta = Fraction() if calibration is None else calibration.eta_ref
+        kappa = Fraction(1) if calibration is None else calibration.kappa_bits_per_user_step
+        best_surplus = {}
+        for user in users:
+            values = []
+            for row in unilaterals[user]:
+                profile = nominal.evaluate(row)
+                core = Fraction(str(profile.bits - nominal_base.bits)) - eta * Fraction(
+                    str(profile.joules - nominal_base.joules)
+                )
+                core += kappa * _phi_for(base, row)
+                values.append(core)
+            best_surplus[user] = max(values, default=Fraction(-10**30))
+        ranked_users = sorted(
+            users,
+            key=lambda user: (-best_surplus[user], user),
+        )[:PAIRWISE_TOP_K_USERS]
+
+        # (ii) S0 top-two proposals assembled as complete deployable profiles.
+        for proposal_rank in range(TOP_PROPOSALS):
+            mapping = dict(base_map)
+            for user in users:
+                if len(unilaterals[user]) > proposal_rank:
+                    mapping[user] = unilaterals[user][proposal_rank].mapping[user]
+            if mapping != base_map:
+                rows.append(_configuration(base, mapping, kind="s0-top-two"))
+
+        # (iii) pairwise moves among top K, over each user's top two options.
+        for first, second in itertools.combinations(ranked_users, 2):
+            for first_row in unilaterals[first][:TOP_PROPOSALS]:
+                for second_row in unilaterals[second][:TOP_PROPOSALS]:
+                    mapping = dict(base_map)
+                    mapping[first] = first_row.mapping[first]
+                    mapping[second] = second_row.mapping[second]
+                    rows.append(_configuration(base, mapping, kind="pairwise-top10-top2"))
+
+        # (iv) one evacuation set per active beam, every incumbent user moved
+        # to its best live legal alternative (or explicit null if none).
+        for beam in sorted({identity for identity in base_map.values() if identity is not None}):
+            mapping = dict(base_map)
+            affected = [user for user in users if base_map[user] == beam]
+            for user in affected:
+                mapping[user] = next(
+                    (identity for identity in options[user] if identity != beam),
+                    None,
+                )
+            if mapping != base_map:
+                rows.append(_configuration(base, mapping, kind="beam-evacuation"))
+        mode = "bounded-union-v2"
+
+    unique = {row.assignments: row for row in rows}
+    ordered = (base,) + tuple(
+        sorted(
+            (row for assignments, row in unique.items() if assignments != base.assignments),
+            key=lambda row: row.configuration_id,
+        )
+    )
+    if mode != "complete-cartesian" and len(ordered) > CATALOGUE_CAP:
+        raise ProbeError(f"bounded catalogue exceeded sealed cap {CATALOGUE_CAP}")
+    return ordered, {
+        **census,
+        "complete_cartesian_size": product_size,
+        "catalogue_mode": mode,
+        "null_action_users": sum(not options[user] for user in users),
+        "bounded_catalogue_count": len(ordered),
+        "top10_users_by_exact_nominal_unilateral_surplus": ranked_users if mode != "complete-cartesian" else [],
+    }
+
+
+def _catalogue(tape: ExogenousWorldTape, step_index: int, base: Configuration) -> tuple[Configuration, ...]:
+    return _catalogue_with_census(tape, step_index, base)[0]
+
+
+def _energy_fields(
+    shared,
+
+exec
+/bin/bash -lc "sed -n '500,580p' /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py
+rg -n \"def _catalogue_with_census|full_action_catalogue|CATALOGUE_CAP|COMPLETE_CATALOGUE_LIMIT\" /home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py | head -n 80
+jq '.anchors[0].arms.FIRST_IMPROVEMENT_FP.selection // .anchors[0].arms.FIRST_IMPROVEMENT_FP.detail' /home/sat/mcrl-v025-rank2-ws/.scratch/cleanpath/cleanpath-receipt.json | head -n 80" in /home/sat/mcrl-v025-basin-ws
+ succeeded in 0ms:
+        first = step.boundaries[0]
+        by_key = {(row.user_id, row.identity): row for row in first.candidates}
+        noise = noise_power_w(500_000_000.0)
+        for user, identities in options.items():
+            rows = []
+            for identity in identities:
+                candidate = by_key[(user, identity)]
+                sinr = BEAM_RF_CAP_W * candidate.nominal_gain / noise
+                margin = 10.0 * math.log10(max(sinr, np.finfo(float).tiny)) - SINR_MIN_DB
+                rows.append((margin, identity))
+            ordered = sorted(rows, key=lambda item: (-item[0], item[1]))
+            ranked[user] = tuple(identity for _margin, identity in ordered[:SHORTLIST_OPTIONS_PER_USER])
+            excluded_margins.extend(margin for margin, _identity in ordered[SHORTLIST_OPTIONS_PER_USER:])
+    kept = sum(len(rows) for rows in ranked.values())
+    total = sum(len(rows) for rows in options.values())
+    return ranked, {
+        **census,
+        "selection_shortlist_per_user": SHORTLIST_OPTIONS_PER_USER,
+        "selection_shortlist_count": kept,
+        "legal_options_outside_selection_shortlist": total - kept,
+        "best_excluded_nominal_margin_db": (
+            None if not excluded_margins else max(excluded_margins)
+        ),
+        "shortlist_superset_miss_count": census["candidate_shortlist_miss_count"],
+    }
+
+
+def _configuration(
+    base: Configuration,
+    mapping: Mapping[int, tuple[int, int] | None],
+    *,
+    kind: str,
+) -> Configuration:
+    assignments = tuple(sorted(mapping.items()))
+    base_map = base.mapping
+    changed = sum(base_map[user] != identity for user, identity in assignments)
+    encoded = ";".join(
+        f"{user}:NULL" if identity is None else f"{user}:{identity[0]}:{identity[1]}"
+        for user, identity in assignments
+    )
+    return Configuration(f"CFG:{encoded}", assignments, changed, kind)
+
+
+def _catalogue_with_census(
+    tape: ExogenousWorldTape,
+    step_index: int,
+    base: Configuration,
+    *,
+    setting: PhysicsSetting | None = None,
+    calibration: CalibrationValues | None = None,
+    counter: EvaluationCounter | None = None,
+    run_setting: SealedRunSetting | None = None,
+) -> tuple[tuple[Configuration, ...], dict[str, object]]:
+    users = tuple(sorted(user.user_id for user in tape.user_layout))
+    active_run = run_setting_for("a-r0") if run_setting is None else run_setting
+    all_options, raw_census = _legal_options(tape, step_index)
+    product_size = math.prod(
+        len(all_options[user]) if all_options[user] else 1 for user in users
+    )
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        options, census = all_options, raw_census
+    else:
+        options, census = _selection_shortlist(
+            tape, step_index, run_setting=active_run
+        )
+    factors = tuple(options[user] if options[user] else (None,) for user in users)
+    rows: list[Configuration] = [base]
+    base_map = base.mapping
+    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+        for product in itertools.product(*factors):
+            mapping = dict(zip(users, product, strict=True))
+            if mapping == base_map:
+                continue
+            rows.append(_configuration(base, mapping, kind="complete-cartesian"))
+        mode = "complete-cartesian"
+    else:
+        # (i) every legal unilateral move; an option-less user keeps the
+        # explicit null action and never collapses the other users' catalogue.
+        unilaterals: dict[int, list[Configuration]] = {user: [] for user in users}
+        for user in users:
+            for identity in options[user]:
+158:COMPLETE_CATALOGUE_LIMIT = 4_096
+160:CATALOGUE_CAP = 1_500
+197:        "complete_cartesian_limit": COMPLETE_CATALOGUE_LIMIT,
+208:        "cap": CATALOGUE_CAP,
+543:def _catalogue_with_census(
+559:    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+568:    if product_size <= COMPLETE_CATALOGUE_LIMIT:
+663:    if mode != "complete-cartesian" and len(ordered) > CATALOGUE_CAP:
+664:        raise ProbeError(f"bounded catalogue exceeded sealed cap {CATALOGUE_CAP}")
+2600:    if catalogue_census["catalogue_mode"] != "complete-cartesian" and len(catalog) > CATALOGUE_CAP:
+2602:            f"selection shortlist row-count gate failed: {len(catalog)} > {CATALOGUE_CAP}"
+{
+  "base_entered_dense_with_candidates": true,
+  "comparisons": 20112,
+  "field": "realised",
+  "guard": 57,
+  "legal_option_census": {
+    "candidate_shortlist_miss_count": 0,
+    "coarse_shortlist_count": 2900,
+    "full_successor_legal_count": 2800
+  },
+  "moves": 377,
+  "passes_including_certificate": 10,
+  "passes_mode": "converged",
+  "physical_boundary_evaluations": 22561,
+  "rule": "first",
+  "scalar_evaluate_calls": 0,
+  "selection_seconds": 57.43670494901016,
+  "submitted_candidate_slots": 23656
+}
+
+codex
+The measurement design is now fixed: exhaustive target-direction subsets until the first improving cardinality; exact-F ranking on realised boundary 0; two clean first-improvement restarts; the deployed bounded-union catalogue rebuilt around `RSS_MAX`; and exact set residual \(\Psi_A=\Delta F(A)-\sum_i\Delta F(i)\) recomputed around both `BASE` and `RSS_MAX` so reference dependence is tested directly. Each surface gets a fresh dense-only evaluator, and a fail-closed monkeypatch makes scalar `evaluate` unreachable.
+apply patch
+patch: completed
+/home/sat/mcrl-v025-basin-ws/.scratch/basin2/run_basin2.py
+diff --git a/.scratch/basin2/run_basin2.py b/.scratch/basin2/run_basin2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba97431fbda92c768d091b240fb3aa4f05ddd95a
+--- /dev/null
++++ b/.scratch/basin2/run_basin2.py
+@@ -0,0 +1,867 @@
++#!/usr/bin/env python3
++"""BASIN2 clean-path barrier and alternate-reference diagnostic.
++
++Every selection surface uses a fresh dense boundary-0 StepEvaluator.  BASE is
++included in the first evaluate_many call with the compared candidates.  The
++scalar StepEvaluator.evaluate entry point is fail-closed for the entire run.
++Every realised endpoint comparison at an anchor is one separate fresh dense
++full-48 evaluate_many call containing every compared profile.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import hashlib
++import importlib.util
++import itertools
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-basin-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++CLEAN_RECEIPT = Path("/home/sat/mcrl-v025-rank2-ws/.scratch/cleanpath/cleanpath-receipt.json")
++OUTPUT = WORKSPACE / ".scratch/basin2/basin2-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++BATCH = 256
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++PUBLISHED_EE_MBIT_J = {
++    "RANDOM": 11.233999,
++    "ROUND_ROBIN": 3.441227,
++    "RSS_MAX": 41.621560,
++    "NEAREST_ELIGIBLE": 11.027760,
++    "MYOPIC_GREEDY": 28.668530,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++SCALAR_EVALUATE_CALLS = 0
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError(f"peak RSS {peak_rss_bytes()} is not below 5 GB")
++
++
++def load_panel():
++    name = "basin2_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def forbid_scalar_evaluate(runner) -> None:
++    original = runner.StepEvaluator.evaluate
++
++    def forbidden(*args, **kwargs):
++        del args, kwargs
++        global SCALAR_EVALUATE_CALLS
++        SCALAR_EVALUATE_CALLS += 1
++        raise AssertionError("scalar StepEvaluator.evaluate is forbidden on BASIN2 surfaces")
++
++    forbidden.__name__ = "scalar_evaluate_forbidden_on_basin2"
++    forbidden.__wrapped__ = original
++    runner.StepEvaluator.evaluate = forbidden
++    assert runner.StepEvaluator.evaluate is forbidden
++
++
++def fresh_evaluator(runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    evaluator = runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++    assert evaluator.boundary_indices == boundaries
++    return evaluator
++
++
++def dedupe(configs):
++    return tuple({row.configuration_id: row for row in configs}.values())
++
++
++def profile(evaluator, config):
++    result = evaluator._evaluated.get(config.configuration_id)
++    if result is None:
++        raise RuntimeError(f"profile absent from dense cache: {config.configuration_id}")
++    return result
++
++
++def f_value(runner, calibration, evaluator, config) -> Fraction:
++    return runner._objective(profile(evaluator, config), calibration)
++
++
++def fraction_payload(value: Fraction) -> dict[str, object]:
++    return {
++        "numerator": value.numerator,
++        "denominator": value.denominator,
++        "rational": str(value),
++        "float": float(value),
++    }
++
++
++def configuration_from_receipt(runner, base, arm_row, kind):
++    mapping = {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in arm_row["committed"]["assignments"]
++    }
++    config = runner._configuration(base, mapping, kind=kind)
++    if config.configuration_id != arm_row["configuration_id"]:
++        raise RuntimeError(f"reconstructed {kind} configuration ID differs")
++    return config
++
++
++def changed_users(left, right) -> tuple[int, ...]:
++    return tuple(
++        user for user in sorted(left.mapping)
++        if left.mapping[user] != right.mapping[user]
++    )
++
++
++def with_target_users(runner, base, target, users, kind):
++    mapping = dict(base.mapping)
++    for user in users:
++        mapping[user] = target.mapping[user]
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def barrier_analysis(panel, runner, calibration, tape, step_index, base, rss,
++                     incumbent, run_setting):
++    """Exhaust k-subsets toward RSS until the first improving cardinality."""
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "realised", (0,)
++    )
++    users = changed_users(base, rss)
++    prefixes = [base]
++    for k in range(1, len(users) + 1):
++        prefixes.append(with_target_users(
++            runner, base, rss, users[:k], f"basin2-prefix-{k}"
++        ))
++    singles = [with_target_users(
++        runner, base, rss, (user,), f"basin2-single-{user}"
++    ) for user in users]
++    # Mandatory invariant: BASE is in this first call together with candidates.
++    first_call = dedupe((base, rss, *prefixes[1:], *singles))
++    assert first_call[0].configuration_id == base.configuration_id
++    assert len(first_call) > 1
++    evaluator.evaluate_many(first_call)
++    base_profile = profile(evaluator, base)
++    base_f = runner._objective(base_profile, calibration)
++    guard = panel.served(base_profile)
++
++    trajectory = []
++    prefix_first = None
++    for k, row in enumerate(prefixes):
++        row_profile = profile(evaluator, row)
++        value = runner._objective(row_profile, calibration)
++        item = {
++            "k": k,
++            "changed_user": None if k == 0 else users[k - 1],
++            "configuration_id": row.configuration_id,
++            "f": fraction_payload(value),
++            "delta_f": fraction_payload(value - base_f),
++            "served": panel.served(row_profile),
++            "guarded": panel.served(row_profile) >= guard,
++            "strict_improvement": panel.served(row_profile) >= guard and value > base_f,
++        }
++        if item["strict_improvement"] and prefix_first is None:
++            prefix_first = k
++        trajectory.append(item)
++
++    singleton_rows = []
++    for user, row in zip(users, singles, strict=True):
++        row_profile = profile(evaluator, row)
++        value = runner._objective(row_profile, calibration)
++        singleton_rows.append({
++            "user": user,
++            "configuration_id": row.configuration_id,
++            "f": fraction_payload(value),
++            "delta_f": fraction_payload(value - base_f),
++            "served": panel.served(row_profile),
++            "guarded": panel.served(row_profile) >= guard,
++            "strict_improvement": panel.served(row_profile) >= guard and value > base_f,
++        })
++
++    tested_by_k = {"1": len(single_rows := singles)}
++    improving_singles = [row for row in singleton_rows if row["strict_improvement"]]
++    minimum_k = 1 if improving_singles else None
++    witness = None
++    if improving_singles:
++        witness = min(
++            improving_singles,
++            key=lambda item: (-Fraction(item["f"]["numerator"], item["f"]["denominator"]),
++                              item["configuration_id"]),
++        )
++
++    # The ascending prefix gives a finite upper bound.  Exhaust every lower
++    # cardinality, in lexicographic user-combination order, until an exact
++    # guarded improvement is found.
++    upper = prefix_first if prefix_first is not None else len(users)
++    for k in range(2, upper + 1):
++        if minimum_k is not None:
++            break
++        tested = 0
++        combinations = itertools.combinations(users, k)
++        while True:
++            chunk = list(itertools.islice(combinations, BATCH))
++            if not chunk:
++                break
++            rows = [with_target_users(
++                runner, base, rss, members, f"basin2-k{k}"
++            ) for members in chunk]
++            evaluator.evaluate_many(rows)
++            tested += len(rows)
++            found = None
++            for members, row in zip(chunk, rows, strict=True):
++                row_profile = profile(evaluator, row)
++                value = runner._objective(row_profile, calibration)
++                if panel.served(row_profile) >= guard and value > base_f:
++                    found = {
++                        "users": list(members),
++                        "configuration_id": row.configuration_id,
++                        "f": fraction_payload(value),
++                        "delta_f": fraction_payload(value - base_f),
++                        "served": panel.served(row_profile),
++                    }
++                    break
++            keep = {base.configuration_id, rss.configuration_id, *(
++                row.configuration_id for row in prefixes
++            ), *(row.configuration_id for row in singles)}
++            for row in rows:
++                if row.configuration_id not in keep:
++                    evaluator._evaluated.pop(row.configuration_id, None)
++            if found is not None:
++                minimum_k = k
++                witness = found
++                break
++        tested_by_k[str(k)] = tested
++
++    result = {
++        "selection_path": "fresh realised dense StepEvaluator(boundary_indices=(0,)); first evaluate_many contains BASE, RSS_MAX, prefixes, and all target-direction singletons",
++        "distance": len(users),
++        "differing_users_ascending": list(users),
++        "guard": guard,
++        "base_f": fraction_payload(base_f),
++        "trajectory": trajectory,
++        "prefix_first_improvement_k": prefix_first,
++        "singletons": singleton_rows,
++        "improving_singleton_count": len(improving_singles),
++        "minimum_simultaneous_change_k": minimum_k,
++        "witness": witness,
++        "subsets_tested_by_k": tested_by_k,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return result
++
++
++def rank_f_analysis(panel, runner, calibration, tape, step_index, base, incumbent,
++                    run_setting, configs):
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "realised", (0,)
++    )
++    rows = dedupe(configs[name] for name in ARM_NAMES)
++    assert any(row.configuration_id == base.configuration_id for row in rows)
++    evaluator.evaluate_many(rows)
++    values = {name: f_value(runner, calibration, evaluator, configs[name]) for name in ARM_NAMES}
++    order = sorted(ARM_NAMES, key=lambda name: (-values[name], name))
++    result = {
++        "selection_path": "fresh realised dense StepEvaluator(boundary_indices=(0,)); one evaluate_many contains all six arms including BASE",
++        "f_by_arm": {name: fraction_payload(values[name]) for name in ARM_NAMES},
++        "order": order,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return result
++
++
++def first_improvement(panel, runner, calibration, tape, step_index, base, start,
++                      incumbent, run_setting, kind):
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "realised", (0,)
++    )
++    options, census = runner._legal_options(tape, step_index)
++    first_user = min(options)
++    warm = tuple(panel.candidate(
++        runner, base, start, first_user, identity, kind
++    ) for identity in options[first_user] if identity != start.mapping[first_user])
++    first_call = dedupe((base, start, *warm[:panel.UNILATERAL_BATCH_SIZE]))
++    assert first_call[0].configuration_id == base.configuration_id
++    assert len(first_call) > 1
++    evaluator.evaluate_many(first_call)
++    guard = panel.served(profile(evaluator, start))
++    current = start
++    moves = comparisons = submissions = 0
++    passes = 0
++    moves_per_pass = []
++    while True:
++        moved = 0
++        for user in sorted(options):
++            current_value = f_value(runner, calibration, evaluator, current)
++            candidates = tuple(panel.candidate(
++                runner, base, current, user, identity, kind
++            ) for identity in options[user] if identity != current.mapping[user])
++            accepted = None
++            for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                evaluator.evaluate_many(batch)
++                submissions += len(batch)
++                for row in batch:
++                    comparisons += 1
++                    row_profile = evaluator._evaluated.get(row.configuration_id)
++                    if row_profile is None or panel.served(row_profile) < guard:
++                        continue
++                    if runner._objective(row_profile, calibration) > current_value:
++                        accepted = row
++                        break
++                if accepted is not None:
++                    break
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moved += 1
++        passes += 1
++        moves_per_pass.append(moved)
++        if moved == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("first-improvement exceeded 100 passes")
++    result = {
++        "selection_path": "fresh realised dense StepEvaluator(boundary_indices=(0,)); first evaluate_many contains BASE, start, and ordered first-user candidates",
++        "start_configuration_id": start.configuration_id,
++        "selected_configuration_id": current.configuration_id,
++        "guard_from_start": guard,
++        "fixed_point_at_start": moves_per_pass[0] == 0,
++        "moves": moves,
++        "passes_including_certificate": passes,
++        "moves_per_pass": moves_per_pass,
++        "comparisons": comparisons,
++        "submitted_candidate_slots": submissions,
++        "legal_option_census": census,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, result
++
++
++def bounded_catalogue(panel, runner, calibration, tape, step_index, base, reference,
++                      incumbent, run_setting, tag):
++    """Rebuild deployed bounded-union-v2 around reference, dense-only."""
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "nominal", (0,)
++    )
++    users = tuple(sorted(reference.mapping))
++    all_options, raw_census = runner._legal_options(tape, step_index)
++    options, census = runner._selection_shortlist(
++        tape, step_index, run_setting=run_setting
++    )
++    product_size = math.prod(len(all_options[u]) if all_options[u] else 1 for u in users)
++    if product_size <= runner.COMPLETE_CATALOGUE_LIMIT:
++        raise RuntimeError("unexpected complete-cartesian catalogue on frozen panel")
++    ref_map = reference.mapping
++    unilaterals = {user: [] for user in users}
++    singles_by_move = {}
++    for user in users:
++        for identity in options[user]:
++            if identity == ref_map[user]:
++                continue
++            mapping = dict(ref_map)
++            mapping[user] = identity
++            row = runner._configuration(reference, mapping, kind=f"{tag}-unilateral")
++            unilaterals[user].append(row)
++            singles_by_move[(user, identity)] = row
++    all_singles = [row for values in unilaterals.values() for row in values]
++    first_call = dedupe((base, reference, *all_singles))
++    assert first_call[0].configuration_id == base.configuration_id
++    assert len(first_call) > 1
++    evaluator.evaluate_many(first_call)
++    reference_profile = profile(evaluator, reference)
++    reference_f = runner._objective(reference_profile, calibration)
++    guard = panel.served(reference_profile)
++    best_surplus = {}
++    for user in users:
++        values = []
++        for row in unilaterals[user]:
++            core = f_value(runner, calibration, evaluator, row) - reference_f
++            core += calibration.kappa_bits_per_user_step * runner._phi_for(reference, row)
++            values.append(core)
++        best_surplus[user] = max(values, default=Fraction(-10**30))
++    ranked_users = sorted(users, key=lambda user: (-best_surplus[user], user))[
++        :runner.PAIRWISE_TOP_K_USERS
++    ]
++
++    candidates = [reference, *all_singles]
++    for proposal_rank in range(runner.TOP_PROPOSALS):
++        mapping = dict(ref_map)
++        for user in users:
++            if len(unilaterals[user]) > proposal_rank:
++                mapping[user] = unilaterals[user][proposal_rank].mapping[user]
++        if mapping != ref_map:
++            candidates.append(runner._configuration(
++                reference, mapping, kind=f"{tag}-s0-top-two"
++            ))
++    for first, second in itertools.combinations(ranked_users, 2):
++        for first_row in unilaterals[first][:runner.TOP_PROPOSALS]:
++            for second_row in unilaterals[second][:runner.TOP_PROPOSALS]:
++                mapping = dict(ref_map)
++                mapping[first] = first_row.mapping[first]
++                mapping[second] = second_row.mapping[second]
++                candidates.append(runner._configuration(
++                    reference, mapping, kind=f"{tag}-pairwise-top10-top2"
++                ))
++    for beam in sorted({identity for identity in ref_map.values() if identity is not None}):
++        mapping = dict(ref_map)
++        affected = [user for user in users if ref_map[user] == beam]
++        for user in affected:
++            mapping[user] = next((identity for identity in options[user] if identity != beam), None)
++        if mapping != ref_map:
++            candidates.append(runner._configuration(
++                reference, mapping, kind=f"{tag}-beam-evacuation"
++            ))
++    catalogue = tuple({row.assignments: row for row in candidates}.values())
++    catalogue = (reference,) + tuple(sorted(
++        (row for row in catalogue if row.assignments != reference.assignments),
++        key=lambda row: row.configuration_id,
++    ))
++    if len(catalogue) > runner.CATALOGUE_CAP:
++        raise RuntimeError("bounded catalogue exceeds sealed cap")
++
++    # Beam evacuation may introduce explicit nulls absent from the shortlist.
++    # Materialise every required singleton before any set decomposition.
++    for row in catalogue:
++        for user in changed_users(reference, row):
++            identity = row.mapping[user]
++            key = (user, identity)
++            if key not in singles_by_move:
++                mapping = dict(ref_map)
++                mapping[user] = identity
++                singles_by_move[key] = runner._configuration(
++                    reference, mapping, kind=f"{tag}-required-singleton"
++                )
++    missing_singles = [
++        row for row in singles_by_move.values()
++        if row.configuration_id not in evaluator._evaluated
++    ]
++    for offset in range(0, len(missing_singles), BATCH):
++        evaluator.evaluate_many(missing_singles[offset:offset + BATCH])
++    for offset in range(0, len(catalogue), BATCH):
++        evaluator.evaluate_many(catalogue[offset:offset + BATCH])
++
++    from mcrl.physics_v025.targets import set_score_decomposition
++    scored = []
++    sign_counts = Counter()
++    for row in catalogue:
++        row_profile = evaluator._evaluated.get(row.configuration_id)
++        if row_profile is None:
++            continue
++        changed = changed_users(reference, row)
++        joint_delta = runner._objective(row_profile, calibration) - reference_f
++        singleton_delta = Fraction()
++        interaction = Fraction()
++        if changed:
++            outcomes = {frozenset(): reference_profile.outcome(), frozenset(changed): row_profile.outcome()}
++            valid = True
++            for user in changed:
++                single = singles_by_move[(user, row.mapping[user])]
++                single_profile = evaluator._evaluated.get(single.configuration_id)
++                if single_profile is None:
++                    valid = False
++                    break
++                outcomes[frozenset((user,))] = single_profile.outcome()
++            if not valid:
++                continue
++            decomposition = set_score_decomposition(
++                coalition_users=changed,
++                outcomes_by_subset=outcomes,
++                lambda_bits_per_j=calibration.lambda_bits_per_j,
++                eta_ref=calibration.eta_ref,
++                kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
++            )
++            singleton_delta = sum((value for _user, value in decomposition.d_by_user), Fraction())
++            interaction = decomposition.interaction_bits
++            assert joint_delta == decomposition.joint_change_bits
++            assert joint_delta == singleton_delta + interaction
++            if len(changed) >= 2:
++                sign_counts["positive" if interaction > 0 else "negative" if interaction < 0 else "zero"] += 1
++        scored.append({
++            "config": row,
++            "configuration_id": row.configuration_id,
++            "changed_users": list(changed),
++            "coalition_size": len(changed),
++            "served": panel.served(row_profile),
++            "guarded": panel.served(row_profile) >= guard,
++            "joint_delta": joint_delta,
++            "additive_delta": singleton_delta,
++            "interaction": interaction,
++        })
++    guarded = [row for row in scored if row["guarded"]]
++    exact_selected = min(guarded, key=lambda row: (-row["joint_delta"], row["configuration_id"]))
++    additive_selected = min(guarded, key=lambda row: (-row["additive_delta"], row["configuration_id"]))
++    improving = [row for row in guarded if row["joint_delta"] > 0]
++    interaction_rows = [row for row in scored if row["coalition_size"] >= 2]
++    result = {
++        "selection_path": "fresh nominal dense StepEvaluator(boundary_indices=(0,)); first evaluate_many contains BASE, reference, and every shortlisted singleton",
++        "reference_configuration_id": reference.configuration_id,
++        "reference_is_base": reference.configuration_id == base.configuration_id,
++        "guard_from_reference": guard,
++        "catalogue_mode": "bounded-union-v2",
++        "product_size": product_size,
++        "catalogue_count": len(catalogue),
++        "census": census,
++        "raw_census": raw_census,
++        "ranked_users": ranked_users,
++        "strict_improvement_count": len(improving),
++        "contains_strict_improvement": bool(improving),
++        "best_strict_improvement": None if not improving else {
++            "configuration_id": min(improving, key=lambda row: (-row["joint_delta"], row["configuration_id"]))["configuration_id"],
++            "delta_f": fraction_payload(max(row["joint_delta"] for row in improving)),
++        },
++        "interaction_sign_counts": dict(sign_counts),
++        "interaction_min": None if not interaction_rows else fraction_payload(min(row["interaction"] for row in interaction_rows)),
++        "interaction_max": None if not interaction_rows else fraction_payload(max(row["interaction"] for row in interaction_rows)),
++        "exact_selected": {
++            "configuration_id": exact_selected["configuration_id"],
++            "coalition_size": exact_selected["coalition_size"],
++            "joint_delta": fraction_payload(exact_selected["joint_delta"]),
++            "additive_delta": fraction_payload(exact_selected["additive_delta"]),
++            "interaction": fraction_payload(exact_selected["interaction"]),
++        },
++        "additive_selected": {
++            "configuration_id": additive_selected["configuration_id"],
++            "coalition_size": additive_selected["coalition_size"],
++            "joint_delta": fraction_payload(additive_selected["joint_delta"]),
++            "additive_delta": fraction_payload(additive_selected["additive_delta"]),
++            "interaction": fraction_payload(additive_selected["interaction"]),
++        },
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    selected_configs = {
++        f"{tag}_EXACT": exact_selected["config"],
++        f"{tag}_ADDITIVE": additive_selected["config"],
++    }
++    del evaluator
++    gc.collect()
++    return result, selected_configs
++
++
++def diversity(config):
++    chosen = [identity for identity in config.mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / len(config.mapping),
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def endpoint_metrics(panel, runner, tape, step_index, base, incumbent, run_setting, configs):
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting,
++        "realised", tuple(range(48)),
++    )
++    rows = dedupe(configs.values())
++    assert any(row.configuration_id == base.configuration_id for row in rows)
++    evaluator.evaluate_many(rows)
++    metrics = {}
++    for name, config in configs.items():
++        row = panel.metric(profile(evaluator, config))
++        row["f_at_eta_ref"] = fraction_payload(runner._objective(profile(evaluator, config), panel.load_calibration(panel.load_pilot())))
++        row["diversity"] = diversity(config)
++        metrics[name] = row
++    result = {
++        "path": "one separate fresh realised dense StepEvaluator(boundary_indices=tuple(range(48))); one evaluate_many contains every compared profile including BASE",
++        "metrics": metrics,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return result
++
++
++def pool_metric(anchors, tag):
++    rows = [anchor["endpoint"]["metrics"][tag] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    return {
++        "bits": bits,
++        "joules": joules,
++        "ee_mbit_per_j": bits / joules / 1e6,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in rows),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++        "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++        "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++        "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    started = time.perf_counter()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    clean = json.loads(CLEAN_RECEIPT.read_text(encoding="utf-8"))
++    if clean.get("status") != "COMPLETE" or len(clean.get("anchors", [])) != len(frozen):
++        raise RuntimeError("STATICS2 clean receipt is not complete")
++    if clean.get("receipt_sha256") != canonical_digest(clean):
++        raise RuntimeError("STATICS2 clean receipt digest failed")
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    forbid_scalar_evaluate(runner)
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    payload = {
++        "schema": "mcrl-v025-basin2-barrier-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "panel_count": len(frozen),
++        "panel": frozen,
++        "panel_runner_sha256": sha256(PANEL_RUNNER),
++        "statics2_receipt_file_sha256": sha256(CLEAN_RECEIPT),
++        "statics2_receipt_sha256": clean["receipt_sha256"],
++        "eta_ref": fraction_payload(calibration.eta_ref),
++        "kappa_bits_per_user_step": fraction_payload(calibration.kappa_bits_per_user_step),
++        "selection_invariant": {
++            "scalar_evaluate_fail_closed": True,
++            "base_in_first_evaluate_many_with_candidates": True,
++            "selection_boundaries": [0],
++            "profile_reads": "StepEvaluator._evaluated only",
++        },
++        "endpoint_invariant": {
++            "fresh_separate_evaluator": True,
++            "field": "realised",
++            "boundaries": list(range(48)),
++            "single_evaluate_many_call_per_anchor": True,
++        },
++        "anchors": [],
++    }
++
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        clean_anchor = clean["anchors"][index]
++        if int(clean_anchor["global_anchor_index"]) != index:
++            raise RuntimeError("STATICS2 anchor order differs")
++        configs = {
++            name: configuration_from_receipt(
++                runner, base, clean_anchor["arms"][name], f"basin2-{name.lower()}"
++            ) for name in ARM_NAMES
++        }
++        if configs["NEAREST_ELIGIBLE"].configuration_id != base.configuration_id:
++            raise RuntimeError("STATICS2 BASE reconstruction differs")
++
++        barrier = barrier_analysis(
++            panel, runner, calibration, tape, step_index, base, configs["RSS_MAX"],
++            incumbent, run_setting,
++        )
++        exact_rank = rank_f_analysis(
++            panel, runner, calibration, tape, step_index, base, incumbent,
++            run_setting, configs,
++        )
++        from_rss, rss_search = first_improvement(
++            panel, runner, calibration, tape, step_index, base, configs["RSS_MAX"],
++            incumbent, run_setting, "basin2-first-from-rss",
++        )
++        from_myopic, myopic_search = first_improvement(
++            panel, runner, calibration, tape, step_index, base, configs["MYOPIC_GREEDY"],
++            incumbent, run_setting, "basin2-first-from-myopic",
++        )
++        base_c3, base_c3_configs = bounded_catalogue(
++            panel, runner, calibration, tape, step_index, base, base,
++            incumbent, run_setting, "BASE_C3",
++        )
++        rss_c3, rss_c3_configs = bounded_catalogue(
++            panel, runner, calibration, tape, step_index, base, configs["RSS_MAX"],
++            incumbent, run_setting, "RSS_C3",
++        )
++        endpoint_configs = {
++            **configs,
++            "FIRST_FROM_RSS": from_rss,
++            "FIRST_FROM_MYOPIC": from_myopic,
++            **base_c3_configs,
++            **rss_c3_configs,
++        }
++        endpoint = endpoint_metrics(
++            panel, runner, tape, step_index, base, incumbent, run_setting,
++            endpoint_configs,
++        )
++        anchor = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "barrier": barrier,
++            "exact_f_rank": exact_rank,
++            "first_from_rss": rss_search,
++            "first_from_myopic": myopic_search,
++            "c3_around_base": base_c3,
++            "c3_around_rss": rss_c3,
++            "endpoint": endpoint,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        payload["anchors"].append(anchor)
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "k": barrier["minimum_simultaneous_change_k"],
++                "distance": barrier["distance"],
++                "rss_start_moves": rss_search["moves"],
++                "myopic_start_moves": myopic_search["moves"],
++                "rss_catalogue_improves": rss_c3["contains_strict_improvement"],
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    endpoint_tags = list(payload["anchors"][0]["endpoint"]["metrics"])
++    payload["pooled"] = {tag: pool_metric(payload["anchors"], tag) for tag in endpoint_tags}
++    f_totals = {
++        arm: sum((
++            Fraction(row["exact_f_rank"]["f_by_arm"][arm]["numerator"],
++                     row["exact_f_rank"]["f_by_arm"][arm]["denominator"])
++            for row in payload["anchors"]
++        ), Fraction())
++        for arm in ARM_NAMES
++    }
++    payload["exact_f_totals"] = {arm: fraction_payload(value) for arm, value in f_totals.items()}
++    payload["exact_f_order"] = sorted(ARM_NAMES, key=lambda arm: (-f_totals[arm], arm))
++    payload["ee_order"] = sorted(ARM_NAMES, key=lambda arm: (-payload["pooled"][arm]["ee_mbit_per_j"], arm))
++    payload["orders_agree"] = payload["exact_f_order"] == payload["ee_order"]
++    payload["published_and_clean"] = {
++        arm: {
++            "published_mbit_per_j": PUBLISHED_EE_MBIT_J[arm],
++            "statics2_clean_mbit_per_j": clean["pooled"][arm]["ee_mbit_per_j"],
++            "basin2_clean_mbit_per_j": payload["pooled"][arm]["ee_mbit_per_j"],
++            "basin2_minus_published_mbit_per_j": payload["pooled"][arm]["ee_mbit_per_j"] - PUBLISHED_EE_MBIT_J[arm],
++            "basin2_minus_statics2_mbit_per_j": payload["pooled"][arm]["ee_mbit_per_j"] - clean["pooled"][arm]["ee_mbit_per_j"],
++        } for arm in ARM_NAMES
++    }
++    for reference in ("BASE_C3", "RSS_C3"):
++        exact_tag = f"{reference}_EXACT"
++        additive_tag = f"{reference}_ADDITIVE"
++        payload[f"{reference.lower()}_marginal"] = {
++            "exact_selected_ee_mbit_per_j": payload["pooled"][exact_tag]["ee_mbit_per_j"],
++            "additive_selected_ee_mbit_per_j": payload["pooled"][additive_tag]["ee_mbit_per_j"],
++            "delta_ee_mbit_per_j": payload["pooled"][exact_tag]["ee_mbit_per_j"] - payload["pooled"][additive_tag]["ee_mbit_per_j"],
++            "per_anchor_sign": [
++                "positive" if row["endpoint"]["metrics"][exact_tag]["ee_bit_per_j"] > row["endpoint"]["metrics"][additive_tag]["ee_bit_per_j"]
++                else "negative" if row["endpoint"]["metrics"][exact_tag]["ee_bit_per_j"] < row["endpoint"]["metrics"][additive_tag]["ee_bit_per_j"]
++                else "zero"
++                for row in payload["anchors"]
++            ],
++        }
++    rss = payload["pooled"]["RSS_MAX"]
++    fixed = payload["pooled"]["FIRST_IMPROVEMENT_FP"]
++    payload["rss_vs_clean_fixed_point"] = {
++        "pooled_bits_strictly_greater": rss["bits"] > fixed["bits"],
++        "pooled_joules_strictly_less": rss["joules"] < fixed["joules"],
++        "per_anchor_bits_greater_energy_less_count": sum(
++            row["endpoint"]["metrics"]["RSS_MAX"]["bits"] > row["endpoint"]["metrics"]["FIRST_IMPROVEMENT_FP"]["bits"]
++            and row["endpoint"]["metrics"]["RSS_MAX"]["joules"] < row["endpoint"]["metrics"]["FIRST_IMPROVEMENT_FP"]["joules"]
++            for row in payload["anchors"]
++        ),
++        "f_at_eta_ref_strictly_greater_all_anchors": all(
++            Fraction(row["exact_f_rank"]["f_by_arm"]["RSS_MAX"]["numerator"], row["exact_f_rank"]["f_by_arm"]["RSS_MAX"]["denominator"])
++            > Fraction(row["exact_f_rank"]["f_by_arm"]["FIRST_IMPROVEMENT_FP"]["numerator"], row["exact_f_rank"]["f_by_arm"]["FIRST_IMPROVEMENT_FP"]["denominator"])
++            for row in payload["anchors"]
++        ),
++    }
++    payload["scalar_evaluate_calls"] = SCALAR_EVALUATE_CALLS
++    assert SCALAR_EVALUATE_CALLS == 0
++    payload["status"] = "COMPLETE"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["wall_seconds"] = time.perf_counter() - started
++    payload["runner_sha256"] = sha256(Path(__file__))
++    atomic_write(payload)
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        "k_distribution": dict(Counter(row["barrier"]["minimum_simultaneous_change_k"] for row in payload["anchors"])),
++        "first_from_rss_ee": payload["pooled"]["FIRST_FROM_RSS"]["ee_mbit_per_j"],
++        "orders_agree": payload["orders_agree"],
++        "scalar_evaluate_calls": SCALAR_EVALUATE_CALLS,
++    }, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/basin2/run_basin2.py b/.scratch/basin2/run_basin2.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..ba97431fbda92c768d091b240fb3aa4f05ddd95a
+--- /dev/null
++++ b/.scratch/basin2/run_basin2.py
+@@ -0,0 +1,867 @@
++#!/usr/bin/env python3
++"""BASIN2 clean-path barrier and alternate-reference diagnostic.
++
++Every selection surface uses a fresh dense boundary-0 StepEvaluator.  BASE is
++included in the first evaluate_many call with the compared candidates.  The
++scalar StepEvaluator.evaluate entry point is fail-closed for the entire run.
++Every realised endpoint comparison at an anchor is one separate fresh dense
++full-48 evaluate_many call containing every compared profile.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import hashlib
++import importlib.util
++import itertools
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-basin-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++CLEAN_RECEIPT = Path("/home/sat/mcrl-v025-rank2-ws/.scratch/cleanpath/cleanpath-receipt.json")
++OUTPUT = WORKSPACE / ".scratch/basin2/basin2-receipt.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 5_000_000_000
++BATCH = 256
++ARM_NAMES = (
++    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
++    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
++)
++PUBLISHED_EE_MBIT_J = {
++    "RANDOM": 11.233999,
++    "ROUND_ROBIN": 3.441227,
++    "RSS_MAX": 41.621560,
++    "NEAREST_ELIGIBLE": 11.027760,
++    "MYOPIC_GREEDY": 28.668530,
++    "FIRST_IMPROVEMENT_FP": 13.430253,
++}
++SCALAR_EVALUATE_CALLS = 0
++
++
++def sha256(path: Path) -> str:
++    digest = hashlib.sha256()
++    with path.open("rb") as handle:
++        for block in iter(lambda: handle.read(1024 * 1024), b""):
++            digest.update(block)
++    return digest.hexdigest()
++
++
++def canonical_digest(payload: dict) -> str:
++    unsigned = dict(payload)
++    unsigned.pop("receipt_sha256", None)
++    return hashlib.sha256(json.dumps(
++        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
++    ).encode("utf-8")).hexdigest()
++
++
++def atomic_write(payload: dict) -> None:
++    payload["receipt_sha256"] = canonical_digest(payload)
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
++    temporary.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    temporary.replace(OUTPUT)
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness is below 15")
++    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins are not all one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError(f"peak RSS {peak_rss_bytes()} is not below 5 GB")
++
++
++def load_panel():
++    name = "basin2_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def forbid_scalar_evaluate(runner) -> None:
++    original = runner.StepEvaluator.evaluate
++
++    def forbidden(*args, **kwargs):
++        del args, kwargs
++        global SCALAR_EVALUATE_CALLS
++        SCALAR_EVALUATE_CALLS += 1
++        raise AssertionError("scalar StepEvaluator.evaluate is forbidden on BASIN2 surfaces")
++
++    forbidden.__name__ = "scalar_evaluate_forbidden_on_basin2"
++    forbidden.__wrapped__ = original
++    runner.StepEvaluator.evaluate = forbidden
++    assert runner.StepEvaluator.evaluate is forbidden
++
++
++def fresh_evaluator(runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    evaluator = runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++    assert evaluator.boundary_indices == boundaries
++    return evaluator
++
++
++def dedupe(configs):
++    return tuple({row.configuration_id: row for row in configs}.values())
++
++
++def profile(evaluator, config):
++    result = evaluator._evaluated.get(config.configuration_id)
++    if result is None:
++        raise RuntimeError(f"profile absent from dense cache: {config.configuration_id}")
++    return result
++
++
++def f_value(runner, calibration, evaluator, config) -> Fraction:
++    return runner._objective(profile(evaluator, config), calibration)
++
++
++def fraction_payload(value: Fraction) -> dict[str, object]:
++    return {
++        "numerator": value.numerator,
++        "denominator": value.denominator,
++        "rational": str(value),
++        "float": float(value),
++    }
++
++
++def configuration_from_receipt(runner, base, arm_row, kind):
++    mapping = {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in arm_row["committed"]["assignments"]
++    }
++    config = runner._configuration(base, mapping, kind=kind)
++    if config.configuration_id != arm_row["configuration_id"]:
++        raise RuntimeError(f"reconstructed {kind} configuration ID differs")
++    return config
++
++
++def changed_users(left, right) -> tuple[int, ...]:
++    return tuple(
++        user for user in sorted(left.mapping)
++        if left.mapping[user] != right.mapping[user]
++    )
++
++
++def with_target_users(runner, base, target, users, kind):
++    mapping = dict(base.mapping)
++    for user in users:
++        mapping[user] = target.mapping[user]
++    return runner._configuration(base, mapping, kind=kind)
++
++
++def barrier_analysis(panel, runner, calibration, tape, step_index, base, rss,
++                     incumbent, run_setting):
++    """Exhaust k-subsets toward RSS until the first improving cardinality."""
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "realised", (0,)
++    )
++    users = changed_users(base, rss)
++    prefixes = [base]
++    for k in range(1, len(users) + 1):
++        prefixes.append(with_target_users(
++            runner, base, rss, users[:k], f"basin2-prefix-{k}"
++        ))
++    singles = [with_target_users(
++        runner, base, rss, (user,), f"basin2-single-{user}"
++    ) for user in users]
++    # Mandatory invariant: BASE is in this first call together with candidates.
++    first_call = dedupe((base, rss, *prefixes[1:], *singles))
++    assert first_call[0].configuration_id == base.configuration_id
++    assert len(first_call) > 1
++    evaluator.evaluate_many(first_call)
++    base_profile = profile(evaluator, base)
++    base_f = runner._objective(base_profile, calibration)
++    guard = panel.served(base_profile)
++
++    trajectory = []
++    prefix_first = None
++    for k, row in enumerate(prefixes):
++        row_profile = profile(evaluator, row)
++        value = runner._objective(row_profile, calibration)
++        item = {
++            "k": k,
++            "changed_user": None if k == 0 else users[k - 1],
++            "configuration_id": row.configuration_id,
++            "f": fraction_payload(value),
++            "delta_f": fraction_payload(value - base_f),
++            "served": panel.served(row_profile),
++            "guarded": panel.served(row_profile) >= guard,
++            "strict_improvement": panel.served(row_profile) >= guard and value > base_f,
++        }
++        if item["strict_improvement"] and prefix_first is None:
++            prefix_first = k
++        trajectory.append(item)
++
++    singleton_rows = []
++    for user, row in zip(users, singles, strict=True):
++        row_profile = profile(evaluator, row)
++        value = runner._objective(row_profile, calibration)
++        singleton_rows.append({
++            "user": user,
++            "configuration_id": row.configuration_id,
++            "f": fraction_payload(value),
++            "delta_f": fraction_payload(value - base_f),
++            "served": panel.served(row_profile),
++            "guarded": panel.served(row_profile) >= guard,
++            "strict_improvement": panel.served(row_profile) >= guard and value > base_f,
++        })
++
++    tested_by_k = {"1": len(single_rows := singles)}
++    improving_singles = [row for row in singleton_rows if row["strict_improvement"]]
++    minimum_k = 1 if improving_singles else None
++    witness = None
++    if improving_singles:
++        witness = min(
++            improving_singles,
++            key=lambda item: (-Fraction(item["f"]["numerator"], item["f"]["denominator"]),
++                              item["configuration_id"]),
++        )
++
++    # The ascending prefix gives a finite upper bound.  Exhaust every lower
++    # cardinality, in lexicographic user-combination order, until an exact
++    # guarded improvement is found.
++    upper = prefix_first if prefix_first is not None else len(users)
++    for k in range(2, upper + 1):
++        if minimum_k is not None:
++            break
++        tested = 0
++        combinations = itertools.combinations(users, k)
++        while True:
++            chunk = list(itertools.islice(combinations, BATCH))
++            if not chunk:
++                break
++            rows = [with_target_users(
++                runner, base, rss, members, f"basin2-k{k}"
++            ) for members in chunk]
++            evaluator.evaluate_many(rows)
++            tested += len(rows)
++            found = None
++            for members, row in zip(chunk, rows, strict=True):
++                row_profile = profile(evaluator, row)
++                value = runner._objective(row_profile, calibration)
++                if panel.served(row_profile) >= guard and value > base_f:
++                    found = {
++                        "users": list(members),
++                        "configuration_id": row.configuration_id,
++                        "f": fraction_payload(value),
++                        "delta_f": fraction_payload(value - base_f),
++                        "served": panel.served(row_profile),
++                    }
++                    break
++            keep = {base.configuration_id, rss.configuration_id, *(
++                row.configuration_id for row in prefixes
++            ), *(row.configuration_id for row in singles)}
++            for row in rows:
++                if row.configuration_id not in keep:
++                    evaluator._evaluated.pop(row.configuration_id, None)
++            if found is not None:
++                minimum_k = k
++                witness = found
++                break
++        tested_by_k[str(k)] = tested
++
++    result = {
++        "selection_path": "fresh realised dense StepEvaluator(boundary_indices=(0,)); first evaluate_many contains BASE, RSS_MAX, prefixes, and all target-direction singletons",
++        "distance": len(users),
++        "differing_users_ascending": list(users),
++        "guard": guard,
++        "base_f": fraction_payload(base_f),
++        "trajectory": trajectory,
++        "prefix_first_improvement_k": prefix_first,
++        "singletons": singleton_rows,
++        "improving_singleton_count": len(improving_singles),
++        "minimum_simultaneous_change_k": minimum_k,
++        "witness": witness,
++        "subsets_tested_by_k": tested_by_k,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return result
++
++
++def rank_f_analysis(panel, runner, calibration, tape, step_index, base, incumbent,
++                    run_setting, configs):
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "realised", (0,)
++    )
++    rows = dedupe(configs[name] for name in ARM_NAMES)
++    assert any(row.configuration_id == base.configuration_id for row in rows)
++    evaluator.evaluate_many(rows)
++    values = {name: f_value(runner, calibration, evaluator, configs[name]) for name in ARM_NAMES}
++    order = sorted(ARM_NAMES, key=lambda name: (-values[name], name))
++    result = {
++        "selection_path": "fresh realised dense StepEvaluator(boundary_indices=(0,)); one evaluate_many contains all six arms including BASE",
++        "f_by_arm": {name: fraction_payload(values[name]) for name in ARM_NAMES},
++        "order": order,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return result
++
++
++def first_improvement(panel, runner, calibration, tape, step_index, base, start,
++                      incumbent, run_setting, kind):
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "realised", (0,)
++    )
++    options, census = runner._legal_options(tape, step_index)
++    first_user = min(options)
++    warm = tuple(panel.candidate(
++        runner, base, start, first_user, identity, kind
++    ) for identity in options[first_user] if identity != start.mapping[first_user])
++    first_call = dedupe((base, start, *warm[:panel.UNILATERAL_BATCH_SIZE]))
++    assert first_call[0].configuration_id == base.configuration_id
++    assert len(first_call) > 1
++    evaluator.evaluate_many(first_call)
++    guard = panel.served(profile(evaluator, start))
++    current = start
++    moves = comparisons = submissions = 0
++    passes = 0
++    moves_per_pass = []
++    while True:
++        moved = 0
++        for user in sorted(options):
++            current_value = f_value(runner, calibration, evaluator, current)
++            candidates = tuple(panel.candidate(
++                runner, base, current, user, identity, kind
++            ) for identity in options[user] if identity != current.mapping[user])
++            accepted = None
++            for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                evaluator.evaluate_many(batch)
++                submissions += len(batch)
++                for row in batch:
++                    comparisons += 1
++                    row_profile = evaluator._evaluated.get(row.configuration_id)
++                    if row_profile is None or panel.served(row_profile) < guard:
++                        continue
++                    if runner._objective(row_profile, calibration) > current_value:
++                        accepted = row
++                        break
++                if accepted is not None:
++                    break
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moved += 1
++        passes += 1
++        moves_per_pass.append(moved)
++        if moved == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("first-improvement exceeded 100 passes")
++    result = {
++        "selection_path": "fresh realised dense StepEvaluator(boundary_indices=(0,)); first evaluate_many contains BASE, start, and ordered first-user candidates",
++        "start_configuration_id": start.configuration_id,
++        "selected_configuration_id": current.configuration_id,
++        "guard_from_start": guard,
++        "fixed_point_at_start": moves_per_pass[0] == 0,
++        "moves": moves,
++        "passes_including_certificate": passes,
++        "moves_per_pass": moves_per_pass,
++        "comparisons": comparisons,
++        "submitted_candidate_slots": submissions,
++        "legal_option_census": census,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, result
++
++
++def bounded_catalogue(panel, runner, calibration, tape, step_index, base, reference,
++                      incumbent, run_setting, tag):
++    """Rebuild deployed bounded-union-v2 around reference, dense-only."""
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting, "nominal", (0,)
++    )
++    users = tuple(sorted(reference.mapping))
++    all_options, raw_census = runner._legal_options(tape, step_index)
++    options, census = runner._selection_shortlist(
++        tape, step_index, run_setting=run_setting
++    )
++    product_size = math.prod(len(all_options[u]) if all_options[u] else 1 for u in users)
++    if product_size <= runner.COMPLETE_CATALOGUE_LIMIT:
++        raise RuntimeError("unexpected complete-cartesian catalogue on frozen panel")
++    ref_map = reference.mapping
++    unilaterals = {user: [] for user in users}
++    singles_by_move = {}
++    for user in users:
++        for identity in options[user]:
++            if identity == ref_map[user]:
++                continue
++            mapping = dict(ref_map)
++            mapping[user] = identity
++            row = runner._configuration(reference, mapping, kind=f"{tag}-unilateral")
++            unilaterals[user].append(row)
++            singles_by_move[(user, identity)] = row
++    all_singles = [row for values in unilaterals.values() for row in values]
++    first_call = dedupe((base, reference, *all_singles))
++    assert first_call[0].configuration_id == base.configuration_id
++    assert len(first_call) > 1
++    evaluator.evaluate_many(first_call)
++    reference_profile = profile(evaluator, reference)
++    reference_f = runner._objective(reference_profile, calibration)
++    guard = panel.served(reference_profile)
++    best_surplus = {}
++    for user in users:
++        values = []
++        for row in unilaterals[user]:
++            core = f_value(runner, calibration, evaluator, row) - reference_f
++            core += calibration.kappa_bits_per_user_step * runner._phi_for(reference, row)
++            values.append(core)
++        best_surplus[user] = max(values, default=Fraction(-10**30))
++    ranked_users = sorted(users, key=lambda user: (-best_surplus[user], user))[
++        :runner.PAIRWISE_TOP_K_USERS
++    ]
++
++    candidates = [reference, *all_singles]
++    for proposal_rank in range(runner.TOP_PROPOSALS):
++        mapping = dict(ref_map)
++        for user in users:
++            if len(unilaterals[user]) > proposal_rank:
++                mapping[user] = unilaterals[user][proposal_rank].mapping[user]
++        if mapping != ref_map:
++            candidates.append(runner._configuration(
++                reference, mapping, kind=f"{tag}-s0-top-two"
++            ))
++    for first, second in itertools.combinations(ranked_users, 2):
++        for first_row in unilaterals[first][:runner.TOP_PROPOSALS]:
++            for second_row in unilaterals[second][:runner.TOP_PROPOSALS]:
++                mapping = dict(ref_map)
++                mapping[first] = first_row.mapping[first]
++                mapping[second] = second_row.mapping[second]
++                candidates.append(runner._configuration(
++                    reference, mapping, kind=f"{tag}-pairwise-top10-top2"
++                ))
++    for beam in sorted({identity for identity in ref_map.values() if identity is not None}):
++        mapping = dict(ref_map)
++        affected = [user for user in users if ref_map[user] == beam]
++        for user in affected:
++            mapping[user] = next((identity for identity in options[user] if identity != beam), None)
++        if mapping != ref_map:
++            candidates.append(runner._configuration(
++                reference, mapping, kind=f"{tag}-beam-evacuation"
++            ))
++    catalogue = tuple({row.assignments: row for row in candidates}.values())
++    catalogue = (reference,) + tuple(sorted(
++        (row for row in catalogue if row.assignments != reference.assignments),
++        key=lambda row: row.configuration_id,
++    ))
++    if len(catalogue) > runner.CATALOGUE_CAP:
++        raise RuntimeError("bounded catalogue exceeds sealed cap")
++
++    # Beam evacuation may introduce explicit nulls absent from the shortlist.
++    # Materialise every required singleton before any set decomposition.
++    for row in catalogue:
++        for user in changed_users(reference, row):
++            identity = row.mapping[user]
++            key = (user, identity)
++            if key not in singles_by_move:
++                mapping = dict(ref_map)
++                mapping[user] = identity
++                singles_by_move[key] = runner._configuration(
++                    reference, mapping, kind=f"{tag}-required-singleton"
++                )
++    missing_singles = [
++        row for row in singles_by_move.values()
++        if row.configuration_id not in evaluator._evaluated
++    ]
++    for offset in range(0, len(missing_singles), BATCH):
++        evaluator.evaluate_many(missing_singles[offset:offset + BATCH])
++    for offset in range(0, len(catalogue), BATCH):
++        evaluator.evaluate_many(catalogue[offset:offset + BATCH])
++
++    from mcrl.physics_v025.targets import set_score_decomposition
++    scored = []
++    sign_counts = Counter()
++    for row in catalogue:
++        row_profile = evaluator._evaluated.get(row.configuration_id)
++        if row_profile is None:
++            continue
++        changed = changed_users(reference, row)
++        joint_delta = runner._objective(row_profile, calibration) - reference_f
++        singleton_delta = Fraction()
++        interaction = Fraction()
++        if changed:
++            outcomes = {frozenset(): reference_profile.outcome(), frozenset(changed): row_profile.outcome()}
++            valid = True
++            for user in changed:
++                single = singles_by_move[(user, row.mapping[user])]
++                single_profile = evaluator._evaluated.get(single.configuration_id)
++                if single_profile is None:
++                    valid = False
++                    break
++                outcomes[frozenset((user,))] = single_profile.outcome()
++            if not valid:
++                continue
++            decomposition = set_score_decomposition(
++                coalition_users=changed,
++                outcomes_by_subset=outcomes,
++                lambda_bits_per_j=calibration.lambda_bits_per_j,
++                eta_ref=calibration.eta_ref,
++                kappa_bits_per_user_step=calibration.kappa_bits_per_user_step,
++            )
++            singleton_delta = sum((value for _user, value in decomposition.d_by_user), Fraction())
++            interaction = decomposition.interaction_bits
++            assert joint_delta == decomposition.joint_change_bits
++            assert joint_delta == singleton_delta + interaction
++            if len(changed) >= 2:
++                sign_counts["positive" if interaction > 0 else "negative" if interaction < 0 else "zero"] += 1
++        scored.append({
++            "config": row,
++            "configuration_id": row.configuration_id,
++            "changed_users": list(changed),
++            "coalition_size": len(changed),
++            "served": panel.served(row_profile),
++            "guarded": panel.served(row_profile) >= guard,
++            "joint_delta": joint_delta,
++            "additive_delta": singleton_delta,
++            "interaction": interaction,
++        })
++    guarded = [row for row in scored if row["guarded"]]
++    exact_selected = min(guarded, key=lambda row: (-row["joint_delta"], row["configuration_id"]))
++    additive_selected = min(guarded, key=lambda row: (-row["additive_delta"], row["configuration_id"]))
++    improving = [row for row in guarded if row["joint_delta"] > 0]
++    interaction_rows = [row for row in scored if row["coalition_size"] >= 2]
++    result = {
++        "selection_path": "fresh nominal dense StepEvaluator(boundary_indices=(0,)); first evaluate_many contains BASE, reference, and every shortlisted singleton",
++        "reference_configuration_id": reference.configuration_id,
++        "reference_is_base": reference.configuration_id == base.configuration_id,
++        "guard_from_reference": guard,
++        "catalogue_mode": "bounded-union-v2",
++        "product_size": product_size,
++        "catalogue_count": len(catalogue),
++        "census": census,
++        "raw_census": raw_census,
++        "ranked_users": ranked_users,
++        "strict_improvement_count": len(improving),
++        "contains_strict_improvement": bool(improving),
++        "best_strict_improvement": None if not improving else {
++            "configuration_id": min(improving, key=lambda row: (-row["joint_delta"], row["configuration_id"]))["configuration_id"],
++            "delta_f": fraction_payload(max(row["joint_delta"] for row in improving)),
++        },
++        "interaction_sign_counts": dict(sign_counts),
++        "interaction_min": None if not interaction_rows else fraction_payload(min(row["interaction"] for row in interaction_rows)),
++        "interaction_max": None if not interaction_rows else fraction_payload(max(row["interaction"] for row in interaction_rows)),
++        "exact_selected": {
++            "configuration_id": exact_selected["configuration_id"],
++            "coalition_size": exact_selected["coalition_size"],
++            "joint_delta": fraction_payload(exact_selected["joint_delta"]),
++            "additive_delta": fraction_payload(exact_selected["additive_delta"]),
++            "interaction": fraction_payload(exact_selected["interaction"]),
++        },
++        "additive_selected": {
++            "configuration_id": additive_selected["configuration_id"],
++            "coalition_size": additive_selected["coalition_size"],
++            "joint_delta": fraction_payload(additive_selected["joint_delta"]),
++            "additive_delta": fraction_payload(additive_selected["additive_delta"]),
++            "interaction": fraction_payload(additive_selected["interaction"]),
++        },
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    selected_configs = {
++        f"{tag}_EXACT": exact_selected["config"],
++        f"{tag}_ADDITIVE": additive_selected["config"],
++    }
++    del evaluator
++    gc.collect()
++    return result, selected_configs
++
++
++def diversity(config):
++    chosen = [identity for identity in config.mapping.values() if identity is not None]
++    counts = Counter(chosen)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / len(config.mapping),
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def endpoint_metrics(panel, runner, tape, step_index, base, incumbent, run_setting, configs):
++    evaluator = fresh_evaluator(
++        runner, tape, step_index, incumbent, run_setting,
++        "realised", tuple(range(48)),
++    )
++    rows = dedupe(configs.values())
++    assert any(row.configuration_id == base.configuration_id for row in rows)
++    evaluator.evaluate_many(rows)
++    metrics = {}
++    for name, config in configs.items():
++        row = panel.metric(profile(evaluator, config))
++        row["f_at_eta_ref"] = fraction_payload(runner._objective(profile(evaluator, config), panel.load_calibration(panel.load_pilot())))
++        row["diversity"] = diversity(config)
++        metrics[name] = row
++    result = {
++        "path": "one separate fresh realised dense StepEvaluator(boundary_indices=tuple(range(48))); one evaluate_many contains every compared profile including BASE",
++        "metrics": metrics,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return result
++
++
++def pool_metric(anchors, tag):
++    rows = [anchor["endpoint"]["metrics"][tag] for anchor in anchors]
++    bits = math.fsum(float(row["bits"]) for row in rows)
++    joules = math.fsum(float(row["joules"]) for row in rows)
++    return {
++        "bits": bits,
++        "joules": joules,
++        "ee_mbit_per_j": bits / joules / 1e6,
++        "served_count": sum(int(row["served_count"]) for row in rows),
++        "rate_target_attained_count": sum(int(row["rate_target_attained_count"]) for row in rows),
++        "user_count": sum(int(row["user_count"]) for row in rows),
++        "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++        "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++        "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    started = time.perf_counter()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    clean = json.loads(CLEAN_RECEIPT.read_text(encoding="utf-8"))
++    if clean.get("status") != "COMPLETE" or len(clean.get("anchors", [])) != len(frozen):
++        raise RuntimeError("STATICS2 clean receipt is not complete")
++    if clean.get("receipt_sha256") != canonical_digest(clean):
++        raise RuntimeError("STATICS2 clean receipt digest failed")
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    forbid_scalar_evaluate(runner)
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    payload = {
++        "schema": "mcrl-v025-basin2-barrier-v1",
++        "status": "RUNNING",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "process_count": 1,
++        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
++        "panel_count": len(frozen),
++        "panel": frozen,
++        "panel_runner_sha256": sha256(PANEL_RUNNER),
++        "statics2_receipt_file_sha256": sha256(CLEAN_RECEIPT),
++        "statics2_receipt_sha256": clean["receipt_sha256"],
++        "eta_ref": fraction_payload(calibration.eta_ref),
++        "kappa_bits_per_user_step": fraction_payload(calibration.kappa_bits_per_user_step),
++        "selection_invariant": {
++            "scalar_evaluate_fail_closed": True,
++            "base_in_first_evaluate_many_with_candidates": True,
++            "selection_boundaries": [0],
++            "profile_reads": "StepEvaluator._evaluated only",
++        },
++        "endpoint_invariant": {
++            "fresh_separate_evaluator": True,
++            "field": "realised",
++            "boundaries": list(range(48)),
++            "single_evaluate_many_call_per_anchor": True,
++        },
++        "anchors": [],
++    }
++
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        clean_anchor = clean["anchors"][index]
++        if int(clean_anchor["global_anchor_index"]) != index:
++            raise RuntimeError("STATICS2 anchor order differs")
++        configs = {
++            name: configuration_from_receipt(
++                runner, base, clean_anchor["arms"][name], f"basin2-{name.lower()}"
++            ) for name in ARM_NAMES
++        }
++        if configs["NEAREST_ELIGIBLE"].configuration_id != base.configuration_id:
++            raise RuntimeError("STATICS2 BASE reconstruction differs")
++
++        barrier = barrier_analysis(
++            panel, runner, calibration, tape, step_index, base, configs["RSS_MAX"],
++            incumbent, run_setting,
++        )
++        exact_rank = rank_f_analysis(
++            panel, runner, calibration, tape, step_index, base, incumbent,
++            run_setting, configs,
++        )
++        from_rss, rss_search = first_improvement(
++            panel, runner, calibration, tape, step_index, base, configs["RSS_MAX"],
++            incumbent, run_setting, "basin2-first-from-rss",
++        )
++        from_myopic, myopic_search = first_improvement(
++            panel, runner, calibration, tape, step_index, base, configs["MYOPIC_GREEDY"],
++            incumbent, run_setting, "basin2-first-from-myopic",
++        )
++        base_c3, base_c3_configs = bounded_catalogue(
++            panel, runner, calibration, tape, step_index, base, base,
++            incumbent, run_setting, "BASE_C3",
++        )
++        rss_c3, rss_c3_configs = bounded_catalogue(
++            panel, runner, calibration, tape, step_index, base, configs["RSS_MAX"],
++            incumbent, run_setting, "RSS_C3",
++        )
++        endpoint_configs = {
++            **configs,
++            "FIRST_FROM_RSS": from_rss,
++            "FIRST_FROM_MYOPIC": from_myopic,
++            **base_c3_configs,
++            **rss_c3_configs,
++        }
++        endpoint = endpoint_metrics(
++            panel, runner, tape, step_index, base, incumbent, run_setting,
++            endpoint_configs,
++        )
++        anchor = {
++            "global_anchor_index": index,
++            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
++            "step_index": step_index,
++            "carrier": carrier,
++            "barrier": barrier,
++            "exact_f_rank": exact_rank,
++            "first_from_rss": rss_search,
++            "first_from_myopic": myopic_search,
++            "c3_around_base": base_c3,
++            "c3_around_rss": rss_c3,
++            "endpoint": endpoint,
++            "peak_rss_bytes": peak_rss_bytes(),
++        }
++        payload["anchors"].append(anchor)
++        payload["peak_rss_bytes"] = peak_rss_bytes()
++        atomic_write(payload)
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB "
++            + json.dumps({
++                "k": barrier["minimum_simultaneous_change_k"],
++                "distance": barrier["distance"],
++                "rss_start_moves": rss_search["moves"],
++                "myopic_start_moves": myopic_search["moves"],
++                "rss_catalogue_improves": rss_c3["contains_strict_improvement"],
++            }, sort_keys=True),
++            flush=True,
++        )
++
++    endpoint_tags = list(payload["anchors"][0]["endpoint"]["metrics"])
++    payload["pooled"] = {tag: pool_metric(payload["anchors"], tag) for tag in endpoint_tags}
++    f_totals = {
++        arm: sum((
++            Fraction(row["exact_f_rank"]["f_by_arm"][arm]["numerator"],
++                     row["exact_f_rank"]["f_by_arm"][arm]["denominator"])
++            for row in payload["anchors"]
++        ), Fraction())
++        for arm in ARM_NAMES
++    }
++    payload["exact_f_totals"] = {arm: fraction_payload(value) for arm, value in f_totals.items()}
++    payload["exact_f_order"] = sorted(ARM_NAMES, key=lambda arm: (-f_totals[arm], arm))
++    payload["ee_order"] = sorted(ARM_NAMES, key=lambda arm: (-payload["pooled"][arm]["ee_mbit_per_j"], arm))
++    payload["orders_agree"] = payload["exact_f_order"] == payload["ee_order"]
++    payload["published_and_clean"] = {
++        arm: {
++            "published_mbit_per_j": PUBLISHED_EE_MBIT_J[arm],
++            "statics2_clean_mbit_per_j": clean["pooled"][arm]["ee_mbit_per_j"],
++            "basin2_clean_mbit_per_j": payload["pooled"][arm]["ee_mbit_per_j"],
++            "basin2_minus_published_mbit_per_j": payload["pooled"][arm]["ee_mbit_per_j"] - PUBLISHED_EE_MBIT_J[arm],
++            "basin2_minus_statics2_mbit_per_j": payload["pooled"][arm]["ee_mbit_per_j"] - clean["pooled"][arm]["ee_mbit_per_j"],
++        } for arm in ARM_NAMES
++    }
++    for reference in ("BASE_C3", "RSS_C3"):
++        exact_tag = f"{reference}_EXACT"
++        additive_tag = f"{reference}_ADDITIVE"
++        payload[f"{reference.lower()}_marginal"] = {
++            "exact_selected_ee_mbit_per_j": payload["pooled"][exact_tag]["ee_mbit_per_j"],
++            "additive_selected_ee_mbit_per_j": payload["pooled"][additive_tag]["ee_mbit_per_j"],
++            "delta_ee_mbit_per_j": payload["pooled"][exact_tag]["ee_mbit_per_j"] - payload["pooled"][additive_tag]["ee_mbit_per_j"],
++            "per_anchor_sign": [
++                "positive" if row["endpoint"]["metrics"][exact_tag]["ee_bit_per_j"] > row["endpoint"]["metrics"][additive_tag]["ee_bit_per_j"]
++                else "negative" if row["endpoint"]["metrics"][exact_tag]["ee_bit_per_j"] < row["endpoint"]["metrics"][additive_tag]["ee_bit_per_j"]
++                else "zero"
++                for row in payload["anchors"]
++            ],
++        }
++    rss = payload["pooled"]["RSS_MAX"]
++    fixed = payload["pooled"]["FIRST_IMPROVEMENT_FP"]
++    payload["rss_vs_clean_fixed_point"] = {
++        "pooled_bits_strictly_greater": rss["bits"] > fixed["bits"],
++        "pooled_joules_strictly_less": rss["joules"] < fixed["joules"],
++        "per_anchor_bits_greater_energy_less_count": sum(
++            row["endpoint"]["metrics"]["RSS_MAX"]["bits"] > row["endpoint"]["metrics"]["FIRST_IMPROVEMENT_FP"]["bits"]
++            and row["endpoint"]["metrics"]["RSS_MAX"]["joules"] < row["endpoint"]["metrics"]["FIRST_IMPROVEMENT_FP"]["joules"]
++            for row in payload["anchors"]
++        ),
++        "f_at_eta_ref_strictly_greater_all_anchors": all(
++            Fraction(row["exact_f_rank"]["f_by_arm"]["RSS_MAX"]["numerator"], row["exact_f_rank"]["f_by_arm"]["RSS_MAX"]["denominator"])
++            > Fraction(row["exact_f_rank"]["f_by_arm"]["FIRST_IMPROVEMENT_FP"]["numerator"], row["exact_f_rank"]["f_by_arm"]["FIRST_IMPROVEMENT_FP"]["denominator"])
++            for row in payload["anchors"]
++        ),
++    }
++    payload["scalar_evaluate_calls"] = SCALAR_EVALUATE_CALLS
++    assert SCALAR_EVALUATE_CALLS == 0
++    payload["status"] = "COMPLETE"
++    payload["peak_rss_bytes"] = peak_rss_bytes()
++    payload["wall_seconds"] = time.perf_counter() - started
++    payload["runner_sha256"] = sha256(Path(__file__))
++    atomic_write(payload)
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({
++        "k_distribution": dict(Counter(row["barrier"]["minimum_simultaneous_change_k"] for row in payload["anchors"])),
++        "first_from_rss_ee": payload["pooled"]["FIRST_FROM_RSS"]["ee_mbit_per_j"],
++        "orders_agree": payload["orders_agree"],
++        "scalar_evaluate_calls": SCALAR_EVALUATE_CALLS,
++    }, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+

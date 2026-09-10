@@ -43785,3 +43785,2128 @@ index 0000000000000000000000000000000000000000..1d25c33bb5ccfba886c2d61ad06ac61f
 +
 +The local source map is [`panelceil-source-map.md`](.scratch/beamsweep/panelceil-source-map.md). The read-only handover tree and its virtual environment were not modified; all generated artefacts are in this workspace.
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-beam-ws/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/panelceil-source-map.md b/.scratch/beamsweep/panelceil-source-map.md
+index 2a17e12f4461b95761c2459145c7fe7e7df1857b..7809b4a4c2fd8908fa1c7e18b32269e79f1317d0
+--- a/.scratch/beamsweep/panelceil-source-map.md
++++ b/.scratch/beamsweep/panelceil-source-map.md
+@@ -31,7 +31,7 @@
+ - The sealed constant is full HPBW `TX_FULL_HPBW_DEG = 3.32`, hence the sealed one-sided half-power angle is `1.66°`: [`constants_v025.py:75–76`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/constants_v025.py:75). `transmit_gain_linear` reads the imported module global and converts it to a half-power angle at [`channel.py:94–101`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:94).
+ - A sweep adapter should set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2.0 * one_sided_width_deg` **in memory, before tape construction**, changing no sealed file. This exact runtime-only pattern already exists locally at [`run_beamwidth_network.py:1115–1118`](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/run_beamwidth_network.py:1115).
+ - Then regenerate the complete world tape exactly as PANELCEIL does: `build_world_tape(domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"), steps=33, start_time_s=0.0)` at [`run_panelceil.py:705–725`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:705). The provider applies `transmit_gain_linear` to both nominal direct gain and nominal cross gain during primitive-array construction; see [`provider_legacy.py:725–735`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:725) and the same function's cross-gain call at `provider_legacy.py:770`.
+-- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. Do not call `frozen_panel()` or `source_base_metric()` as the width-specific physics is newly generated and cannot match the frozen source-shard hashes. Preserve only the already declared anchor identities/order.
++- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. The final adapter may retain `frozen_panel()` and `source_base_metric()` as read-only identity/mapping provenance checks: beam width does not alter configuration IDs or mappings. Width-specific computation must still use only the newly generated tape, and differing source-versus-regenerated metrics must be retained rather than substituted or treated as a failed identity check.
+ - Measure physics cost as the tape-build wall time already bracketed at [`run_panelceil.py:719–724`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:719). Report both total tape seconds and amortized `tape_seconds / 12` as “physics-regeneration seconds per anchor”; do not mix search/commit time into that cost.
+ 
+ ## Exact five constructions
+@@ -66,6 +66,6 @@
+ 
+ - **Verified from primary source:** panel identities/order, legal BASE/incumbent, both fixed-point traversals/certificates, checkpoint rule, joint catalogue/selector, 48-boundary metrics, pooled formulas, width hook, regeneration entry point, and resource assertions.
+ - **Derived:** sealed full HPBW `3.32°` corresponds to one-sided `1.66°`; regeneration cost per anchor is one width's measured tape-build seconds divided by 12 because the one 33-step tape serves all 12 anchors.
+-- **Inferred implementation seam:** use the runtime module-global width override before each new tape and skip frozen-shard hash validation. This follows the existing beam-width adapter but must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
++- **Inferred implementation seam:** use the runtime module-global width override before each new tape. Frozen source-shard hashes may still authenticate the declared panel inputs, but no frozen metric may replace a regenerated one. This follows the existing beam-width adapter and must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
+ 
+ Criterion met: all requested construction elements and the safe adaptation seam are mapped without opening evaluation-only claim dates or running a heavy job.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a6383cd3abc663f57082e9959ed75cfb66c4b4d
+--- /dev/null
++++ b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+@@ -0,0 +1,125 @@
++**DESIGN-PHASE EXPLORATION — 1.66°: coordination +1.944795% and acceleration +1.840863%; 2.40°: +3.365834% and +8.866177%; 3.32°: +11.506880% and +38.291632%; yes, the declared wider-beam grid materially lifts at least one ceiling above the 1.66° band.**
++
++# Beam-width ceiling sweep — 2026-09-10
++
++`DESIGN_PHASE_EXPLORATION_NOT_A_CLAIM`
++
++No learner, training run, policy run, or loss value was used. The sealed design point remains the one-sided half-power angle `1.66°`. The other widths are diagnostics over newly generated physics, not changes to a sealed artefact.
++
++## Direct answer
++
++**Yes.** At `2.40°`, the fresh-run acceleration ceiling is `+8.866177%`. At `3.32°`, the coordination ceiling is `+11.506880%` and the acceleration ceiling is `+38.291632%`. Those are plainly larger than the roughly 1–2% control band. The `2.40°` coordination ceiling, `+3.365834%`, is only a modest increase; it is not the main affirmative result.
++
++| One-sided width | Coordination: joint / first − 1 | Acceleration: first / actual 10 s − 1 | Traversal: first / best − 1 | Materially above control band? |
++|---:|---:|---:|---:|:---|
++| 1.66° control | +1.944795% | +1.840863% | +0.905261% | No |
++| 2.40° | +3.365834% | +8.866177% | +1.448816% | **Yes, acceleration** |
++| 3.32° | +11.506880% | +38.291632% | −2.028159% | **Yes, both ceilings** |
++
++The larger ceiling is not the same thing as a better operating point. At `3.32°`, the first fixed point is only `9.840072 Mbit/J`, versus `13.430253 Mbit/J` at `1.66°`; its served-PHY and rate-target counts also fall. The `2.40°` point is the only sampled wider point that combines higher absolute first/joint EE and higher fixed-point/joint target attainment with a materially larger acceleration ceiling.
++
++## Verified by running code
++
++Pooled EE is `sum(bits) / sum(joules)`. The numerator is the declaration-v1.8 item-5 saturated, full-buffer successfully decoded forward-downlink information bits, with **no demand cap**. Bits and joules are pooled across the same 12 development anchors and all 48 realised boundaries. Served PHY means positive realised decoding time. Rate-target attainment is separately counted and is not folded into EE.
++
++| Width | Construction | Pooled bits (Tbit) | Pooled joules | Pooled EE (Mbit/J) | Served PHY | Rate target attained |
++|---:|:---|---:|---:|---:|---:|---:|
++| 1.66° | legal base | 1.121297 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 |
++| 1.66° | first-improvement incumbent at 10 s | 1.248807 | 94696.380210 | 13.187489 | 1034/1200 | 137/1200 |
++| 1.66° | certified first-improvement fixed point | 1.255889 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 |
++| 1.66° | certified best-improvement fixed point | 1.249936 | 93911.175144 | 13.309765 | 1036/1200 | 146/1200 |
++| 1.66° | bounded joint selector from first fixed point | 1.267555 | 92580.086399 | 13.691444 | 1044/1200 | 149/1200 |
++| 2.40° | legal base | 1.059479 | 104625.380662 | 10.126402 | 961/1200 | 105/1200 |
++| 2.40° | first-improvement incumbent at 10 s | 1.223558 | 96213.073900 | 12.717166 | 1054/1200 | 126/1200 |
++| 2.40° | certified first-improvement fixed point | 1.264124 | 91307.457846 | 13.844693 | 1063/1200 | 176/1200 |
++| 2.40° | certified best-improvement fixed point | 1.257665 | 92157.088157 | 13.646973 | 1063/1200 | 175/1200 |
++| 2.40° | bounded joint selector from first fixed point | 1.283807 | 89709.671779 | 14.310682 | 1075/1200 | 180/1200 |
++| 3.32° | legal base | 0.756303 | 126649.276856 | 5.971635 | 742/1200 | 56/1200 |
++| 3.32° | first-improvement incumbent at 10 s | 0.902859 | 126887.139073 | 7.115450 | 859/1200 | 63/1200 |
++| 3.32° | certified first-improvement fixed point | 1.073439 | 109088.500083 | 9.840072 | 950/1200 | 128/1200 |
++| 3.32° | certified best-improvement fixed point | 1.086444 | 108170.832382 | 10.043776 | 950/1200 | 139/1200 |
++| 3.32° | bounded joint selector from first fixed point | 1.152580 | 105043.990322 | 10.972357 | 1006/1200 | 133/1200 |
++
++All three widths produced valid physics and complete results for 12/12 anchors. All 36 first-improvement and all 36 best-improvement terminal certificates are complete. The bounded joint catalogue was exhausted at every anchor: 8,864 unique configurations at `1.66°`, 7,237 at `2.40°`, and 9,122 at `3.32°`. A strict joint selection improvement occurred on 4/12, 7/12, and 9/12 anchors, respectively; the seed remained eligible.
++
++### Rate target, served PHY, and RF-cap binding
++
++The all-construction table above gives the requested rate-target and served-PHY counts. A wider beam does **not** monotonically relieve the target or cap constraint:
++
++- `2.40°` improves the fixed-point rate-target count from `147/1200` to `176/1200` and joint count from `149/1200` to `180/1200`; served PHY also rises from `1036` to `1063` at the first fixed point.
++- `3.32°` reverses that improvement: first-fixed attainment is `128/1200`, joint attainment is `133/1200`, and first-fixed served PHY is `950/1200`, all below the `1.66°` control.
++
++The cited v2 finding that `nominal_required_power_over_cap == 1.0` on every corpus row applies to action-row observations. To compare widths without changing scope mid-grid, I separately replayed the five selected constructions at nominal boundary 0: 12 anchors × 5 constructions = 60 configuration-anchor profiles per width. This is a selected-profile cap audit, **not** a reproduction of the full action-row corpus audit.
++
++| Width | Exact-one required-power profiles | Base | Actual 10 s | First fixed | Best fixed | Joint from first | Ratio range | First-fixed boundary-0 RF cap-hit share |
++|---:|---:|---:|---:|---:|---:|---:|:---|---:|
++| 1.66° | 53/60 | 12/12 | 11/12 | 10/12 | 10/12 | 10/12 | 0.329020–1.000000 | 17.089651% |
++| 2.40° | 49/60 | 12/12 | 12/12 | 8/12 | 9/12 | 8/12 | 0.178267–1.000000 | 11.351196% |
++| 3.32° | 55/60 | 12/12 | 12/12 | 11/12 | 9/12 | 11/12 | 0.179457–1.000000 | 17.922044% |
++
++Thus `2.40°` provides partial selected-profile cap relief, but not universal relief: every base and every actual-10-second profile is still at an exact-one network maximum. At `3.32°`, exact-one profiles rise above the control count and the first-fixed RF cap-hit share rises above the control. The endpoint therefore does not relieve the RF-cap regime overall.
++
++### Physics-regeneration cost and resource envelope
++
++PANELCEIL constructs one complete 33-step detached tape per width because its anchor observations include the declared future projections, then uses the frozen 12-anchor prefix. “Seconds per anchor” below is the measured tape-construction wall time divided by 12; it excludes search and committed evaluation.
++
++| Width | Tape regeneration (s) | Physics seconds/anchor | Peak RSS, main sweep | Result |
++|---:|---:|---:|---:|:---|
++| 1.66° | 263.625947 | 21.968829 | 2.524 GiB | 12/12 valid |
++| 2.40° | 271.965509 | 22.663792 | 2.319 GiB | 12/12 valid |
++| 3.32° | 327.475859 | 27.289655 | 2.394 GiB | 12/12 valid |
++
++Each main width and cap audit ran serially in one Python process under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. A 4.9 GB RSS watchdog plus PANELCEIL's own `<5,000,000,000`-byte assertion was active. The largest recorded main-sweep peak was 2,709,970,944 bytes. The only interpreter used was `/home/sat/mcrl-leo-handover/.venv/bin/python`.
++
++An initial control attempt used a 4.9 GB address-space limit and stopped after 7 anchors when NumPy could not reserve a 1.22 MiB array despite RSS being only 1.654 GiB. Address space is not RSS; the partial receipt was resumed after replacing that unsuitable limit with the RSS watchdog. No reported metric came from a failed or partial width.
++
++## Derived on paper from verified aggregates
++
++The three quantities use only the pooled EEs above:
++
++- coordination ceiling = `EE(J_FROM_FIRST) / EE(U_FIRST) - 1`;
++- acceleration ceiling = `EE(U_FIRST) / EE(U_FIRST_AT_10) - 1`;
++- traversal-order gap = `EE(U_FIRST) / EE(U_BEST) - 1`.
++
++For example, at `3.32°`, `10.9723570805 / 9.8400718422 - 1 = +11.506880%`, and `9.8400718422 / 7.1154499154 - 1 = +38.291632%`.
++
++The untimed `1.66°` constructions reproduce the standing PANELCEIL aggregates exactly to the stored binary64 values: base, both fixed points, joint-from-first, coordination `+1.944795%`, and traversal gap `+0.905261%`. The fresh actual-10-second control is `13.187489 Mbit/J`, so this run's acceleration ceiling is `+1.840863%`, not the earlier `+1.045609%` obtained when the same search completed more moves within ten wall-clock seconds.
++
++Relative to the control, absolute first-fixed EE changes by `+3.085867%` at `2.40°` and `−26.732043%` at `3.32°`; joint EE changes by `+4.522812%` and `−19.859751%`, respectively. These comparisons are descriptive design-phase arithmetic, not selection criteria.
++
++## Inferred
++
++- **The ceiling question is answered yes.** The conclusion does not depend only on the wall-clock checkpoint: the deterministic coordination ceiling itself reaches `+11.506880%` at `3.32°`.
++- The large acceleration ceilings are partly computational. Wider-beam search paths took much longer on several anchors, while the 10-second construction credits only moves whose evaluations completed by the checkpoint. These are valid measurements on this machine under the required live-load conditions, but their exact percentages should not be assumed hardware- or load-invariant.
++- `3.32°` creates coordination headroom but degrades absolute EE, served PHY, rate attainment, and the selected-profile cap census. It is therefore evidence for a larger optimization opportunity, not by itself evidence that `3.32°` is the better operating point.
++- `2.40°` is the more plausible sampled design candidate: it raises absolute first/joint EE, served PHY, and fixed/joint target attainment while exposing `+8.866177%` acceleration headroom. Its deterministic coordination headroom remains only `+3.365834%`, so whether that is worth a learning program is a design-value judgment, not established here.
++- The negative `−2.028159%` traversal gap at `3.32°` means best-improvement finishes above first-improvement there. Traversal order remains consequential, but its direction is not stable over the grid.
++
++## Construction and provenance
++
++The declared grid, stated before execution and never changed, was `1.66°, 2.40°, 3.32°`. The frozen development panel is `V025_PROBE/world/1`, steps 0–3, crossed in declared order with `nearest-eligible`, `stay-if-possible`, and `random-masked` (12 anchors, 100 users each). No evaluation-only claim date was opened.
++
++The hash-pinned PANELCEIL runner was loaded read-only from `/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py`, SHA-256 `dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95`. A local adapter set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2 × one-sided width` in memory before each new `build_world_tape`; no sealed source or constant was edited. The distinct tape digests at the two non-control widths verify that physics was regenerated rather than reused.
++
++Traversal names, always:
++
++- first improvement: **ascending user ID; declared legal-option order; first strict guarded-`F` improvement in ordered batches of 16**, cycled to a complete no-move certificate;
++- best improvement: **ascending user ID; declared legal-option order in batches of 16; exact best strict response per user; stable configuration-ID tie-break**, cycled to a complete no-move certificate.
++
++Both start from the same legal base and use exact `F = decoded bits − eta_ref × joules` with the unchanged base-served guard. The 10-second incumbent is the last first-improvement move whose evaluation completed by 10 seconds. The joint selector is reseeded from the certified first fixed point and exhausts the unchanged bounded catalogue: same-beam occupant subsets of size 2–4 with the 1,024-generation cap, victim plus top-2/top-3 physical nominal contributors, complete-beam evacuations, stable assignment order, batches of 32, and the 4,096 unique-candidate cap.
++
++## Machine-readable evidence
++
++```text
++1016e459a34cbe85439ac9d1054bf1b4c5d86ec587fb5d977fd4b6e19f66118d  .scratch/beamsweep/width-1.66.json
++da8163f991976c1092cbd292f2b80320edc109f5ccf89310390266a6a32a42ca  .scratch/beamsweep/width-2.40.json
++173532550200716da64d5724d24137cfa8ca505587f9e1929fc4a67e476328c5  .scratch/beamsweep/width-3.32.json
++ab14e201897df142d7023e2cba6f0fb866295c1768b7217a5d89692865a33409  .scratch/beamsweep/cap-audit-1.66.json
++78363035417a719bc50e74b7a2d2c54778768a726481d6f826ba8b5660b3c046  .scratch/beamsweep/cap-audit-2.40.json
++8b3c79d5c0f2d8dc42dcc958a938648ec37e117cb18c7bdb8ffeec92145a6019  .scratch/beamsweep/cap-audit-3.32.json
++fd84b4b7608754256aab641ae318a22b32cd766aa8e0177c877f8cd5237dc3e3  .scratch/beamsweep/run_width.py
++18e63ebd7ed152e38c38a7c55a7030f6c0c06b199b9593dc39211dba002ce909  .scratch/beamsweep/audit_cap.py
++5ec5e322645665df60084bb09ef864e96e6af4bdf774813613ecb94c40cc799a  .scratch/beamsweep/panelceil-source-map.md
++```
++
++The local source map is [`panelceil-source-map.md`](.scratch/beamsweep/panelceil-source-map.md). The read-only handover tree and its virtual environment were not modified; all generated artefacts are in this workspace.
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/panelceil-source-map.md b/.scratch/beamsweep/panelceil-source-map.md
+index 2a17e12f4461b95761c2459145c7fe7e7df1857b..7809b4a4c2fd8908fa1c7e18b32269e79f1317d0
+--- a/.scratch/beamsweep/panelceil-source-map.md
++++ b/.scratch/beamsweep/panelceil-source-map.md
+@@ -31,7 +31,7 @@
+ - The sealed constant is full HPBW `TX_FULL_HPBW_DEG = 3.32`, hence the sealed one-sided half-power angle is `1.66°`: [`constants_v025.py:75–76`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/constants_v025.py:75). `transmit_gain_linear` reads the imported module global and converts it to a half-power angle at [`channel.py:94–101`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:94).
+ - A sweep adapter should set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2.0 * one_sided_width_deg` **in memory, before tape construction**, changing no sealed file. This exact runtime-only pattern already exists locally at [`run_beamwidth_network.py:1115–1118`](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/run_beamwidth_network.py:1115).
+ - Then regenerate the complete world tape exactly as PANELCEIL does: `build_world_tape(domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"), steps=33, start_time_s=0.0)` at [`run_panelceil.py:705–725`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:705). The provider applies `transmit_gain_linear` to both nominal direct gain and nominal cross gain during primitive-array construction; see [`provider_legacy.py:725–735`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:725) and the same function's cross-gain call at `provider_legacy.py:770`.
+-- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. Do not call `frozen_panel()` or `source_base_metric()` as the width-specific physics is newly generated and cannot match the frozen source-shard hashes. Preserve only the already declared anchor identities/order.
++- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. The final adapter may retain `frozen_panel()` and `source_base_metric()` as read-only identity/mapping provenance checks: beam width does not alter configuration IDs or mappings. Width-specific computation must still use only the newly generated tape, and differing source-versus-regenerated metrics must be retained rather than substituted or treated as a failed identity check.
+ - Measure physics cost as the tape-build wall time already bracketed at [`run_panelceil.py:719–724`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:719). Report both total tape seconds and amortized `tape_seconds / 12` as “physics-regeneration seconds per anchor”; do not mix search/commit time into that cost.
+ 
+ ## Exact five constructions
+@@ -66,6 +66,6 @@
+ 
+ - **Verified from primary source:** panel identities/order, legal BASE/incumbent, both fixed-point traversals/certificates, checkpoint rule, joint catalogue/selector, 48-boundary metrics, pooled formulas, width hook, regeneration entry point, and resource assertions.
+ - **Derived:** sealed full HPBW `3.32°` corresponds to one-sided `1.66°`; regeneration cost per anchor is one width's measured tape-build seconds divided by 12 because the one 33-step tape serves all 12 anchors.
+-- **Inferred implementation seam:** use the runtime module-global width override before each new tape and skip frozen-shard hash validation. This follows the existing beam-width adapter but must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
++- **Inferred implementation seam:** use the runtime module-global width override before each new tape. Frozen source-shard hashes may still authenticate the declared panel inputs, but no frozen metric may replace a regenerated one. This follows the existing beam-width adapter and must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
+ 
+ Criterion met: all requested construction elements and the safe adaptation seam are mapped without opening evaluation-only claim dates or running a heavy job.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a6383cd3abc663f57082e9959ed75cfb66c4b4d
+--- /dev/null
++++ b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+@@ -0,0 +1,125 @@
++**DESIGN-PHASE EXPLORATION — 1.66°: coordination +1.944795% and acceleration +1.840863%; 2.40°: +3.365834% and +8.866177%; 3.32°: +11.506880% and +38.291632%; yes, the declared wider-beam grid materially lifts at least one ceiling above the 1.66° band.**
++
++# Beam-width ceiling sweep — 2026-09-10
++
++`DESIGN_PHASE_EXPLORATION_NOT_A_CLAIM`
++
++No learner, training run, policy run, or loss value was used. The sealed design point remains the one-sided half-power angle `1.66°`. The other widths are diagnostics over newly generated physics, not changes to a sealed artefact.
++
++## Direct answer
++
++**Yes.** At `2.40°`, the fresh-run acceleration ceiling is `+8.866177%`. At `3.32°`, the coordination ceiling is `+11.506880%` and the acceleration ceiling is `+38.291632%`. Those are plainly larger than the roughly 1–2% control band. The `2.40°` coordination ceiling, `+3.365834%`, is only a modest increase; it is not the main affirmative result.
++
++| One-sided width | Coordination: joint / first − 1 | Acceleration: first / actual 10 s − 1 | Traversal: first / best − 1 | Materially above control band? |
++|---:|---:|---:|---:|:---|
++| 1.66° control | +1.944795% | +1.840863% | +0.905261% | No |
++| 2.40° | +3.365834% | +8.866177% | +1.448816% | **Yes, acceleration** |
++| 3.32° | +11.506880% | +38.291632% | −2.028159% | **Yes, both ceilings** |
++
++The larger ceiling is not the same thing as a better operating point. At `3.32°`, the first fixed point is only `9.840072 Mbit/J`, versus `13.430253 Mbit/J` at `1.66°`; its served-PHY and rate-target counts also fall. The `2.40°` point is the only sampled wider point that combines higher absolute first/joint EE and higher fixed-point/joint target attainment with a materially larger acceleration ceiling.
++
++## Verified by running code
++
++Pooled EE is `sum(bits) / sum(joules)`. The numerator is the declaration-v1.8 item-5 saturated, full-buffer successfully decoded forward-downlink information bits, with **no demand cap**. Bits and joules are pooled across the same 12 development anchors and all 48 realised boundaries. Served PHY means positive realised decoding time. Rate-target attainment is separately counted and is not folded into EE.
++
++| Width | Construction | Pooled bits (Tbit) | Pooled joules | Pooled EE (Mbit/J) | Served PHY | Rate target attained |
++|---:|:---|---:|---:|---:|---:|---:|
++| 1.66° | legal base | 1.121297 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 |
++| 1.66° | first-improvement incumbent at 10 s | 1.248807 | 94696.380210 | 13.187489 | 1034/1200 | 137/1200 |
++| 1.66° | certified first-improvement fixed point | 1.255889 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 |
++| 1.66° | certified best-improvement fixed point | 1.249936 | 93911.175144 | 13.309765 | 1036/1200 | 146/1200 |
++| 1.66° | bounded joint selector from first fixed point | 1.267555 | 92580.086399 | 13.691444 | 1044/1200 | 149/1200 |
++| 2.40° | legal base | 1.059479 | 104625.380662 | 10.126402 | 961/1200 | 105/1200 |
++| 2.40° | first-improvement incumbent at 10 s | 1.223558 | 96213.073900 | 12.717166 | 1054/1200 | 126/1200 |
++| 2.40° | certified first-improvement fixed point | 1.264124 | 91307.457846 | 13.844693 | 1063/1200 | 176/1200 |
++| 2.40° | certified best-improvement fixed point | 1.257665 | 92157.088157 | 13.646973 | 1063/1200 | 175/1200 |
++| 2.40° | bounded joint selector from first fixed point | 1.283807 | 89709.671779 | 14.310682 | 1075/1200 | 180/1200 |
++| 3.32° | legal base | 0.756303 | 126649.276856 | 5.971635 | 742/1200 | 56/1200 |
++| 3.32° | first-improvement incumbent at 10 s | 0.902859 | 126887.139073 | 7.115450 | 859/1200 | 63/1200 |
++| 3.32° | certified first-improvement fixed point | 1.073439 | 109088.500083 | 9.840072 | 950/1200 | 128/1200 |
++| 3.32° | certified best-improvement fixed point | 1.086444 | 108170.832382 | 10.043776 | 950/1200 | 139/1200 |
++| 3.32° | bounded joint selector from first fixed point | 1.152580 | 105043.990322 | 10.972357 | 1006/1200 | 133/1200 |
++
++All three widths produced valid physics and complete results for 12/12 anchors. All 36 first-improvement and all 36 best-improvement terminal certificates are complete. The bounded joint catalogue was exhausted at every anchor: 8,864 unique configurations at `1.66°`, 7,237 at `2.40°`, and 9,122 at `3.32°`. A strict joint selection improvement occurred on 4/12, 7/12, and 9/12 anchors, respectively; the seed remained eligible.
++
++### Rate target, served PHY, and RF-cap binding
++
++The all-construction table above gives the requested rate-target and served-PHY counts. A wider beam does **not** monotonically relieve the target or cap constraint:
++
++- `2.40°` improves the fixed-point rate-target count from `147/1200` to `176/1200` and joint count from `149/1200` to `180/1200`; served PHY also rises from `1036` to `1063` at the first fixed point.
++- `3.32°` reverses that improvement: first-fixed attainment is `128/1200`, joint attainment is `133/1200`, and first-fixed served PHY is `950/1200`, all below the `1.66°` control.
++
++The cited v2 finding that `nominal_required_power_over_cap == 1.0` on every corpus row applies to action-row observations. To compare widths without changing scope mid-grid, I separately replayed the five selected constructions at nominal boundary 0: 12 anchors × 5 constructions = 60 configuration-anchor profiles per width. This is a selected-profile cap audit, **not** a reproduction of the full action-row corpus audit.
++
++| Width | Exact-one required-power profiles | Base | Actual 10 s | First fixed | Best fixed | Joint from first | Ratio range | First-fixed boundary-0 RF cap-hit share |
++|---:|---:|---:|---:|---:|---:|---:|:---|---:|
++| 1.66° | 53/60 | 12/12 | 11/12 | 10/12 | 10/12 | 10/12 | 0.329020–1.000000 | 17.089651% |
++| 2.40° | 49/60 | 12/12 | 12/12 | 8/12 | 9/12 | 8/12 | 0.178267–1.000000 | 11.351196% |
++| 3.32° | 55/60 | 12/12 | 12/12 | 11/12 | 9/12 | 11/12 | 0.179457–1.000000 | 17.922044% |
++
++Thus `2.40°` provides partial selected-profile cap relief, but not universal relief: every base and every actual-10-second profile is still at an exact-one network maximum. At `3.32°`, exact-one profiles rise above the control count and the first-fixed RF cap-hit share rises above the control. The endpoint therefore does not relieve the RF-cap regime overall.
++
++### Physics-regeneration cost and resource envelope
++
++PANELCEIL constructs one complete 33-step detached tape per width because its anchor observations include the declared future projections, then uses the frozen 12-anchor prefix. “Seconds per anchor” below is the measured tape-construction wall time divided by 12; it excludes search and committed evaluation.
++
++| Width | Tape regeneration (s) | Physics seconds/anchor | Peak RSS, main sweep | Result |
++|---:|---:|---:|---:|:---|
++| 1.66° | 263.625947 | 21.968829 | 2.524 GiB | 12/12 valid |
++| 2.40° | 271.965509 | 22.663792 | 2.319 GiB | 12/12 valid |
++| 3.32° | 327.475859 | 27.289655 | 2.394 GiB | 12/12 valid |
++
++Each main width and cap audit ran serially in one Python process under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. A 4.9 GB RSS watchdog plus PANELCEIL's own `<5,000,000,000`-byte assertion was active. The largest recorded main-sweep peak was 2,709,970,944 bytes. The only interpreter used was `/home/sat/mcrl-leo-handover/.venv/bin/python`.
++
++An initial control attempt used a 4.9 GB address-space limit and stopped after 7 anchors when NumPy could not reserve a 1.22 MiB array despite RSS being only 1.654 GiB. Address space is not RSS; the partial receipt was resumed after replacing that unsuitable limit with the RSS watchdog. No reported metric came from a failed or partial width.
++
++## Derived on paper from verified aggregates
++
++The three quantities use only the pooled EEs above:
++
++- coordination ceiling = `EE(J_FROM_FIRST) / EE(U_FIRST) - 1`;
++- acceleration ceiling = `EE(U_FIRST) / EE(U_FIRST_AT_10) - 1`;
++- traversal-order gap = `EE(U_FIRST) / EE(U_BEST) - 1`.
++
++For example, at `3.32°`, `10.9723570805 / 9.8400718422 - 1 = +11.506880%`, and `9.8400718422 / 7.1154499154 - 1 = +38.291632%`.
++
++The untimed `1.66°` constructions reproduce the standing PANELCEIL aggregates exactly to the stored binary64 values: base, both fixed points, joint-from-first, coordination `+1.944795%`, and traversal gap `+0.905261%`. The fresh actual-10-second control is `13.187489 Mbit/J`, so this run's acceleration ceiling is `+1.840863%`, not the earlier `+1.045609%` obtained when the same search completed more moves within ten wall-clock seconds.
++
++Relative to the control, absolute first-fixed EE changes by `+3.085867%` at `2.40°` and `−26.732043%` at `3.32°`; joint EE changes by `+4.522812%` and `−19.859751%`, respectively. These comparisons are descriptive design-phase arithmetic, not selection criteria.
++
++## Inferred
++
++- **The ceiling question is answered yes.** The conclusion does not depend only on the wall-clock checkpoint: the deterministic coordination ceiling itself reaches `+11.506880%` at `3.32°`.
++- The large acceleration ceilings are partly computational. Wider-beam search paths took much longer on several anchors, while the 10-second construction credits only moves whose evaluations completed by the checkpoint. These are valid measurements on this machine under the required live-load conditions, but their exact percentages should not be assumed hardware- or load-invariant.
++- `3.32°` creates coordination headroom but degrades absolute EE, served PHY, rate attainment, and the selected-profile cap census. It is therefore evidence for a larger optimization opportunity, not by itself evidence that `3.32°` is the better operating point.
++- `2.40°` is the more plausible sampled design candidate: it raises absolute first/joint EE, served PHY, and fixed/joint target attainment while exposing `+8.866177%` acceleration headroom. Its deterministic coordination headroom remains only `+3.365834%`, so whether that is worth a learning program is a design-value judgment, not established here.
++- The negative `−2.028159%` traversal gap at `3.32°` means best-improvement finishes above first-improvement there. Traversal order remains consequential, but its direction is not stable over the grid.
++
++## Construction and provenance
++
++The declared grid, stated before execution and never changed, was `1.66°, 2.40°, 3.32°`. The frozen development panel is `V025_PROBE/world/1`, steps 0–3, crossed in declared order with `nearest-eligible`, `stay-if-possible`, and `random-masked` (12 anchors, 100 users each). No evaluation-only claim date was opened.
++
++The hash-pinned PANELCEIL runner was loaded read-only from `/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py`, SHA-256 `dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95`. A local adapter set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2 × one-sided width` in memory before each new `build_world_tape`; no sealed source or constant was edited. The distinct tape digests at the two non-control widths verify that physics was regenerated rather than reused.
++
++Traversal names, always:
++
++- first improvement: **ascending user ID; declared legal-option order; first strict guarded-`F` improvement in ordered batches of 16**, cycled to a complete no-move certificate;
++- best improvement: **ascending user ID; declared legal-option order in batches of 16; exact best strict response per user; stable configuration-ID tie-break**, cycled to a complete no-move certificate.
++
++Both start from the same legal base and use exact `F = decoded bits − eta_ref × joules` with the unchanged base-served guard. The 10-second incumbent is the last first-improvement move whose evaluation completed by 10 seconds. The joint selector is reseeded from the certified first fixed point and exhausts the unchanged bounded catalogue: same-beam occupant subsets of size 2–4 with the 1,024-generation cap, victim plus top-2/top-3 physical nominal contributors, complete-beam evacuations, stable assignment order, batches of 32, and the 4,096 unique-candidate cap.
++
++## Machine-readable evidence
++
++```text
++1016e459a34cbe85439ac9d1054bf1b4c5d86ec587fb5d977fd4b6e19f66118d  .scratch/beamsweep/width-1.66.json
++da8163f991976c1092cbd292f2b80320edc109f5ccf89310390266a6a32a42ca  .scratch/beamsweep/width-2.40.json
++173532550200716da64d5724d24137cfa8ca505587f9e1929fc4a67e476328c5  .scratch/beamsweep/width-3.32.json
++ab14e201897df142d7023e2cba6f0fb866295c1768b7217a5d89692865a33409  .scratch/beamsweep/cap-audit-1.66.json
++78363035417a719bc50e74b7a2d2c54778768a726481d6f826ba8b5660b3c046  .scratch/beamsweep/cap-audit-2.40.json
++8b3c79d5c0f2d8dc42dcc958a938648ec37e117cb18c7bdb8ffeec92145a6019  .scratch/beamsweep/cap-audit-3.32.json
++fd84b4b7608754256aab641ae318a22b32cd766aa8e0177c877f8cd5237dc3e3  .scratch/beamsweep/run_width.py
++18e63ebd7ed152e38c38a7c55a7030f6c0c06b199b9593dc39211dba002ce909  .scratch/beamsweep/audit_cap.py
++5ec5e322645665df60084bb09ef864e96e6af4bdf774813613ecb94c40cc799a  .scratch/beamsweep/panelceil-source-map.md
++```
++
++The local source map is [`panelceil-source-map.md`](.scratch/beamsweep/panelceil-source-map.md). The read-only handover tree and its virtual environment were not modified; all generated artefacts are in this workspace.
+
+exec
+/bin/bash -lc "env PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python - <<'PY'
+import hashlib, json, math, pathlib, resource
+root = pathlib.Path('/home/sat/mcrl-v025-beam-ws')
+widths = (1.66, 2.40, 3.32)
+expected = {
+    1.66: (1.9447952502303467, 1.8408629637951535, 0.9052608405071938),
+    2.40: (3.365834215962238, 8.866177188209834, 1.4488157270031943),
+    3.32: (11.506879791860647, 38.29163242314919, -2.0281594841758066),
+}
+for width in widths:
+    path = root / '.scratch/beamsweep' / f'width-{width:.2f}.json'
+    data = json.loads(path.read_text())
+    unsigned = dict(data)
+    declared = unsigned.pop('receipt_sha256')
+    actual = hashlib.sha256(json.dumps(unsigned, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()).hexdigest()
+    assert actual == declared
+    assert data['status'] == 'COMPLETE' and len(data['anchors']) == 12
+    assert all(a['first_improvement']['termination_certificate']['complete'] for a in data['anchors'])
+    assert all(a['best_improvement']['termination_certificate']['complete'] for a in data['anchors'])
+    values = tuple(100.0 * data['summary'][key] for key in (
+        'coordination_ceiling_relative_to_first',
+        'acceleration_headroom_convergence_over_10s',
+        'traversal_order_gap_first_over_best',
+    ))
+    assert all(math.isclose(a, b, rel_tol=0.0, abs_tol=5e-13) for a, b in zip(values, expected[width]))
+    cap = json.loads((root / '.scratch/beamsweep' / f'cap-audit-{width:.2f}.json').read_text())
+    assert cap['configuration_anchor_count'] == 60 and len(cap['rows']) == 60
+report = (root / 'BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md').read_text()
+assert report.startswith('**DESIGN-PHASE EXPLORATION')
+assert 'no demand cap' in report and '**Yes.**' in report
+for width, values in expected.items():
+    for value in values:
+        rendered = f'{value:+.6f}%'.replace('-', '−')
+        assert rendered in report, (width, rendered)
+print('anchor 1/1 validation completed')
+print(f\"peak RSS {resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024 / 2**30:.3f} GiB validation\")
+print('VALIDATION PASS: canonical receipts, 36+36 certificates, cap-audit row counts, report headline/formulas')
+PY
+sha256sum BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md .scratch/beamsweep/width-*.json .scratch/beamsweep/cap-audit-*.json .scratch/beamsweep/run_width.py .scratch/beamsweep/audit_cap.py .scratch/beamsweep/panelceil-source-map.md
+git status --short -- BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md .scratch/beamsweep" in /home/sat/mcrl-v025-beam-ws
+ succeeded in 0ms:
+anchor 1/1 validation completed
+peak RSS 0.027 GiB validation
+VALIDATION PASS: canonical receipts, 36+36 certificates, cap-audit row counts, report headline/formulas
+9c2cbb578d08946a44e14afcbcbcd9a802f198cd7813d3851d26dba4ee1d608b  BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+1016e459a34cbe85439ac9d1054bf1b4c5d86ec587fb5d977fd4b6e19f66118d  .scratch/beamsweep/width-1.66.json
+da8163f991976c1092cbd292f2b80320edc109f5ccf89310390266a6a32a42ca  .scratch/beamsweep/width-2.40.json
+173532550200716da64d5724d24137cfa8ca505587f9e1929fc4a67e476328c5  .scratch/beamsweep/width-3.32.json
+ab14e201897df142d7023e2cba6f0fb866295c1768b7217a5d89692865a33409  .scratch/beamsweep/cap-audit-1.66.json
+78363035417a719bc50e74b7a2d2c54778768a726481d6f826ba8b5660b3c046  .scratch/beamsweep/cap-audit-2.40.json
+8b3c79d5c0f2d8dc42dcc958a938648ec37e117cb18c7bdb8ffeec92145a6019  .scratch/beamsweep/cap-audit-3.32.json
+fd84b4b7608754256aab641ae318a22b32cd766aa8e0177c877f8cd5237dc3e3  .scratch/beamsweep/run_width.py
+18e63ebd7ed152e38c38a7c55a7030f6c0c06b199b9593dc39211dba002ce909  .scratch/beamsweep/audit_cap.py
+5ec5e322645665df60084bb09ef864e96e6af4bdf774813613ecb94c40cc799a  .scratch/beamsweep/panelceil-source-map.md
+?? .scratch/beamsweep/
+?? BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/panelceil-source-map.md b/.scratch/beamsweep/panelceil-source-map.md
+index 2a17e12f4461b95761c2459145c7fe7e7df1857b..7809b4a4c2fd8908fa1c7e18b32269e79f1317d0
+--- a/.scratch/beamsweep/panelceil-source-map.md
++++ b/.scratch/beamsweep/panelceil-source-map.md
+@@ -31,7 +31,7 @@
+ - The sealed constant is full HPBW `TX_FULL_HPBW_DEG = 3.32`, hence the sealed one-sided half-power angle is `1.66°`: [`constants_v025.py:75–76`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/constants_v025.py:75). `transmit_gain_linear` reads the imported module global and converts it to a half-power angle at [`channel.py:94–101`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:94).
+ - A sweep adapter should set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2.0 * one_sided_width_deg` **in memory, before tape construction**, changing no sealed file. This exact runtime-only pattern already exists locally at [`run_beamwidth_network.py:1115–1118`](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/run_beamwidth_network.py:1115).
+ - Then regenerate the complete world tape exactly as PANELCEIL does: `build_world_tape(domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"), steps=33, start_time_s=0.0)` at [`run_panelceil.py:705–725`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:705). The provider applies `transmit_gain_linear` to both nominal direct gain and nominal cross gain during primitive-array construction; see [`provider_legacy.py:725–735`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:725) and the same function's cross-gain call at `provider_legacy.py:770`.
+-- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. Do not call `frozen_panel()` or `source_base_metric()` as the width-specific physics is newly generated and cannot match the frozen source-shard hashes. Preserve only the already declared anchor identities/order.
++- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. The final adapter may retain `frozen_panel()` and `source_base_metric()` as read-only identity/mapping provenance checks: beam width does not alter configuration IDs or mappings. Width-specific computation must still use only the newly generated tape, and differing source-versus-regenerated metrics must be retained rather than substituted or treated as a failed identity check.
+ - Measure physics cost as the tape-build wall time already bracketed at [`run_panelceil.py:719–724`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:719). Report both total tape seconds and amortized `tape_seconds / 12` as “physics-regeneration seconds per anchor”; do not mix search/commit time into that cost.
+ 
+ ## Exact five constructions
+@@ -66,6 +66,6 @@
+ 
+ - **Verified from primary source:** panel identities/order, legal BASE/incumbent, both fixed-point traversals/certificates, checkpoint rule, joint catalogue/selector, 48-boundary metrics, pooled formulas, width hook, regeneration entry point, and resource assertions.
+ - **Derived:** sealed full HPBW `3.32°` corresponds to one-sided `1.66°`; regeneration cost per anchor is one width's measured tape-build seconds divided by 12 because the one 33-step tape serves all 12 anchors.
+-- **Inferred implementation seam:** use the runtime module-global width override before each new tape and skip frozen-shard hash validation. This follows the existing beam-width adapter but must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
++- **Inferred implementation seam:** use the runtime module-global width override before each new tape. Frozen source-shard hashes may still authenticate the declared panel inputs, but no frozen metric may replace a regenerated one. This follows the existing beam-width adapter and must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
+ 
+ Criterion met: all requested construction elements and the safe adaptation seam are mapped without opening evaluation-only claim dates or running a heavy job.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a6383cd3abc663f57082e9959ed75cfb66c4b4d
+--- /dev/null
++++ b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+@@ -0,0 +1,125 @@
++**DESIGN-PHASE EXPLORATION — 1.66°: coordination +1.944795% and acceleration +1.840863%; 2.40°: +3.365834% and +8.866177%; 3.32°: +11.506880% and +38.291632%; yes, the declared wider-beam grid materially lifts at least one ceiling above the 1.66° band.**
++
++# Beam-width ceiling sweep — 2026-09-10
++
++`DESIGN_PHASE_EXPLORATION_NOT_A_CLAIM`
++
++No learner, training run, policy run, or loss value was used. The sealed design point remains the one-sided half-power angle `1.66°`. The other widths are diagnostics over newly generated physics, not changes to a sealed artefact.
++
++## Direct answer
++
++**Yes.** At `2.40°`, the fresh-run acceleration ceiling is `+8.866177%`. At `3.32°`, the coordination ceiling is `+11.506880%` and the acceleration ceiling is `+38.291632%`. Those are plainly larger than the roughly 1–2% control band. The `2.40°` coordination ceiling, `+3.365834%`, is only a modest increase; it is not the main affirmative result.
++
++| One-sided width | Coordination: joint / first − 1 | Acceleration: first / actual 10 s − 1 | Traversal: first / best − 1 | Materially above control band? |
++|---:|---:|---:|---:|:---|
++| 1.66° control | +1.944795% | +1.840863% | +0.905261% | No |
++| 2.40° | +3.365834% | +8.866177% | +1.448816% | **Yes, acceleration** |
++| 3.32° | +11.506880% | +38.291632% | −2.028159% | **Yes, both ceilings** |
++
++The larger ceiling is not the same thing as a better operating point. At `3.32°`, the first fixed point is only `9.840072 Mbit/J`, versus `13.430253 Mbit/J` at `1.66°`; its served-PHY and rate-target counts also fall. The `2.40°` point is the only sampled wider point that combines higher absolute first/joint EE and higher fixed-point/joint target attainment with a materially larger acceleration ceiling.
++
++## Verified by running code
++
++Pooled EE is `sum(bits) / sum(joules)`. The numerator is the declaration-v1.8 item-5 saturated, full-buffer successfully decoded forward-downlink information bits, with **no demand cap**. Bits and joules are pooled across the same 12 development anchors and all 48 realised boundaries. Served PHY means positive realised decoding time. Rate-target attainment is separately counted and is not folded into EE.
++
++| Width | Construction | Pooled bits (Tbit) | Pooled joules | Pooled EE (Mbit/J) | Served PHY | Rate target attained |
++|---:|:---|---:|---:|---:|---:|---:|
++| 1.66° | legal base | 1.121297 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 |
++| 1.66° | first-improvement incumbent at 10 s | 1.248807 | 94696.380210 | 13.187489 | 1034/1200 | 137/1200 |
++| 1.66° | certified first-improvement fixed point | 1.255889 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 |
++| 1.66° | certified best-improvement fixed point | 1.249936 | 93911.175144 | 13.309765 | 1036/1200 | 146/1200 |
++| 1.66° | bounded joint selector from first fixed point | 1.267555 | 92580.086399 | 13.691444 | 1044/1200 | 149/1200 |
++| 2.40° | legal base | 1.059479 | 104625.380662 | 10.126402 | 961/1200 | 105/1200 |
++| 2.40° | first-improvement incumbent at 10 s | 1.223558 | 96213.073900 | 12.717166 | 1054/1200 | 126/1200 |
++| 2.40° | certified first-improvement fixed point | 1.264124 | 91307.457846 | 13.844693 | 1063/1200 | 176/1200 |
++| 2.40° | certified best-improvement fixed point | 1.257665 | 92157.088157 | 13.646973 | 1063/1200 | 175/1200 |
++| 2.40° | bounded joint selector from first fixed point | 1.283807 | 89709.671779 | 14.310682 | 1075/1200 | 180/1200 |
++| 3.32° | legal base | 0.756303 | 126649.276856 | 5.971635 | 742/1200 | 56/1200 |
++| 3.32° | first-improvement incumbent at 10 s | 0.902859 | 126887.139073 | 7.115450 | 859/1200 | 63/1200 |
++| 3.32° | certified first-improvement fixed point | 1.073439 | 109088.500083 | 9.840072 | 950/1200 | 128/1200 |
++| 3.32° | certified best-improvement fixed point | 1.086444 | 108170.832382 | 10.043776 | 950/1200 | 139/1200 |
++| 3.32° | bounded joint selector from first fixed point | 1.152580 | 105043.990322 | 10.972357 | 1006/1200 | 133/1200 |
++
++All three widths produced valid physics and complete results for 12/12 anchors. All 36 first-improvement and all 36 best-improvement terminal certificates are complete. The bounded joint catalogue was exhausted at every anchor: 8,864 unique configurations at `1.66°`, 7,237 at `2.40°`, and 9,122 at `3.32°`. A strict joint selection improvement occurred on 4/12, 7/12, and 9/12 anchors, respectively; the seed remained eligible.
++
++### Rate target, served PHY, and RF-cap binding
++
++The all-construction table above gives the requested rate-target and served-PHY counts. A wider beam does **not** monotonically relieve the target or cap constraint:
++
++- `2.40°` improves the fixed-point rate-target count from `147/1200` to `176/1200` and joint count from `149/1200` to `180/1200`; served PHY also rises from `1036` to `1063` at the first fixed point.
++- `3.32°` reverses that improvement: first-fixed attainment is `128/1200`, joint attainment is `133/1200`, and first-fixed served PHY is `950/1200`, all below the `1.66°` control.
++
++The cited v2 finding that `nominal_required_power_over_cap == 1.0` on every corpus row applies to action-row observations. To compare widths without changing scope mid-grid, I separately replayed the five selected constructions at nominal boundary 0: 12 anchors × 5 constructions = 60 configuration-anchor profiles per width. This is a selected-profile cap audit, **not** a reproduction of the full action-row corpus audit.
++
++| Width | Exact-one required-power profiles | Base | Actual 10 s | First fixed | Best fixed | Joint from first | Ratio range | First-fixed boundary-0 RF cap-hit share |
++|---:|---:|---:|---:|---:|---:|---:|:---|---:|
++| 1.66° | 53/60 | 12/12 | 11/12 | 10/12 | 10/12 | 10/12 | 0.329020–1.000000 | 17.089651% |
++| 2.40° | 49/60 | 12/12 | 12/12 | 8/12 | 9/12 | 8/12 | 0.178267–1.000000 | 11.351196% |
++| 3.32° | 55/60 | 12/12 | 12/12 | 11/12 | 9/12 | 11/12 | 0.179457–1.000000 | 17.922044% |
++
++Thus `2.40°` provides partial selected-profile cap relief, but not universal relief: every base and every actual-10-second profile is still at an exact-one network maximum. At `3.32°`, exact-one profiles rise above the control count and the first-fixed RF cap-hit share rises above the control. The endpoint therefore does not relieve the RF-cap regime overall.
++
++### Physics-regeneration cost and resource envelope
++
++PANELCEIL constructs one complete 33-step detached tape per width because its anchor observations include the declared future projections, then uses the frozen 12-anchor prefix. “Seconds per anchor” below is the measured tape-construction wall time divided by 12; it excludes search and committed evaluation.
++
++| Width | Tape regeneration (s) | Physics seconds/anchor | Peak RSS, main sweep | Result |
++|---:|---:|---:|---:|:---|
++| 1.66° | 263.625947 | 21.968829 | 2.524 GiB | 12/12 valid |
++| 2.40° | 271.965509 | 22.663792 | 2.319 GiB | 12/12 valid |
++| 3.32° | 327.475859 | 27.289655 | 2.394 GiB | 12/12 valid |
++
++Each main width and cap audit ran serially in one Python process under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. A 4.9 GB RSS watchdog plus PANELCEIL's own `<5,000,000,000`-byte assertion was active. The largest recorded main-sweep peak was 2,709,970,944 bytes. The only interpreter used was `/home/sat/mcrl-leo-handover/.venv/bin/python`.
++
++An initial control attempt used a 4.9 GB address-space limit and stopped after 7 anchors when NumPy could not reserve a 1.22 MiB array despite RSS being only 1.654 GiB. Address space is not RSS; the partial receipt was resumed after replacing that unsuitable limit with the RSS watchdog. No reported metric came from a failed or partial width.
++
++## Derived on paper from verified aggregates
++
++The three quantities use only the pooled EEs above:
++
++- coordination ceiling = `EE(J_FROM_FIRST) / EE(U_FIRST) - 1`;
++- acceleration ceiling = `EE(U_FIRST) / EE(U_FIRST_AT_10) - 1`;
++- traversal-order gap = `EE(U_FIRST) / EE(U_BEST) - 1`.
++
++For example, at `3.32°`, `10.9723570805 / 9.8400718422 - 1 = +11.506880%`, and `9.8400718422 / 7.1154499154 - 1 = +38.291632%`.
++
++The untimed `1.66°` constructions reproduce the standing PANELCEIL aggregates exactly to the stored binary64 values: base, both fixed points, joint-from-first, coordination `+1.944795%`, and traversal gap `+0.905261%`. The fresh actual-10-second control is `13.187489 Mbit/J`, so this run's acceleration ceiling is `+1.840863%`, not the earlier `+1.045609%` obtained when the same search completed more moves within ten wall-clock seconds.
++
++Relative to the control, absolute first-fixed EE changes by `+3.085867%` at `2.40°` and `−26.732043%` at `3.32°`; joint EE changes by `+4.522812%` and `−19.859751%`, respectively. These comparisons are descriptive design-phase arithmetic, not selection criteria.
++
++## Inferred
++
++- **The ceiling question is answered yes.** The conclusion does not depend only on the wall-clock checkpoint: the deterministic coordination ceiling itself reaches `+11.506880%` at `3.32°`.
++- The large acceleration ceilings are partly computational. Wider-beam search paths took much longer on several anchors, while the 10-second construction credits only moves whose evaluations completed by the checkpoint. These are valid measurements on this machine under the required live-load conditions, but their exact percentages should not be assumed hardware- or load-invariant.
++- `3.32°` creates coordination headroom but degrades absolute EE, served PHY, rate attainment, and the selected-profile cap census. It is therefore evidence for a larger optimization opportunity, not by itself evidence that `3.32°` is the better operating point.
++- `2.40°` is the more plausible sampled design candidate: it raises absolute first/joint EE, served PHY, and fixed/joint target attainment while exposing `+8.866177%` acceleration headroom. Its deterministic coordination headroom remains only `+3.365834%`, so whether that is worth a learning program is a design-value judgment, not established here.
++- The negative `−2.028159%` traversal gap at `3.32°` means best-improvement finishes above first-improvement there. Traversal order remains consequential, but its direction is not stable over the grid.
++
++## Construction and provenance
++
++The declared grid, stated before execution and never changed, was `1.66°, 2.40°, 3.32°`. The frozen development panel is `V025_PROBE/world/1`, steps 0–3, crossed in declared order with `nearest-eligible`, `stay-if-possible`, and `random-masked` (12 anchors, 100 users each). No evaluation-only claim date was opened.
++
++The hash-pinned PANELCEIL runner was loaded read-only from `/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py`, SHA-256 `dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95`. A local adapter set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2 × one-sided width` in memory before each new `build_world_tape`; no sealed source or constant was edited. The distinct tape digests at the two non-control widths verify that physics was regenerated rather than reused.
++
++Traversal names, always:
++
++- first improvement: **ascending user ID; declared legal-option order; first strict guarded-`F` improvement in ordered batches of 16**, cycled to a complete no-move certificate;
++- best improvement: **ascending user ID; declared legal-option order in batches of 16; exact best strict response per user; stable configuration-ID tie-break**, cycled to a complete no-move certificate.
++
++Both start from the same legal base and use exact `F = decoded bits − eta_ref × joules` with the unchanged base-served guard. The 10-second incumbent is the last first-improvement move whose evaluation completed by 10 seconds. The joint selector is reseeded from the certified first fixed point and exhausts the unchanged bounded catalogue: same-beam occupant subsets of size 2–4 with the 1,024-generation cap, victim plus top-2/top-3 physical nominal contributors, complete-beam evacuations, stable assignment order, batches of 32, and the 4,096 unique-candidate cap.
++
++## Machine-readable evidence
++
++```text
++1016e459a34cbe85439ac9d1054bf1b4c5d86ec587fb5d977fd4b6e19f66118d  .scratch/beamsweep/width-1.66.json
++da8163f991976c1092cbd292f2b80320edc109f5ccf89310390266a6a32a42ca  .scratch/beamsweep/width-2.40.json
++173532550200716da64d5724d24137cfa8ca505587f9e1929fc4a67e476328c5  .scratch/beamsweep/width-3.32.json
++ab14e201897df142d7023e2cba6f0fb866295c1768b7217a5d89692865a33409  .scratch/beamsweep/cap-audit-1.66.json
++78363035417a719bc50e74b7a2d2c54778768a726481d6f826ba8b5660b3c046  .scratch/beamsweep/cap-audit-2.40.json
++8b3c79d5c0f2d8dc42dcc958a938648ec37e117cb18c7bdb8ffeec92145a6019  .scratch/beamsweep/cap-audit-3.32.json
++fd84b4b7608754256aab641ae318a22b32cd766aa8e0177c877f8cd5237dc3e3  .scratch/beamsweep/run_width.py
++18e63ebd7ed152e38c38a7c55a7030f6c0c06b199b9593dc39211dba002ce909  .scratch/beamsweep/audit_cap.py
++5ec5e322645665df60084bb09ef864e96e6af4bdf774813613ecb94c40cc799a  .scratch/beamsweep/panelceil-source-map.md
++```
++
++The local source map is [`panelceil-source-map.md`](.scratch/beamsweep/panelceil-source-map.md). The read-only handover tree and its virtual environment were not modified; all generated artefacts are in this workspace.
+
+codex
+Completed the design-phase sweep and wrote [BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md](/home/sat/mcrl-v025-beam-ws/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md).
+
+| Width | Coordination | Acceleration | Physics s/anchor |
+|---:|---:|---:|---:|
+| 1.66° | +1.944795% | +1.840863% | 21.968829 |
+| 2.40° | +3.365834% | +8.866177% | 22.663792 |
+| 3.32° | +11.506880% | +38.291632% | 27.289655 |
+
+**Answer: yes.** Wider beams materially increase the ceilings. However, `3.32°` reduces absolute EE, served PHY, and target attainment; `2.40°` is the more plausible sampled design candidate.
+
+The RF-cap effect is non-monotonic: `2.40°` provides partial relief, while `3.32°` does not relieve the regime overall.
+
+All widths completed 12/12 valid anchors with certified traversals. Maximum RSS was 2.524 GiB. The research workflow pinned the adapter to PANELCEIL’s exact construction and preserved its traversal, timing, pooling, and joint-catalogue semantics. No learner was trained and no sealed artefact was changed.
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/panelceil-source-map.md b/.scratch/beamsweep/panelceil-source-map.md
+index 2a17e12f4461b95761c2459145c7fe7e7df1857b..7809b4a4c2fd8908fa1c7e18b32269e79f1317d0
+--- a/.scratch/beamsweep/panelceil-source-map.md
++++ b/.scratch/beamsweep/panelceil-source-map.md
+@@ -31,7 +31,7 @@
+ - The sealed constant is full HPBW `TX_FULL_HPBW_DEG = 3.32`, hence the sealed one-sided half-power angle is `1.66°`: [`constants_v025.py:75–76`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/constants_v025.py:75). `transmit_gain_linear` reads the imported module global and converts it to a half-power angle at [`channel.py:94–101`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/channel.py:94).
+ - A sweep adapter should set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2.0 * one_sided_width_deg` **in memory, before tape construction**, changing no sealed file. This exact runtime-only pattern already exists locally at [`run_beamwidth_network.py:1115–1118`](/home/sat/mcrl-v025-beam-ws/.scratch/beamwidth/run_beamwidth_network.py:1115).
+ - Then regenerate the complete world tape exactly as PANELCEIL does: `build_world_tape(domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"), steps=33, start_time_s=0.0)` at [`run_panelceil.py:705–725`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:705). The provider applies `transmit_gain_linear` to both nominal direct gain and nominal cross gain during primitive-array construction; see [`provider_legacy.py:725–735`](/home/sat/mcrl-v025-c1c2suff-ws/src/mcrl/physics_v025/provider_legacy.py:725) and the same function's cross-gain call at `provider_legacy.py:770`.
+-- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. Do not call `frozen_panel()` or `source_base_metric()` as the width-specific physics is newly generated and cannot match the frozen source-shard hashes. Preserve only the already declared anchor identities/order.
++- Retain PANELCEIL's frozen calibration loader unchanged ([`run_panelceil.py:133–145`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:133)) and the `a-r0` run setting. The final adapter may retain `frozen_panel()` and `source_base_metric()` as read-only identity/mapping provenance checks: beam width does not alter configuration IDs or mappings. Width-specific computation must still use only the newly generated tape, and differing source-versus-regenerated metrics must be retained rather than substituted or treated as a failed identity check.
+ - Measure physics cost as the tape-build wall time already bracketed at [`run_panelceil.py:719–724`](/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:719). Report both total tape seconds and amortized `tape_seconds / 12` as “physics-regeneration seconds per anchor”; do not mix search/commit time into that cost.
+ 
+ ## Exact five constructions
+@@ -66,6 +66,6 @@
+ 
+ - **Verified from primary source:** panel identities/order, legal BASE/incumbent, both fixed-point traversals/certificates, checkpoint rule, joint catalogue/selector, 48-boundary metrics, pooled formulas, width hook, regeneration entry point, and resource assertions.
+ - **Derived:** sealed full HPBW `3.32°` corresponds to one-sided `1.66°`; regeneration cost per anchor is one width's measured tape-build seconds divided by 12 because the one 33-step tape serves all 12 anchors.
+-- **Inferred implementation seam:** use the runtime module-global width override before each new tape and skip frozen-shard hash validation. This follows the existing beam-width adapter but must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
++- **Inferred implementation seam:** use the runtime module-global width override before each new tape. Frozen source-shard hashes may still authenticate the declared panel inputs, but no frozen metric may replace a regenerated one. This follows the existing beam-width adapter and must be verified by checking that tape digests or direct/cross gains differ across non-control widths and that the `1.66°` control reproduces PANELCEIL within the declared tolerance.
+ 
+ Criterion met: all requested construction elements and the safe adaptation seam are mapped without opening evaluation-only claim dates or running a heavy job.
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..8a6383cd3abc663f57082e9959ed75cfb66c4b4d
+--- /dev/null
++++ b/BEAM-WIDTH-CEILING-SWEEP-2026-09-10.md
+@@ -0,0 +1,125 @@
++**DESIGN-PHASE EXPLORATION — 1.66°: coordination +1.944795% and acceleration +1.840863%; 2.40°: +3.365834% and +8.866177%; 3.32°: +11.506880% and +38.291632%; yes, the declared wider-beam grid materially lifts at least one ceiling above the 1.66° band.**
++
++# Beam-width ceiling sweep — 2026-09-10
++
++`DESIGN_PHASE_EXPLORATION_NOT_A_CLAIM`
++
++No learner, training run, policy run, or loss value was used. The sealed design point remains the one-sided half-power angle `1.66°`. The other widths are diagnostics over newly generated physics, not changes to a sealed artefact.
++
++## Direct answer
++
++**Yes.** At `2.40°`, the fresh-run acceleration ceiling is `+8.866177%`. At `3.32°`, the coordination ceiling is `+11.506880%` and the acceleration ceiling is `+38.291632%`. Those are plainly larger than the roughly 1–2% control band. The `2.40°` coordination ceiling, `+3.365834%`, is only a modest increase; it is not the main affirmative result.
++
++| One-sided width | Coordination: joint / first − 1 | Acceleration: first / actual 10 s − 1 | Traversal: first / best − 1 | Materially above control band? |
++|---:|---:|---:|---:|:---|
++| 1.66° control | +1.944795% | +1.840863% | +0.905261% | No |
++| 2.40° | +3.365834% | +8.866177% | +1.448816% | **Yes, acceleration** |
++| 3.32° | +11.506880% | +38.291632% | −2.028159% | **Yes, both ceilings** |
++
++The larger ceiling is not the same thing as a better operating point. At `3.32°`, the first fixed point is only `9.840072 Mbit/J`, versus `13.430253 Mbit/J` at `1.66°`; its served-PHY and rate-target counts also fall. The `2.40°` point is the only sampled wider point that combines higher absolute first/joint EE and higher fixed-point/joint target attainment with a materially larger acceleration ceiling.
++
++## Verified by running code
++
++Pooled EE is `sum(bits) / sum(joules)`. The numerator is the declaration-v1.8 item-5 saturated, full-buffer successfully decoded forward-downlink information bits, with **no demand cap**. Bits and joules are pooled across the same 12 development anchors and all 48 realised boundaries. Served PHY means positive realised decoding time. Rate-target attainment is separately counted and is not folded into EE.
++
++| Width | Construction | Pooled bits (Tbit) | Pooled joules | Pooled EE (Mbit/J) | Served PHY | Rate target attained |
++|---:|:---|---:|---:|---:|---:|---:|
++| 1.66° | legal base | 1.121297 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 |
++| 1.66° | first-improvement incumbent at 10 s | 1.248807 | 94696.380210 | 13.187489 | 1034/1200 | 137/1200 |
++| 1.66° | certified first-improvement fixed point | 1.255889 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 |
++| 1.66° | certified best-improvement fixed point | 1.249936 | 93911.175144 | 13.309765 | 1036/1200 | 146/1200 |
++| 1.66° | bounded joint selector from first fixed point | 1.267555 | 92580.086399 | 13.691444 | 1044/1200 | 149/1200 |
++| 2.40° | legal base | 1.059479 | 104625.380662 | 10.126402 | 961/1200 | 105/1200 |
++| 2.40° | first-improvement incumbent at 10 s | 1.223558 | 96213.073900 | 12.717166 | 1054/1200 | 126/1200 |
++| 2.40° | certified first-improvement fixed point | 1.264124 | 91307.457846 | 13.844693 | 1063/1200 | 176/1200 |
++| 2.40° | certified best-improvement fixed point | 1.257665 | 92157.088157 | 13.646973 | 1063/1200 | 175/1200 |
++| 2.40° | bounded joint selector from first fixed point | 1.283807 | 89709.671779 | 14.310682 | 1075/1200 | 180/1200 |
++| 3.32° | legal base | 0.756303 | 126649.276856 | 5.971635 | 742/1200 | 56/1200 |
++| 3.32° | first-improvement incumbent at 10 s | 0.902859 | 126887.139073 | 7.115450 | 859/1200 | 63/1200 |
++| 3.32° | certified first-improvement fixed point | 1.073439 | 109088.500083 | 9.840072 | 950/1200 | 128/1200 |
++| 3.32° | certified best-improvement fixed point | 1.086444 | 108170.832382 | 10.043776 | 950/1200 | 139/1200 |
++| 3.32° | bounded joint selector from first fixed point | 1.152580 | 105043.990322 | 10.972357 | 1006/1200 | 133/1200 |
++
++All three widths produced valid physics and complete results for 12/12 anchors. All 36 first-improvement and all 36 best-improvement terminal certificates are complete. The bounded joint catalogue was exhausted at every anchor: 8,864 unique configurations at `1.66°`, 7,237 at `2.40°`, and 9,122 at `3.32°`. A strict joint selection improvement occurred on 4/12, 7/12, and 9/12 anchors, respectively; the seed remained eligible.
++
++### Rate target, served PHY, and RF-cap binding
++
++The all-construction table above gives the requested rate-target and served-PHY counts. A wider beam does **not** monotonically relieve the target or cap constraint:
++
++- `2.40°` improves the fixed-point rate-target count from `147/1200` to `176/1200` and joint count from `149/1200` to `180/1200`; served PHY also rises from `1036` to `1063` at the first fixed point.
++- `3.32°` reverses that improvement: first-fixed attainment is `128/1200`, joint attainment is `133/1200`, and first-fixed served PHY is `950/1200`, all below the `1.66°` control.
++
++The cited v2 finding that `nominal_required_power_over_cap == 1.0` on every corpus row applies to action-row observations. To compare widths without changing scope mid-grid, I separately replayed the five selected constructions at nominal boundary 0: 12 anchors × 5 constructions = 60 configuration-anchor profiles per width. This is a selected-profile cap audit, **not** a reproduction of the full action-row corpus audit.
++
++| Width | Exact-one required-power profiles | Base | Actual 10 s | First fixed | Best fixed | Joint from first | Ratio range | First-fixed boundary-0 RF cap-hit share |
++|---:|---:|---:|---:|---:|---:|---:|:---|---:|
++| 1.66° | 53/60 | 12/12 | 11/12 | 10/12 | 10/12 | 10/12 | 0.329020–1.000000 | 17.089651% |
++| 2.40° | 49/60 | 12/12 | 12/12 | 8/12 | 9/12 | 8/12 | 0.178267–1.000000 | 11.351196% |
++| 3.32° | 55/60 | 12/12 | 12/12 | 11/12 | 9/12 | 11/12 | 0.179457–1.000000 | 17.922044% |
++
++Thus `2.40°` provides partial selected-profile cap relief, but not universal relief: every base and every actual-10-second profile is still at an exact-one network maximum. At `3.32°`, exact-one profiles rise above the control count and the first-fixed RF cap-hit share rises above the control. The endpoint therefore does not relieve the RF-cap regime overall.
++
++### Physics-regeneration cost and resource envelope
++
++PANELCEIL constructs one complete 33-step detached tape per width because its anchor observations include the declared future projections, then uses the frozen 12-anchor prefix. “Seconds per anchor” below is the measured tape-construction wall time divided by 12; it excludes search and committed evaluation.
++
++| Width | Tape regeneration (s) | Physics seconds/anchor | Peak RSS, main sweep | Result |
++|---:|---:|---:|---:|:---|
++| 1.66° | 263.625947 | 21.968829 | 2.524 GiB | 12/12 valid |
++| 2.40° | 271.965509 | 22.663792 | 2.319 GiB | 12/12 valid |
++| 3.32° | 327.475859 | 27.289655 | 2.394 GiB | 12/12 valid |
++
++Each main width and cap audit ran serially in one Python process under `nice -n 15`, with `OMP_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, `MKL_NUM_THREADS`, `NUMEXPR_NUM_THREADS`, `VECLIB_MAXIMUM_THREADS`, and `BLIS_NUM_THREADS` all set to `1`. A 4.9 GB RSS watchdog plus PANELCEIL's own `<5,000,000,000`-byte assertion was active. The largest recorded main-sweep peak was 2,709,970,944 bytes. The only interpreter used was `/home/sat/mcrl-leo-handover/.venv/bin/python`.
++
++An initial control attempt used a 4.9 GB address-space limit and stopped after 7 anchors when NumPy could not reserve a 1.22 MiB array despite RSS being only 1.654 GiB. Address space is not RSS; the partial receipt was resumed after replacing that unsuitable limit with the RSS watchdog. No reported metric came from a failed or partial width.
++
++## Derived on paper from verified aggregates
++
++The three quantities use only the pooled EEs above:
++
++- coordination ceiling = `EE(J_FROM_FIRST) / EE(U_FIRST) - 1`;
++- acceleration ceiling = `EE(U_FIRST) / EE(U_FIRST_AT_10) - 1`;
++- traversal-order gap = `EE(U_FIRST) / EE(U_BEST) - 1`.
++
++For example, at `3.32°`, `10.9723570805 / 9.8400718422 - 1 = +11.506880%`, and `9.8400718422 / 7.1154499154 - 1 = +38.291632%`.
++
++The untimed `1.66°` constructions reproduce the standing PANELCEIL aggregates exactly to the stored binary64 values: base, both fixed points, joint-from-first, coordination `+1.944795%`, and traversal gap `+0.905261%`. The fresh actual-10-second control is `13.187489 Mbit/J`, so this run's acceleration ceiling is `+1.840863%`, not the earlier `+1.045609%` obtained when the same search completed more moves within ten wall-clock seconds.
++
++Relative to the control, absolute first-fixed EE changes by `+3.085867%` at `2.40°` and `−26.732043%` at `3.32°`; joint EE changes by `+4.522812%` and `−19.859751%`, respectively. These comparisons are descriptive design-phase arithmetic, not selection criteria.
++
++## Inferred
++
++- **The ceiling question is answered yes.** The conclusion does not depend only on the wall-clock checkpoint: the deterministic coordination ceiling itself reaches `+11.506880%` at `3.32°`.
++- The large acceleration ceilings are partly computational. Wider-beam search paths took much longer on several anchors, while the 10-second construction credits only moves whose evaluations completed by the checkpoint. These are valid measurements on this machine under the required live-load conditions, but their exact percentages should not be assumed hardware- or load-invariant.
++- `3.32°` creates coordination headroom but degrades absolute EE, served PHY, rate attainment, and the selected-profile cap census. It is therefore evidence for a larger optimization opportunity, not by itself evidence that `3.32°` is the better operating point.
++- `2.40°` is the more plausible sampled design candidate: it raises absolute first/joint EE, served PHY, and fixed/joint target attainment while exposing `+8.866177%` acceleration headroom. Its deterministic coordination headroom remains only `+3.365834%`, so whether that is worth a learning program is a design-value judgment, not established here.
++- The negative `−2.028159%` traversal gap at `3.32°` means best-improvement finishes above first-improvement there. Traversal order remains consequential, but its direction is not stable over the grid.
++
++## Construction and provenance
++
++The declared grid, stated before execution and never changed, was `1.66°, 2.40°, 3.32°`. The frozen development panel is `V025_PROBE/world/1`, steps 0–3, crossed in declared order with `nearest-eligible`, `stay-if-possible`, and `random-masked` (12 anchors, 100 users each). No evaluation-only claim date was opened.
++
++The hash-pinned PANELCEIL runner was loaded read-only from `/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py`, SHA-256 `dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95`. A local adapter set `mcrl.physics_v025.channel.TX_FULL_HPBW_DEG = 2 × one-sided width` in memory before each new `build_world_tape`; no sealed source or constant was edited. The distinct tape digests at the two non-control widths verify that physics was regenerated rather than reused.
++
++Traversal names, always:
++
++- first improvement: **ascending user ID; declared legal-option order; first strict guarded-`F` improvement in ordered batches of 16**, cycled to a complete no-move certificate;
++- best improvement: **ascending user ID; declared legal-option order in batches of 16; exact best strict response per user; stable configuration-ID tie-break**, cycled to a complete no-move certificate.
++
++Both start from the same legal base and use exact `F = decoded bits − eta_ref × joules` with the unchanged base-served guard. The 10-second incumbent is the last first-improvement move whose evaluation completed by 10 seconds. The joint selector is reseeded from the certified first fixed point and exhausts the unchanged bounded catalogue: same-beam occupant subsets of size 2–4 with the 1,024-generation cap, victim plus top-2/top-3 physical nominal contributors, complete-beam evacuations, stable assignment order, batches of 32, and the 4,096 unique-candidate cap.
++
++## Machine-readable evidence
++
++```text
++1016e459a34cbe85439ac9d1054bf1b4c5d86ec587fb5d977fd4b6e19f66118d  .scratch/beamsweep/width-1.66.json
++da8163f991976c1092cbd292f2b80320edc109f5ccf89310390266a6a32a42ca  .scratch/beamsweep/width-2.40.json
++173532550200716da64d5724d24137cfa8ca505587f9e1929fc4a67e476328c5  .scratch/beamsweep/width-3.32.json
++ab14e201897df142d7023e2cba6f0fb866295c1768b7217a5d89692865a33409  .scratch/beamsweep/cap-audit-1.66.json
++78363035417a719bc50e74b7a2d2c54778768a726481d6f826ba8b5660b3c046  .scratch/beamsweep/cap-audit-2.40.json
++8b3c79d5c0f2d8dc42dcc958a938648ec37e117cb18c7bdb8ffeec92145a6019  .scratch/beamsweep/cap-audit-3.32.json
++fd84b4b7608754256aab641ae318a22b32cd766aa8e0177c877f8cd5237dc3e3  .scratch/beamsweep/run_width.py
++18e63ebd7ed152e38c38a7c55a7030f6c0c06b199b9593dc39211dba002ce909  .scratch/beamsweep/audit_cap.py
++5ec5e322645665df60084bb09ef864e96e6af4bdf774813613ecb94c40cc799a  .scratch/beamsweep/panelceil-source-map.md
++```
++
++The local source map is [`panelceil-source-map.md`](.scratch/beamsweep/panelceil-source-map.md). The read-only handover tree and its virtual environment were not modified; all generated artefacts are in this workspace.
+
+tokens used
+233,291
