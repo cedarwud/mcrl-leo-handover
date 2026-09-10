@@ -31947,3 +31947,4733 @@ index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeea
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The corrected cap replay is rebuilding the 1.66° tape. It now preserves stored configuration IDs and assignments exactly.
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+ succeeded in 240603ms:
+peak RSS 1.662 GiB after cap-audit tape
+anchor 1/12 cap audit completed peak RSS 1.662 GiB
+anchor 2/12 cap audit completed peak RSS 1.662 GiB
+anchor 3/12 cap audit completed peak RSS 1.662 GiB
+anchor 4/12 cap audit completed peak RSS 1.662 GiB
+anchor 5/12 cap audit completed peak RSS 1.662 GiB
+anchor 6/12 cap audit completed peak RSS 1.662 GiB
+anchor 7/12 cap audit completed peak RSS 1.662 GiB
+anchor 8/12 cap audit completed peak RSS 1.662 GiB
+anchor 9/12 cap audit completed peak RSS 1.662 GiB
+anchor 10/12 cap audit completed peak RSS 1.662 GiB
+anchor 11/12 cap audit completed peak RSS 1.662 GiB
+anchor 12/12 cap audit completed peak RSS 1.662 GiB
+peak RSS 1.662 GiB final cap audit
+{"configuration_anchor_count": 60, "ratio_exactly_one_count": 53, "ratio_max": 1.0, "ratio_min": 0.3290202415861351, "wall_seconds": 238.98032717598835}
+
+codex
+Control cap-audit tape generation continues normally under the fixed controls.
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The selected-configuration control audit completed: `nominal_required_power_over_cap == 1.0` on **53/60** construction-anchor profiles, with range 0.3290–1.0. This does not contradict the cited v2 corpus result because that audit covered action rows, whereas this one covers the five committed selections. I’ll keep those scopes explicit and compare the same 60-profile measure across widths.
+exec
+/bin/bash -lc 'env PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/beamsweep/audit_cap.py --width 2.40' in /home/sat/mcrl-v025-beam-ws
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The 2.40° cap audit is in fresh tape construction; the comparison scope is fixed at the same five constructions × 12 anchors.
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+The 2.40° audit remains in tape regeneration with no error or cap event.
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+ succeeded in 273174ms:
+peak RSS 1.673 GiB after cap-audit tape
+anchor 1/12 cap audit completed peak RSS 1.673 GiB
+anchor 2/12 cap audit completed peak RSS 1.673 GiB
+anchor 3/12 cap audit completed peak RSS 1.673 GiB
+anchor 4/12 cap audit completed peak RSS 1.673 GiB
+anchor 5/12 cap audit completed peak RSS 1.673 GiB
+anchor 6/12 cap audit completed peak RSS 1.673 GiB
+anchor 7/12 cap audit completed peak RSS 1.673 GiB
+anchor 8/12 cap audit completed peak RSS 1.673 GiB
+anchor 9/12 cap audit completed peak RSS 1.673 GiB
+anchor 10/12 cap audit completed peak RSS 1.673 GiB
+anchor 11/12 cap audit completed peak RSS 1.673 GiB
+anchor 12/12 cap audit completed peak RSS 1.673 GiB
+peak RSS 1.673 GiB final cap audit
+{"configuration_anchor_count": 60, "ratio_exactly_one_count": 49, "ratio_max": 1.0, "ratio_min": 0.17826670143912357, "wall_seconds": 271.5267528149998}
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+At 2.40°, exact-one cap profiles fall from 53/60 to **49/60**, and the minimum required-power ratio falls from 0.3290 to 0.1783. That is partial cap relief on this selected-profile diagnostic, not universal relief; many configurations still hit the cap. The 3.32° comparison is next.
+exec
+/bin/bash -lc 'env PYTHONDONTWRITEBYTECODE=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 BLIS_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/beamsweep/audit_cap.py --width 3.32' in /home/sat/mcrl-v025-beam-ws
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/.scratch/beamsweep/audit_cap.py b/.scratch/beamsweep/audit_cap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..3a23cf2569828ae5f9b4ca1ea22ffa79d869b5d7
+--- /dev/null
++++ b/.scratch/beamsweep/audit_cap.py
+@@ -0,0 +1,195 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: selected-configuration RF-cap audit."""
++
++from __future__ import annotations
++
++import argparse
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import time
++
++import run_width
++
++
++NAMES = ("BASE", "U_FIRST_AT_10", "U_FIRST", "U_BEST", "J_FROM_FIRST")
++
++
++def mapping_from_metric(metric: dict) -> dict[int, tuple[int, int] | None]:
++    return {
++        int(user): None if identity is None else (int(identity[0]), int(identity[1]))
++        for user, identity in metric["assignments"]
++    }
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in run_width.DECLARED_GRID_DEG:
++        raise RuntimeError("width is outside the predeclared grid")
++
++    resource.setrlimit(
++        resource.RLIMIT_RSS, (run_width.MAX_RSS_BYTES, run_width.MAX_RSS_BYTES)
++    )
++    run_width.start_rss_watchdog()
++    source = run_width.load_source_runner()
++    source.assert_runtime()
++    panel = source.frozen_panel()
++    pilot = source.load_pilot()
++    from mcrl.physics_v025 import channel
++    from mcrl.physics_v025.constants_v025 import BEAM_RF_CAP_W
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++    receipt_path = (
++        run_width.WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    )
++    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
++    if receipt["status"] != "COMPLETE":
++        raise RuntimeError("sweep receipt is not complete")
++    if float(receipt["beam_width_sweep"]["one_sided_half_power_deg"]) != args.width:
++        raise RuntimeError("receipt width mismatch")
++
++    started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0],
++        provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33,
++        start_time_s=0.0,
++    )
++    print(
++        f"peak RSS {source.assert_rss()/2**30:.3f} GiB after cap-audit tape",
++        flush=True,
++    )
++    run_setting = pilot.ENGINE.run_setting_for("a-r0")
++    rows = []
++    for position, (panel_row, anchor) in enumerate(
++        zip(panel, receipt["anchors"], strict=True), 1
++    ):
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = pilot.ENGINE._base_configuration(tape, step_index, carrier)
++        incumbent = pilot.ENGINE._base_configuration(
++            tape, max(0, step_index - 1), carrier
++        )
++        configs = {}
++        for name in NAMES:
++            stored = anchor["committed"][name]
++            mapping = mapping_from_metric(stored)
++            assignments = tuple(sorted(mapping.items()))
++            config = pilot.ENGINE.Configuration(
++                stored["configuration_id"],
++                assignments,
++                sum(mapping[user] != base.mapping[user] for user in mapping),
++                "beamsweep-cap-audit-exact-replay",
++            )
++            if config.configuration_id != stored["configuration_id"]:
++                raise RuntimeError(f"configuration ID mismatch for {position}/{name}")
++            configs[name] = config
++        evaluator = pilot.ENGINE.StepEvaluator(
++            tape,
++            pilot.ENGINE._setting("a-r0"),
++            step_index,
++            transition_from=incumbent,
++            cell_rekeyed_users=pilot.ENGINE._rekeyed_users(tape, step_index),
++            field="nominal",
++            counter=pilot.ENGINE.EvaluationCounter(),
++            run_setting=run_setting,
++            boundary_indices=(0,),
++        )
++        evaluator.evaluate_many(tuple(configs.values()))
++        for name, config in configs.items():
++            profile = evaluator._evaluated.get(config.configuration_id)
++            if profile is None:
++                raise RuntimeError(f"invalid nominal cap-audit config {position}/{name}")
++            ratio = float(profile.required_power_w_max) / float(BEAM_RF_CAP_W)
++            rows.append(
++                {
++                    "global_anchor_index": int(panel_row["global_anchor_index"]),
++                    "construction": name,
++                    "configuration_id": config.configuration_id,
++                    "nominal_required_power_over_cap": ratio,
++                    "nominal_required_power_over_cap_hex": ratio.hex(),
++                    "rf_cap_hits": int(profile.rf_cap_hits),
++                    "rf_transmission_observations": int(
++                        profile.rf_transmission_observations
++                    ),
++                }
++            )
++        print(
++            f"anchor {position}/{len(panel)} cap audit completed "
++            f"peak RSS {source.assert_rss()/2**30:.3f} GiB",
++            flush=True,
++        )
++
++    by_name = {}
++    for name in NAMES:
++        values = [
++            row["nominal_required_power_over_cap"]
++            for row in rows
++            if row["construction"] == name
++        ]
++        hits = sum(
++            row["rf_cap_hits"] for row in rows if row["construction"] == name
++        )
++        observations = sum(
++            row["rf_transmission_observations"]
++            for row in rows
++            if row["construction"] == name
++        )
++        by_name[name] = {
++            "configuration_anchor_count": len(values),
++            "ratio_exactly_one_count": sum(value == 1.0 for value in values),
++            "ratio_min": min(values),
++            "ratio_max": max(values),
++            "rf_cap_hits_boundary0": hits,
++            "rf_transmission_observations_boundary0": observations,
++            "rf_cap_hit_share_boundary0": hits / observations,
++        }
++    payload = {
++        "schema": "mcrl-v025-beam-width-selected-configuration-cap-audit-v1",
++        "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++        "scope": (
++            "five selected constructions x 12 anchors, nominal boundary 0; "
++            "not the full action-row corpus"
++        ),
++        "one_sided_half_power_deg": args.width,
++        "full_hpbw_deg_runtime_override": 2.0 * args.width,
++        "rows": rows,
++        "summary_by_construction": by_name,
++        "ratio_exactly_one_count": sum(
++            row["nominal_required_power_over_cap"] == 1.0 for row in rows
++        ),
++        "configuration_anchor_count": len(rows),
++        "ratio_min": min(row["nominal_required_power_over_cap"] for row in rows),
++        "ratio_max": max(row["nominal_required_power_over_cap"] for row in rows),
++        "wall_seconds": time.perf_counter() - started,
++        "peak_rss_bytes": source.assert_rss(),
++        "python": os.path.realpath(os.sys.executable),
++    }
++    output = (
++        run_width.WORKSPACE
++        / ".scratch/beamsweep"
++        / f"cap-audit-{args.width:.2f}.json"
++    )
++    output.write_text(
++        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
++        encoding="utf-8",
++    )
++    print(
++        f"peak RSS {payload['peak_rss_bytes']/2**30:.3f} GiB final cap audit",
++        flush=True,
++    )
++    print(json.dumps({key: payload[key] for key in (
++        "ratio_exactly_one_count", "configuration_anchor_count",
++        "ratio_min", "ratio_max", "wall_seconds",
++    )}, sort_keys=True), flush=True)
++    return 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/.scratch/beamsweep/run_width.py b/.scratch/beamsweep/run_width.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1195063c1c36dbcc6113a83d627deeeafa86d903
+--- /dev/null
++++ b/.scratch/beamsweep/run_width.py
+@@ -0,0 +1,152 @@
++#!/usr/bin/env python3
++"""DESIGN-PHASE EXPLORATION: run PANELCEIL at one declared beam width.
++
++This is a thin, hash-pinned adapter around the existing PANELCEIL runner.  It
++changes only the runtime value read by the channel module before world-tape
++construction and redirects all writes into this workspace.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import importlib.util
++import json
++import os
++from pathlib import Path
++import resource
++import sys
++import threading
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-beam-ws")
++SOURCE_RUNNER = Path(
++    "/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py"
++)
++SOURCE_RUNNER_SHA256 = (
++    "dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95"
++)
++DECLARED_GRID_DEG = (1.66, 2.40, 3.32)
++MAX_RSS_BYTES = 4_900_000_000
++
++
++def sha256(path: Path) -> str:
++    return hashlib.sha256(path.read_bytes()).hexdigest()
++
++
++def load_source_runner():
++    if sha256(SOURCE_RUNNER) != SOURCE_RUNNER_SHA256:
++        raise RuntimeError("hash-pinned PANELCEIL runner changed")
++    spec = importlib.util.spec_from_file_location("beamsweep_panelceil_source", SOURCE_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot import PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def resident_bytes() -> int:
++    for line in Path("/proc/self/status").read_text(encoding="ascii").splitlines():
++        if line.startswith("VmRSS:"):
++            return int(line.split()[1]) * 1024
++    raise RuntimeError("/proc/self/status omitted VmRSS")
++
++
++def start_rss_watchdog() -> None:
++    def monitor() -> None:
++        while True:
++            value = resident_bytes()
++            if value >= MAX_RSS_BYTES:
++                print(
++                    f"peak RSS hard-stop at {value} bytes (limit {MAX_RSS_BYTES})",
++                    flush=True,
++                )
++                os._exit(86)
++            time.sleep(0.05)
++
++    threading.Thread(target=monitor, name="rss-watchdog", daemon=True).start()
++
++
++def main() -> int:
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--width", type=float, required=True)
++    args = parser.parse_args()
++    if args.width not in DECLARED_GRID_DEG:
++        raise RuntimeError(f"width must belong to declared grid {DECLARED_GRID_DEG}")
++
++    # RLIMIT_RSS is advisory on Linux, so pair it with a fast in-process
++    # watchdog.  RLIMIT_AS is intentionally not used: NumPy reserves sparse
++    # virtual address ranges far larger than its resident set.
++    resource.setrlimit(resource.RLIMIT_RSS, (MAX_RSS_BYTES, MAX_RSS_BYTES))
++    start_rss_watchdog()
++    print(
++        f"DESIGN-PHASE EXPLORATION width={args.width:.2f} deg; "
++        f"RSS hard cap={MAX_RSS_BYTES} bytes",
++        flush=True,
++    )
++
++    source = load_source_runner()
++    output = WORKSPACE / ".scratch/beamsweep" / f"width-{args.width:.2f}.json"
++    source.WORKSPACE = WORKSPACE
++    source.OUTPUT = output
++
++    original_load_pilot = source.load_pilot
++
++    def load_pilot_with_runtime_width():
++        pilot = original_load_pilot()
++        from mcrl.physics_v025 import channel
++
++        channel.TX_FULL_HPBW_DEG = 2.0 * args.width
++        return pilot
++
++    source.load_pilot = load_pilot_with_runtime_width
++
++    original_atomic_write = source.atomic_write
++
++    def atomic_write_with_design_metadata(payload: dict) -> None:
++        payload["beam_width_sweep"] = {
++            "status": "DESIGN_PHASE_EXPLORATION_NOT_CLAIM",
++            "declared_grid_one_sided_half_power_deg": list(DECLARED_GRID_DEG),
++            "one_sided_half_power_deg": args.width,
++            "full_hpbw_deg_runtime_override": 2.0 * args.width,
++            "implementation": (
++                "runtime-only mcrl.physics_v025.channel.TX_FULL_HPBW_DEG "
++                "override before build_world_tape"
++            ),
++            "sealed_constant_changed": False,
++            "source_panelceil_runner": str(SOURCE_RUNNER),
++            "source_panelceil_runner_sha256": SOURCE_RUNNER_SHA256,
++            "memory_enforcement": {
++                "mechanism": "RLIMIT_RSS plus 50 ms in-process VmRSS watchdog",
++                "bytes": MAX_RSS_BYTES,
++            },
++        }
++        if payload.get("world_tape") and payload.get("panel_count"):
++            seconds = float(payload["world_tape"]["construction_seconds"])
++            payload["beam_width_sweep"]["physics_regeneration_seconds_total"] = seconds
++            payload["beam_width_sweep"]["physics_regeneration_seconds_per_anchor"] = (
++                seconds / int(payload["panel_count"])
++            )
++        original_atomic_write(payload)
++
++    source.atomic_write = atomic_write_with_design_metadata
++    status = source.main()
++    receipt = json.loads(output.read_text(encoding="utf-8"))
++    sweep = receipt["beam_width_sweep"]
++    print(
++        "physics regeneration "
++        f"{sweep['physics_regeneration_seconds_total']:.6f} s total; "
++        f"{sweep['physics_regeneration_seconds_per_anchor']:.6f} s/anchor",
++        flush=True,
++    )
++    print(
++        f"peak RSS {receipt['peak_rss_bytes'] / 2**30:.3f} GiB final adapter check",
++        flush=True,
++    )
++    return status
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+

@@ -1,0 +1,2418 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-rank2-ws
+model: gpt-5.6-sol
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08c14-e524-7da2-ab1e-778f17fcfd18
+--------
+user
+# STATICS2 — rebuild the entire non-learned reference scale on a clean evaluator path
+
+Workspace `/home/sat/mcrl-v025-rank2-ws`. Interpreter
+`/home/sat/mcrl-leo-handover/.venv/bin/python` only. **Never modify**
+`/home/sat/mcrl-leo-handover` or its `.venv`. **Design-phase measurement, not a claim.**
+
+**Resource limits, enforced.** **Hard cap: 3 python processes, `nice -n 15`, all BLAS threads
+= 1, peak RSS under 5 GB.** Two 16-seed trainings land around 17:05Z and 17:20Z and must not be
+slowed. Print peak RSS and an `anchor k/N` line.
+
+## Why this must be redone
+
+`SELECTION-SURFACE-2026-09-10.md` (`/home/sat/mcrl-v025-surface-ws`) stopped at its parity gate
+and reported, **verified by running code**, that when `BASE` enters through a fresh dense
+`evaluate_many` instead of a scalar `evaluate`:
+
+| cell | published | fresh dense | parity |
+|---|---:|---:|---|
+| nominal / best / one sweep | 28.668530 | **31.078504** | FAIL |
+| realised / first / converged | 13.430253 | **31.028111** | FAIL |
+
+and that the realised fixed point **moved at all 12 anchors (4,210 moves)** under the clean
+path, against **2/12 anchors (699 moves)** as published.
+
+`EVALPATH-2026-09-10.md` already recorded the mechanism: **the evaluator cache key omits
+field / path / boundary semantics, so a scalar-cached `BASE` can be compared against dense
+candidates.**
+
+`STATIC-BASELINE-FAMILY-2026-09-10.md` reproduced the published `11.027760` and `13.430253`
+exactly, 12/12 configuration IDs. **That parity is now understood to have faithfully reproduced
+the contamination, not to have validated it.** The whole reference scale this project is now
+reasoning from therefore has to be rebuilt.
+
+## The evaluator rule, which is the point of this job
+
+**Every selection comparison at an anchor happens inside ONE fresh dense
+`StepEvaluator(boundary_indices=(0,))`, and `BASE` enters that evaluator through
+`evaluate_many` together with the candidates — never through scalar `evaluate`, never from a
+cache built by a different call.** Endpoints use ONE separate fresh realised dense full-48
+`evaluate_many` containing the profiles being compared.
+
+State, in the report, the exact code path you used, and **assert in code** that no scalar
+`evaluate` is called anywhere on the selection surface. If the existing helper does not permit
+that, write your own thin driver rather than reusing a contaminated one.
+
+## What to rebuild
+
+The full family from `STATICS`, same 12 frozen anchors, same legal set, same `a-r0` corrected
+provisioning, same declared prior-step incumbent, **full-buffer numerator with no demand cap**,
+pooled EE as `sum(bits)/sum(joules)`:
+
+`RANDOM` (same seeding rule, `20260910 + i`), `ROUND_ROBIN`, `RSS_MAX`, `NEAREST_ELIGIBLE`,
+`MYOPIC_GREEDY`, `FIRST_IMPROVEMENT_FP`.
+
+**Report each arm twice**: its published value and its clean-path value, with the difference.
+
+**Say explicitly, per arm, whether it touches the selection evaluator at all.** The four direct
+rules choose without consulting the objective, so they may be unaffected; the two search arms
+certainly are. **Do not assume — verify which arms changed and which did not.** An arm that is
+unchanged is as important a result as one that moved, because it tells us which of today's
+numbers survive.
+
+## Also report
+
+- Served PHY, rate-target attainment, `modal_frac`, `active` beams and satellites, per arm.
+- For the two search arms: **move counts and pass counts per anchor**, published versus clean,
+  so the "the fixed point barely moved" finding is quantified across the family.
+- **Whether `RSS_MAX` still has the highest pooled EE of the six**, and by what margin over the
+  clean fixed point. Today's reasoning used a 3.099x margin computed against the contaminated
+  13.430253; the clean margin is what matters now.
+- Whether `RANDOM` still beats `NEAREST_ELIGIBLE`.
+
+## Rules
+
+- Separate **verified by running code**, **derived on paper**, **inferred**.
+- Loss values are never evidence about EE. Read no learner checkpoint.
+- **Report the clean numbers whatever they are**, including "the published family was
+  essentially correct" or "several arms move a lot". Both are useful; neither is to be softened.
+- **Do not re-derive or re-litigate the contamination mechanism** — `SURFACE` established it.
+  Rebuild the measurement.
+- Development anchors only. **Do not read the 48 evaluation-only claim dates.**
+- Change no sealed artefact. **Do not overwrite `STATIC-BASELINE-FAMILY-2026-09-10.md`** — it
+  stays on record as the contaminated measurement.
+
+Write to `/home/sat/mcrl-v025-rank2-ws/STATIC-BASELINE-FAMILY-CLEANPATH-2026-09-10.md`, first
+line one bolded sentence giving the six clean pooled EE values, which arms moved from their
+published values, and whether `RSS_MAX` is still highest.
+codex
+I’ll rebuild the six-arm measurement from the frozen development anchors, first tracing the existing STATICS definitions and published outputs, then implementing a clean evaluator driver with a hard assertion against scalar `evaluate`. I’ll keep every Python invocation at `nice -n 15`, one process at a time, and BLAS threads pinned to 1; the final run will emit peak RSS and `anchor k/N` progress.
+exec
+/bin/bash -lc "pwd && rg --files -g 'AGENTS.md' -g '*.md' -g '*.py' | sed -n '1,240p'" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-rank2-ws
+
+exec
+/bin/bash -lc "ls -la && find /home/sat/mcrl-v025-surface-ws -maxdepth 2 -type f -name '*.md' -o -name '*.py' | sort | sed -n '1,240p' && find /home/sat/mcrl-leo-handover -maxdepth 3 -type f \\( -name '*.py' -o -name '*.md' \\) | sort | sed -n '1,300p'" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+total 48
+drwxrwxr-x   5 sat sat  4096 Sep 10 16:09 .
+drwxr-x--- 429 sat sat 36864 Sep 10 16:09 ..
+dr-xr-xr-x   2 sat sat    40 Sep 10 16:09 .agents
+dr-xr-xr-x   2 sat sat    40 Sep 10 16:09 .codex
+drwxrwxr-x   6 sat sat  4096 Sep 10 16:09 .git
+/home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md
+/home/sat/mcrl-leo-handover/.pytest_cache/README.md
+/home/sat/mcrl-leo-handover/README.md
+/home/sat/mcrl-leo-handover/docs/AUDIT-external-luna-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-BRIEF-BEFORE-FREEZE-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-BRIEF-TRAINING-SERVER-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-BRIEF-W18-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-FINDINGS-W17-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-PROMPT-H-AND-PREREG-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-QUESTIONS-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-B4-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-DT-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-GPT-CLOSURE-2026-08-24.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-H-AND-PREREG-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W17-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W19-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W20-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W21-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W22-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W23-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W24-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W25-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W26-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W27-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-RULINGS-W28-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/CONTROLLER-SIGNOFF-PREREG-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/D2-NOTES.md
+/home/sat/mcrl-leo-handover/docs/DEVIATION-REGISTER.md
+/home/sat/mcrl-leo-handover/docs/EPHEMERIS-NOTES.md
+/home/sat/mcrl-leo-handover/docs/G9-TEST-MAP.md
+/home/sat/mcrl-leo-handover/docs/HANDOFF-GPT-FULL-EXECUTION-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/IMPLEMENTATION-PROMPT.md
+/home/sat/mcrl-leo-handover/docs/LINK-BUDGET-NOTES.md
+/home/sat/mcrl-leo-handover/docs/MIGRATION-TABLE.md
+/home/sat/mcrl-leo-handover/docs/PATCH-LEDGER.md
+/home/sat/mcrl-leo-handover/docs/POST-RUN-VALIDATION-2026-08-24.md
+/home/sat/mcrl-leo-handover/docs/PREREG-DRAFT.md
+/home/sat/mcrl-leo-handover/docs/PREREG-SIGNOFF-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/PROVENANCE.md
+/home/sat/mcrl-leo-handover/docs/R3-AND-EXECUTION-MASK-NOTES.md
+/home/sat/mcrl-leo-handover/docs/W18-REPLY-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/W19-DONE-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/W19-REPLY-C-COST-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/W19-REPLY-DT-2026-08-22.md
+/home/sat/mcrl-leo-handover/docs/W20-REPLY-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/W21-REPLY-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/W22-REPLY-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/W24-REPLY-STATUS-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/W27-REPLY-PROBES-2026-08-23.md
+/home/sat/mcrl-leo-handover/docs/W29-REPLY-PREREG-FROZEN-2026-08-23.md
+/home/sat/mcrl-leo-handover/scripts/README.md
+/home/sat/mcrl-leo-handover/scripts/ceiling_and_segments.py
+/home/sat/mcrl-leo-handover/scripts/dt_sweep2.py
+/home/sat/mcrl-leo-handover/scripts/feasibility_is_fading_free.py
+/home/sat/mcrl-leo-handover/scripts/freeze_prereg.py
+/home/sat/mcrl-leo-handover/scripts/outage_frozen.py
+/home/sat/mcrl-leo-handover/scripts/qe_premise.py
+/home/sat/mcrl-leo-handover/scripts/qe_rekey.py
+/home/sat/mcrl-leo-handover/scripts/run_probe_p3.py
+/home/sat/mcrl-leo-handover/scripts/run_probes.py
+/home/sat/mcrl-leo-handover/scripts/run_server_training.py
+/home/sat/mcrl-leo-handover/scripts/segment_budget.py
+/home/sat/mcrl-leo-handover/scripts/sensitivity_arm.py
+/home/sat/mcrl-leo-handover/scripts/signed_drop_dt30.py
+/home/sat/mcrl-leo-handover/scripts/two_timescale_check.py
+/home/sat/mcrl-leo-handover/scripts/w02_ephemeris_survey.py
+/home/sat/mcrl-leo-handover/scripts/w02_split_shift_check.py
+/home/sat/mcrl-leo-handover/scripts/w04_d2_survey.py
+/home/sat/mcrl-leo-handover/src/mcrl/__init__.py
+/home/sat/mcrl-leo-handover/src/mcrl/errors.py
+/home/sat/mcrl-leo-handover/tests/_fake_env.py
+/home/sat/mcrl-leo-handover/tests/conftest.py
+/home/sat/mcrl-leo-handover/tests/test_c11_gate_order_equivalence.py
+/home/sat/mcrl-leo-handover/tests/test_c3_pointing_cells.py
+/home/sat/mcrl-leo-handover/tests/test_candidate_assembly.py
+/home/sat/mcrl-leo-handover/tests/test_g6_forbidden_list.py
+/home/sat/mcrl-leo-handover/tests/test_no_shim_remains.py
+/home/sat/mcrl-leo-handover/tests/test_pointing_and_mobility.py
+/home/sat/mcrl-leo-handover/tests/test_ruling_no_beam_count_cap.py
+/home/sat/mcrl-leo-handover/tests/test_scenario_driver.py
+/home/sat/mcrl-leo-handover/tests/test_trainer_config_validation.py
+/home/sat/mcrl-leo-handover/tests/test_w02_altitude_chain.py
+/home/sat/mcrl-leo-handover/tests/test_w02_ephemeris.py
+/home/sat/mcrl-leo-handover/tests/test_w02_g1_sgp4.py
+/home/sat/mcrl-leo-handover/tests/test_w02_split.py
+/home/sat/mcrl-leo-handover/tests/test_w02_tle.py
+/home/sat/mcrl-leo-handover/tests/test_w03_cells.py
+/home/sat/mcrl-leo-handover/tests/test_w03_g9_handover_accounting.py
+/home/sat/mcrl-leo-handover/tests/test_w03_td_target_masking.py
+/home/sat/mcrl-leo-handover/tests/test_w04_d2.py
+/home/sat/mcrl-leo-handover/tests/test_w05_dwell.py
+/home/sat/mcrl-leo-handover/tests/test_w06_antenna.py
+/home/sat/mcrl-leo-handover/tests/test_w06_energy_efficiency.py
+/home/sat/mcrl-leo-handover/tests/test_w06_link_budget_g2.py
+/home/sat/mcrl-leo-handover/tests/test_w06_link_ee.py
+/home/sat/mcrl-leo-handover/tests/test_w07_r3_and_feasibility.py
+/home/sat/mcrl-leo-handover/tests/test_w08_vanilla_td_target.py
+/home/sat/mcrl-leo-handover/tests/test_w10_state_encoding.py
+/home/sat/mcrl-leo-handover/tests/test_w11_reference_policy_and_p1.py
+/home/sat/mcrl-leo-handover/tests/test_w12_checkpoints.py
+/home/sat/mcrl-leo-handover/tests/test_w12_collapse_metrics.py
+/home/sat/mcrl-leo-handover/tests/test_w13_prereg.py
+/home/sat/mcrl-leo-handover/tests/test_w15_bessel.py
+/home/sat/mcrl-leo-handover/tests/test_w16_finiteness.py
+/home/sat/mcrl-leo-handover/tests/test_w16_no_op_action.py
+/home/sat/mcrl-leo-handover/tests/test_w16_outage_gate.py
+/home/sat/mcrl-leo-handover/tests/test_w16_replay_exclusion.py
+/home/sat/mcrl-leo-handover/tests/test_w17_bessel_vectorised.py
+/home/sat/mcrl-leo-handover/tests/test_w17_interference.py
+/home/sat/mcrl-leo-handover/tests/test_w17_step_environment.py
+/home/sat/mcrl-leo-handover/tests/test_w18_mask_can_bind.py
+/home/sat/mcrl-leo-handover/tests/test_w18_prereg_draft.py
+/home/sat/mcrl-leo-handover/tests/test_w18_scintillation_and_shadowing.py
+/home/sat/mcrl-leo-handover/tests/test_w18_trainer_environment.py
+/home/sat/mcrl-leo-handover/tests/test_w25_probe_p3.py
+/home/sat/mcrl-leo-handover/tests/test_w27_probes.py
+/home/sat/mcrl-leo-handover/tests/test_w29_beam_power_budget.py
+/home/sat/mcrl-leo-handover/tests/test_w29_prereg_frozen.py
+/home/sat/mcrl-leo-handover/tests/test_w30_probe_p6.py
+/home/sat/mcrl-leo-handover/tests/test_w30_resume_checkpoint.py
+/home/sat/mcrl-leo-handover/tests/test_w30_server_training_cli.py
+/home/sat/mcrl-leo-handover/tests/test_w30_training_pipeline.py
+
+exec
+/bin/bash -lc "find .agents .codex -maxdepth 2 -type f -print -exec sed -n '1,240p' {} \\; && find /home/sat -maxdepth 2 -type f \\( -name 'STATIC-BASELINE-FAMILY-2026-09-10.md' -o -name 'EVALPATH-2026-09-10.md' -o -name 'STATICS*' \\) -print && find /home/sat/mcrl-leo-handover/src -type f -name '*.py' | sort" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+/home/sat/mcrl-v025-probe-ws/EVALPATH-2026-09-10.md
+/home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md
+/home/sat/mcrl-leo-handover/src/mcrl/__init__.py
+/home/sat/mcrl-leo-handover/src/mcrl/algorithms/__init__.py
+/home/sat/mcrl-leo-handover/src/mcrl/algorithms/modqn.py
+/home/sat/mcrl-leo-handover/src/mcrl/artifacts/__init__.py
+/home/sat/mcrl-leo-handover/src/mcrl/artifacts/io.py
+/home/sat/mcrl-leo-handover/src/mcrl/artifacts/models.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/__init__.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/action_contract.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/antenna.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/candidates.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/cells.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/constants.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/d2.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/dwell.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/ephemeris.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/geometry.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/interference.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/link_budget.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/mobility.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/pointing.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/reference_policy.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/scenario.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/service.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/step.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/step_types.py
+/home/sat/mcrl-leo-handover/src/mcrl/env/tle.py
+/home/sat/mcrl-leo-handover/src/mcrl/errors.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/__init__.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/bessel.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/collapse_metrics.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/energy_efficiency.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/finiteness.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/objective_math.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/outage_gate.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/prereg.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/prereg_draft.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_harness.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p1.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p2.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p3.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p4.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p5.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p6.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/probe_p7.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/q_network.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/replay_buffer.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/reward_calibration.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/state_encoding.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/trainer_config_validation.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/trainer_env.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/trainer_spec.py
+/home/sat/mcrl-leo-handover/src/mcrl/runtime/training_pipeline.py
+
+exec
+/bin/bash -lc "wc -l /home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md /home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md /home/sat/mcrl-v025-probe-ws/EVALPATH-2026-09-10.md && sed -n '1,260p' /home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md && sed -n '1,320p' /home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md && sed -n '1,300p' /home/sat/mcrl-v025-probe-ws/EVALPATH-2026-09-10.md" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+  127 /home/sat/mcrl-v025-rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md
+  116 /home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md
+  143 /home/sat/mcrl-v025-probe-ws/EVALPATH-2026-09-10.md
+  386 total
+**Pooled EE: `RANDOM` 11.233999, `ROUND_ROBIN` 3.441227, `RSS_MAX` 41.621560, `MYOPIC_GREEDY` 28.668530, `NEAREST_ELIGIBLE` parity 11.027760, and `FIRST_IMPROVEMENT_FP` parity 13.430253 Mbit/J; both parity checks reproduced.**
+
+# Static baseline family on the training panel — 2026-09-10
+
+`DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM`. No learner or checkpoint was read, trained, scored, or ranked. Loss values supply no evidence here. Only the frozen 12-anchor development prefix was used; no evaluation-only claim date was read.
+
+## Exact arm definitions
+
+Every arm uses `PANELCEIL`'s frozen global anchors 0–11 in declared order, the complete boundary-0 legal set (visible, D2-eligible, and cell-reachable), the `a-r0` corrected provisioning path, the anchor's declared prior-step incumbent, and singleton evaluation over all 48 realised boundaries. The reported numerator is saturated full-buffer successfully decoded forward-downlink information bits with **no demand cap**. Pooled EE is `sum(bits) / sum(joules)`, never a mean of anchor-local ratios.
+
+The service guard has the same scope as in `PANELCEIL`: it filters candidates for objective-based selection (`MYOPIC_GREEDY` and `FIRST_IMPROVEMENT_FP`). A direct static rule is evaluated as selected, even when its realised served count is poor; rejection or resampling would change `RANDOM` from uniform and conceal precisely the below-random outcomes this measurement is meant to expose. All six arms use the same legal-option guard.
+
+- **`RANDOM`.** At global anchor `i`, initialise Python's MT19937 `random.Random` with `20260910 + i`. Visit users in ascending ID order and draw independently and uniformly from that user's complete declared legal-option tuple. A user is null only if that tuple is empty. There is one draw, with no rejection, service resampling, objective lookup, or demand information.
+
+- **`ROUND_ROBIN`.** Visit users in ascending ID order. For each user, choose the legal physical beam `(NORAD, cell)` having the smallest assignment count accumulated so far. Break equal-load ties by the option's declared order, which is increasing decision-boundary slant range and then physical identity. This equalises user count by legal beam; it does not optimise link quality, satellite count, interference, power, or the declared objective.
+
+- **`RSS_MAX`.** For each user independently, choose the legal option with maximum decision-boundary `nominal_gain`, i.e. wanted-link received watts per beam RF watt. Break an exact tie by declared legal-option order. It uses no demand, occupancy, cross-interference, energy, or realised fading.
+
+- **`NEAREST_ELIGIBLE`.** This is the requested parity label for the exact `PANELCEIL` `BASE` construction: reconstruct each frozen anchor's declared carrier mapping at that step, then set a user to null if it has no live legal action. On anchors whose carrier is `nearest-eligible`, that carrier means best D2 margin in the user's own cell with the first valid slot-order tie-break. The 12-anchor panel also deliberately contains `stay-if-possible` and `random-masked` carrier anchors, so the pooled 11.027760 parity value is the carrier-conditioned `BASE`, not a fresh nearest-only reassignment on all 12 rows. This distinction is required to reproduce `PANELCEIL` exactly.
+
+- **`MYOPIC_GREEDY`.** Start from that anchor's `PANELCEIL` `BASE` and make exactly one ascending-user sweep. For the current user, hold all other assignments fixed; evaluate the incumbent choice and every legal replacement on **nominal boundary 0** in ordered microbatches of 16; retain candidates whose served-PHY count is at least the initial base count; and choose the largest exact `F = decoded bits - eta_ref * joules`, breaking an exact tie by lexicographically smallest stable configuration ID. Commit the choice immediately for later users. There is no second sweep and no future-boundary selection information.
+
+- **`FIRST_IMPROVEMENT_FP`.** This reruns the certified `PANELCEIL` construction: start from the same base; select on exact **realised boundary-0** `F`; visit ascending users and their declared legal options; accept the first strict improvement meeting the initial base served-PHY guard within ordered microbatches of 16; repeat passes until a complete final pass finds no strict guarded improvement. The 48-boundary result never feeds selection.
+
+`modal_frac` below is the largest physical-beam occupancy divided by all 100 users at an anchor. `active beams/satellites` counts distinct non-null physical `(NORAD, cell)` identities and distinct NORADs. `argmax_distinct` counts distinct zero-based declared legal-option ordinals selected across users; it is an action-slot diversity diagnostic, not a physical-beam count. Diversity entries are the mean across 12 anchors followed by `[minimum, maximum]`.
+
+## Verified by running code
+
+### Pooled outcomes
+
+| arm | pooled bits | pooled joules | pooled EE (Mbit/J) | served PHY | rate-target attained | modal_frac | active beams | active satellites | argmax_distinct |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `RANDOM` | 1.288605626013e12 | 114705.864740 | 11.233999 | 1102/1200 | 141/1200 | 0.0333 [0.02, 0.05] | 81.750 [72, 86] | 8.583 [8, 9] | 27.500 [25, 28] |
+| `ROUND_ROBIN` | 7.537530520000e11 | 219036.120671 | 3.441227 | 798/1200 | 48/1200 | 0.0100 [0.01, 0.01] | 100.000 [100, 100] | 4.750 [4, 5] | 11.500 [11, 13] |
+| `RSS_MAX` | 1.653612586627e12 | 39729.712050 | 41.621560 | 1200/1200 | 297/1200 | 0.0500 [0.05, 0.05] | 47.750 [46, 50] | 5.000 [5, 5] | 5.250 [3, 8] |
+| `NEAREST_ELIGIBLE` | 1.121297101614e12 | 101679.495970 | 11.027760 | 960/1200 | 127/1200 | 0.0425 [0.02, 0.05] | 57.333 [41, 90] | 5.333 [3, 9] | 10.667 [1, 28] |
+| `MYOPIC_GREEDY` | 1.527584566003e12 | 53284.369866 | 28.668530 | 1186/1200 | 258/1200 | 0.0300 [0.01, 0.05] | 89.417 [47, 100] | 7.833 [5, 9] | 16.250 [1, 26] |
+| `FIRST_IMPROVEMENT_FP` | 1.255889055879e12 | 93511.944732 | 13.430253 | 1036/1200 | 147/1200 | 0.0408 [0.02, 0.05] | 64.167 [41, 90] | 6.250 [3, 9] | 14.417 [1, 28] |
+
+The corresponding pooled served-PHY rates are 91.833%, 66.500%, 100.000%, 80.000%, 98.833%, and 86.333% in table order. Rate-target attainment is 11.750%, 4.000%, 24.750%, 10.583%, 21.500%, and 12.250%.
+
+### Parity gate
+
+Both parity gates pass. All 12 configuration IDs matched the sealed `PANELCEIL` receipt for both arms. An independent row-by-row diff also found exact equality of committed bits, joules, served-PHY count, and rate-target-attainment count at every anchor.
+
+| parity arm | expected EE | observed EE | rounded-six result | pooled bits | pooled joules | served | attained |
+|---|---:|---:|---|---:|---:|---:|---:|
+| `NEAREST_ELIGIBLE` / `PANELCEIL BASE` | 11.027760 | 11.027760227532 | pass | 1.121297101614e12 | 101679.495970 | 960/1200 | 127/1200 |
+| `FIRST_IMPROVEMENT_FP` | 13.430253 | 13.430252781856 | pass | 1.255889055879e12 | 93511.944732 | 1036/1200 | 147/1200 |
+
+### Wall-clock by anchor
+
+Each entry is `selection / end-to-end` seconds. End-to-end adds that arm's independent singleton 48-boundary committed evaluation. Tape construction (222.563 s, shared once by every arm) is excluded from arm timings. For the fixed point, selection includes its terminal certificate, exactly as in `PANELCEIL`.
+
+| global anchor | carrier | `RANDOM` | `ROUND_ROBIN` | `RSS_MAX` | `NEAREST_ELIGIBLE` | `MYOPIC_GREEDY` | `FIRST_IMPROVEMENT_FP` |
+|---:|---|---:|---:|---:|---:|---:|---:|
+| 0 | nearest-eligible | .002818 / .303287 | .002607 / .059063 | .003892 / .145811 | .000236 / .161853 | 5.456901 / 5.532978 | 4.341399 / 4.502410 |
+| 1 | stay-if-possible | .002654 / .255480 | .002631 / .060160 | .003817 / .146391 | .000269 / .160989 | 5.505847 / 5.583911 | 4.144753 / 4.305702 |
+| 2 | random-masked | .002756 / .177900 | .002630 / .057802 | .003876 / .145935 | .000282 / .243325 | 5.302749 / 5.345201 | 4.755255 / 4.998975 |
+| 3 | nearest-eligible | .002751 / .336844 | .002641 / .083404 | .003648 / .198837 | .000300 / .170462 | 5.219370 / 5.391113 | 4.389278 / 4.560558 |
+| 4 | stay-if-possible | .002928 / .223756 | .002681 / .083229 | .004182 / .198985 | .000298 / .180493 | 5.776191 / 5.856508 | 4.375899 / 4.555498 |
+| 5 | random-masked | .002738 / .766961 | .002579 / .084710 | .004034 / .200519 | .000304 / .322672 | 5.254159 / 5.310803 | 5.217818 / 5.540263 |
+| 6 | nearest-eligible | .002583 / .544976 | .002542 / .141758 | .003850 / .517014 | .000278 / .305039 | 7.236447 / 7.640597 | 4.942540 / 5.248655 |
+| 7 | stay-if-possible | .002695 / .169184 | .002525 / .145334 | .003633 / .514654 | .000274 / .345009 | 6.238417 / 6.310437 | 45.171579 / 45.316361 |
+| 8 | random-masked | .002344 / .273302 | .002606 / .142241 | .003579 / .513144 | .000282 / .450956 | 7.035742 / 7.095645 | 7.285334 / 7.737017 |
+| 9 | nearest-eligible | .002665 / .374680 | .002598 / .116862 | .003798 / .919762 | .000294 / .899210 | 11.448226 / 12.008537 | 8.272072 / 9.173329 |
+| 10 | stay-if-possible | .002859 / .590253 | .002631 / .120288 | .003830 / .943261 | .000316 / .378621 | 7.428929 / 7.487751 | 121.330814 / 121.678617 |
+| 11 | random-masked | .002582 / .477036 | .002564 / .124715 | .003656 / .934686 | .000341 / .450081 | 9.161437 / 9.352503 | 9.417967 / 9.871781 |
+| **mean** | — | **.002698 / .374471** | **.002603 / .101631** | **.003816 / .448250** | **.000289 / .339059** | **6.755368 / 6.909665** | **18.637059 / 18.957430** |
+
+### Cheapest-to-most-expensive ordering
+
+This ordering uses mean **selection** wall-clock, because committed 48-boundary scoring is a common measurement operation rather than policy decision cost. The final column records mean end-to-end measurement time for completeness.
+
+| cost order | arm | mean selection s/anchor | pooled EE (Mbit/J) | mean end-to-end s/anchor |
+|---:|---|---:|---:|---:|
+| 1 | `NEAREST_ELIGIBLE` | 0.000289 | 11.027760 | 0.339059 |
+| 2 | `ROUND_ROBIN` | 0.002603 | 3.441227 | 0.101631 |
+| 3 | `RANDOM` | 0.002698 | 11.233999 | 0.374471 |
+| 4 | `RSS_MAX` | 0.003816 | 41.621560 | 0.448250 |
+| 5 | `MYOPIC_GREEDY` | 6.755368 | 28.668530 | 6.909665 |
+| 6 | `FIRST_IMPROVEMENT_FP` | 18.637059 | 13.430253 | 18.957430 |
+
+The one-process run completed in 572.791 s including shared tape construction. Peak RSS was **2.517 GiB** (2,702,925,824 bytes), below 5 GB. The process ran at niceness 15 under `/home/sat/mcrl-leo-handover/.venv/bin/python`; all six recorded BLAS/OpenMP thread controls were `1`.
+
+## Derived on paper from verified aggregates
+
+- `ROUND_ROBIN / RANDOM - 1 = -69.367747%`.
+- `NEAREST_ELIGIBLE / RANDOM - 1 = -1.835849%`.
+- `MYOPIC_GREEDY / RANDOM - 1 = +155.194334%`.
+- `RSS_MAX / RANDOM - 1 = +270.496366%`.
+- `MYOPIC_GREEDY / FIRST_IMPROVEMENT_FP - 1 = +113.462328%`.
+- `RSS_MAX / FIRST_IMPROVEMENT_FP - 1 = +209.908983%`.
+
+These are arithmetic relations only; they are not learned-policy claims and are not inferred from losses.
+
+## Inferred
+
+The intended comparison structure remains useful, but this measurement changes what may honestly be called its floors and ceiling:
+
+- The weak-static family is the reference family a learned proposal must be placed against. On this panel it is not a narrow floor: its observed span is 3.441227–41.621560 Mbit/J. In particular, clearing only the carrier-conditioned base or random does not clear `RSS_MAX` under the definition above.
+
+- `FIRST_IMPROVEMENT_FP` remains the designated strong classical-search comparator and is not a required learned win target, as stipulated. It is **not an empirical numerical upper bound on this measured family**: `MYOPIC_GREEDY` and `RSS_MAX` are higher. Calling 13.430253 a universal ceiling after this run would contradict the verified table.
+
+- `RANDOM` remains the sanity reference. `ROUND_ROBIN` is 69.37% below it and must be reported. The diversity evidence does not support calling this particular failure crowding: it has the lowest possible measured `modal_frac` (0.01) and exactly 100 active beams at every anchor. Its poor result instead coincides with over-dispersion, 219,036 J (the largest denominator), only 798/1200 served, and just 48/1200 attaining target. Thus “below random implies crowding” is not valid without the occupancy diagnostics; this arm fails for a different static pathology.
+
+- `RSS_MAX`'s high EE is not an artefact of dropping users: it serves 1200/1200, attains 297/1200, has the largest pooled numerator, and the smallest pooled energy denominator. Under declared full-buffer/no-demand-cap scoring, it is the strongest measured arm despite being demand-blind.
+
+- `MYOPIC_GREEDY` is a single nominal sweep, whereas the fixed point selects strict moves on realised boundary 0 from a carrier-conditioned start. Their ordering therefore does not show a certification error or make either algorithm a global optimizer. It shows that the local fixed-point construction is start-, information-, and traversal-dependent.
+
+No learned arm is ranked here.
+
+## Machine evidence and reproduction
+
+```text
+33fa7c31a219a190db8d985ce81b85893bf8d4024f9af4fe8b1c5ac64adf17b5  .scratch/statics/statics-receipt.json  [canonical content digest]
+dd81d45b6cc81291518aaa5fd1276be99d2f0f9d818c4445054620d3f0dc93a5  .scratch/statics/statics-receipt.json  [file SHA-256]
+f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  .scratch/statics/run_statics.py
+09e3e9c5e01f96bb879170ee1c31f752448f33fa6772284fabe8cbbea7fbceca  PANELCEIL receipt  [canonical content digest, read-only]
+dda958d166c42d276704a696e20966ac4236b78e4f88ecf5120e8a73ef817f95  PANELCEIL runner  [read-only]
+```
+
+World tape: domain `V025_PROBE/world/1`, seed `5261619120743994529`, digest `43718040fd7157edc158a8f8cd32418c619dacae1ef1114094f115805f027bf0`.
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python .scratch/statics/run_statics.py
+```
+**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
+
+# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
+
+`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
+
+## Stop decision
+
+The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
+
+No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
+
+## Verified by running code
+
+### Mandatory parity gates
+
+Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call. Endpoint bits are the full-buffer numerator with no demand cap, and pooled EE is `sum(bits) / sum(joules)`.
+
+| cell | expected EE (Mbit/J) | fresh-dense EE (Mbit/J) | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
+| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
+
+`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
+
+The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
+
+The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
+
+### Why the published parity is not reproducible under the required evaluator rule
+
+The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
+
+```python
+evaluator = panelceil.new_selection_evaluator(
+    runner, tape, step_index, incumbent, run_setting, field="nominal"
+)
+base_profile = evaluator.evaluate(base)
+guard = panelceil.served(base_profile)
+# ...
+evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
+```
+
+(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
+
+The published realised fixed point does the same:
+
+```python
+evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+base_profile = evaluator.evaluate(base)
+guard = served(base_profile)
+# ...
+evaluator.evaluate_many(batch)
+```
+
+(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
+
+This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
+
+The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
+
+### Deployed path: direct code reading
+
+The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
+
+```python
+selection_evaluator = StepEvaluator(
+    tape,
+    setting,
+    step_index,
+    transition_from=incumbent,
+    cell_rekeyed_users=cell_rekeys,
+    field="nominal",
+    counter=counter,
+    run_setting=active_run,
+    boundary_indices=(0,),
+)
+selection_evaluator.evaluate_many(catalog)
+# ...
+stage1_profiles = {
+    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
+}
+```
+
+(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
+
+Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
+
+## Derived on paper from verified aggregates
+
+- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
+- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
+- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
+
+These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
+
+## Inferred
+
+The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
+
+## Machine evidence and reproduction
+
+```text
+a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
+6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
+f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
+```
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
+  .scratch/surface/run_parity.py
+```
+
+The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+**Q3 is globally UNDETERMINED: scalar `evaluate` is the declared/KAT authority for 48-boundary physics, while deployed selection and reporting operationally use dense `evaluate_many`; Q1 reproduced on 224 real configurations with boundary-0 dense-minus-scalar gaps from −15.6343 to +24.1164 κ (−1.33535×10¹⁰ to +2.05981×10¹⁰ network bits).**
+
+# EVALPATH — which evaluation path is authoritative?
+
+`DIAGNOSTIC_NOT_CLAIM` — read-only forensics on the workspace copy. No sealed constant, threshold, sign, seed, horizon, price, guard, acceptance rule, control law, grid, manifest, or optimizer setting was changed. “Surplus” or “loss” below is not energy efficiency (EE); it is a bit- or κ-normalized difference. An EE impact cannot be inferred without the paired bits, joules, selected sequences, pooling, and acceptance margins.
+
+## Bottom line
+
+The reported disagreement is real, but it combines two cases:
+
+1. The large disagreement is not two implementations of the same integral. A `StepEvaluator` configured with `boundary_indices=(0,)` sends that subset only through `evaluate_many`; `evaluate` ignores it, materializes all 48 tape boundaries, and integrates the full trajectory. Dense boundary 0 is explicitly held for 30.08 s. This is the exact primary mechanism.
+2. With both paths on all 48 boundaries, realised-field parity is numerical but never fully binary64-identical in this sample. Nominal-field parity also has five threshold-sensitive outliers (maximum 0.02041 κ), which the present synthetic approximate-parity KAT does not expose.
+3. The repository does not support a single global answer to “which path is authoritative.” The batch module says the scalar object path is the KAT authority, yet the deployed selection-time contract can only be implemented by the dense path because scalar ignores boundary subsets. Deployed committed reporting also uses dense full-48 results. Stage-C acceptance consumes receipts and its acceptance test uses a synthetic evaluator, so it does not settle physics-path authority.
+
+## Evidence and method
+
+### Verified in this run
+
+- One deterministic process built `DEVELOPMENT_WORLD_DOMAINS[0]` using `LegacyWorldProvider`, reused the engine’s `_base_configuration` and `_catalogue_with_census`, and sampled 28 real catalogue configurations at each of steps 0, 4, 8, 12, 16, 20, 24, and 28.
+- The 224 exact same Python `Configuration` objects were sent through fresh scalar and dense evaluators in the same process. Occupancy by `changed_users` was: 0: 8, 1: 47, 2: 46, 3: 42, 4: 40, 5: 23, 6: 2, and 100: 16.
+- Nominal boundary-0 dense was compared with scalar configured for boundary 0; nominal full-48 and realised full-48 dense were separately compared with scalar. κ was the pilot definition: realised scalar base bits at step 0 divided by 100 users, `854,111,196.9185187` bits/user-step (`run_v025_pilot_c3.py:274-296`).
+- All 1,120 profiles (224 × five path/field variants) passed finiteness, nonnegative-bit/energy, useful≤decoding time, RF-cap-count, exact `fsum(per_user_bits)==profile.bits`, and the engine’s energy-component tolerance checks. Internal consistency therefore does not imply cross-path semantic equivalence.
+- Raw result: `.scratch/eval-path/comparisons.json`, SHA-256 `c56b46a3b23c64dffd698760cb5bc327ace09e14fd8fa5654fe644bda4e1ce6a`.
+
+### Paper-derived, not re-labeled as this run
+
+The prior review reported −29.45 to +54.08 κ across the anchors visible in its larger 24-anchor log and a mixed-path base-action residual of 78.17 rather than zero (`TARGET-DESIGN-2026-09-10.md:33-37`). The present eight-anchor sample is narrower and independently reproduced the sign-changing defect; it does not supersede those paper-derived extrema.
+
+### Inferred
+
+The five nominal full-grid outliers are threshold bifurcations caused by tiny scalar/vectorized arithmetic differences at an inclusive ACM comparison. Evidence: each outlier is confined to one or two users, its extra bits are exact-looking ACM/time-grid quanta, joules stay within 9.10×10⁻¹² J, required maximum power agrees, and the corresponding realised comparisons are ≤2.14×10⁻⁴ bit. `select_mode` uses `sinr >= threshold_linear` (`src/mcrl/physics_v025/acm.py:55-61`), while dense mode selection performs the vectorized equivalent (`src/mcrl/physics_v025/batch.py:333-361`). A per-boundary trace was not added, so this secondary attribution is strong inference rather than direct observation of the first flipped comparison.
+
+## Q1 — distribution of disagreement
+
+All differences are dense minus scalar.
+
+| Comparison | Network bits: min / median / max | Mean ± population SD | Sign (− / 0 / +) | Joules: min / median / max | Per-user bits: min / median / max |
+|---|---:|---:|---:|---:|---:|
+| nominal boundary 0 vs scalar full trajectory | −1.33535e10 / −1.52588e−5 / +2.05981e10 | 8.22386e8 ± 8.66360e9 | 112 / 1 / 111 | −634.656 / 67.9463 / +414.579 | −1.93918e9 / 0 / +2.02634e9 |
+| same, κ units | −15.6343 / −1.79e−14 / +24.1164 | 0.962855 ± 10.1434 | 112 / 1 / 111 | — | — |
+| nominal full 48 vs scalar full trajectory | −1.83105e−4 / 0 / +1.74309e7 | 1.60265e5 ± 1.36172e6 | 99 / 15 / 110 | −1.45519e−11 / −9.09495e−13 / +9.09495e−12 | −4.47035e−6 / 0 / +8.71543e6 |
+| realised full 48 vs scalar full trajectory | −2.74658e−4 / −1.52588e−5 / +1.22070e−4 | −4.27791e−5 ± 8.26841e−5 | 124 / 43 / 57 | −1.45519e−11 / −9.09495e−13 / +9.09495e−12 | −3.19481e−5 / 0 / +3.24249e−5 |
+
+For nominal full-48, only 5/224 rows differed by more than one bit; the other 219 were within 2.13623×10⁻⁴ bit. The five outliers ranged up to 17,430,862.222 bits = 0.0204082 κ. Realised full-48 stayed within 3.21572×10⁻¹³ κ throughout.
+
+Binary64 equality counts out of 224:
+
+| Comparison | network bits | joules | complete per-user vector | all three |
+|---|---:|---:|---:|---:|
+| nominal boundary 0 | 1 | 0 | 0 | 0 |
+| nominal full 48 | 15 | 16 | 0 | 0 |
+| realised full 48 | 43 | 16 | 0 | 0 |
+
+Thus the gap changes sign, and neither “all dense values are larger” nor “all scalar values are larger” is supportable.
+
+## Q2 — exact mechanism and smallest reproducer
+
+The smallest real reproducer is one real base configuration at step 0, passed once to each path in one process. With nominal `boundary_indices=(0,)`, dense minus scalar was −1,097,599,779.2593 bits and +14.6405417992 J.
+
+The first divergent intermediate is the boundary list, before scoring or aggregation:
+
+- `StepEvaluator.__init__` stores `boundary_indices` (`run_v025_matrix_probe.py:766-789`).
+- `evaluate_many` passes it into `evaluate_ar_tdm_catalogue` (`:793-824`); the dense integrator holds a one-boundary snapshot for `47 × 0.640 = 30.08 s` (`src/mcrl/physics_v025/batch.py:419-437`). The probe recorded one physical evaluation at time 0.
+- `evaluate` never reads `self.boundary_indices`; it calls `tape.geometry_for` (`run_v025_matrix_probe.py:903-912`). `geometry_for` unconditionally iterates `range(step.boundary_count)` (`src/mcrl/physics_v025/tapes.py:860-879`), and the scalar adapter requires exactly 48 boundaries (`src/mcrl/physics_v025/adapter.py:98-127`) before the 47-subinterval trapezoid (`src/mcrl/physics_v025/integration.py:165-185`). The probe recorded 48 evaluations from 0 to 30.08 s.
+- Cache state makes the semantic split sticky: `_evaluated` is keyed only by `configuration_id`, and `evaluate_many` skips already-cached IDs (`run_v025_matrix_probe.py:788-797`). A scalar-cached reference therefore survives a later batch call.
+
+Ranked hypotheses after the trace:
+
+1. **Confirmed primary:** boundary-subset policy is not propagated by `evaluate`.
+2. **Confirmed enabling condition:** the cache key omits field/path/boundary policy and `evaluate_many` preserves prior entries.
+3. **Strongly supported secondary:** full-grid nominal ACM threshold bifurcation; five rows, one or two users each.
+4. **Falsified as primary:** row/key/fading misalignment—realised full-grid results agree to at most 2.75×10⁻⁴ bit while using the same selected rows and realised arrays.
+5. **Falsified as primary:** energy/control-law or event-ledger divergence—the primary mismatch appears at boundary materialization, and both paths remain internally consistent. Ordinary full-grid joules agree to picojoules.
+
+## Q3 — authority by surface
+
+| Surface | Actual path | Authority finding |
+|---|---|---|
+| Physics specification/KAT oracle | Scalar object path is explicitly called “the authority used by KATs” (`src/mcrl/physics_v025/batch.py:1-6`). The full-grid KAT compares dense to scalar with tolerances, not binary identity (`tests/physics_v025/test_stage4d_gate.py:616-646`). | **Scalar for full-48 normative physics.** The KAT is incomplete at nominal threshold edges. |
+| Deployed selection | Fresh nominal evaluator with `(0,)`, then `evaluate_many(catalog)`; all later catalogue reads hit that cache (`run_v025_matrix_probe.py:2608-2639`). | **Dense is operationally authoritative** for the intended held boundary-0 selection score; scalar cannot honor this request. |
+| Deployed forecasts | Fresh dense evaluators use the five-boundary selection grid and compare candidates with baselines within that path (`:1606-1629`, `:1683-1701`). | **Dense, internally path-consistent.** |
+| Calibration | Nominal catalogue is dense, but the selected committed endpoint is evaluated by a fresh scalar evaluator (`:1083-1128`). | Split by stage; no direct mixed subtraction there. |
+| Committed reporting and claim marginals | A fresh default full-48 evaluator batches all initially selected arms (`:2757-2769`); arm receipts and pooled bits/joules are read from that cache (`:2899-2911`, `:3068-3188`). | **Dense is deployed-reporting authority** for FULL/DROP claims. |
+| Stage-C acceptance | The merger trusts receipt bits/joules and computes pooled EE (`stagec_v025/merge.py:121-132`, `:174-212`, `:428-481`). Its acceptance coverage uses `_ReceiptEvaluator` with fabricated endpoints (`test_contract_v1_acceptance.py:883-910`, `:942-965`). | **Path-agnostic; does not resolve authority.** |
+
+Therefore the global answer is **UNDETERMINED**, not because there is no evidence, but because the evidence establishes conflicting scope-specific authorities. Scalar is declared normative for a 48-boundary physical endpoint; dense is the only implementation of the deployed reduced-boundary selection contract and is the source of committed receipts.
+
+## Q4 — mixed comparisons and corruption surface
+
+### Deployed matrix runner
+
+- Main boundary-0 selection is safe from mixing: the full catalogue, including BASE, is batch-populated before any `evaluate` reads (`run_v025_matrix_probe.py:2608-2639`).
+- Committed FULL/DROP decomposition is also batch-populated before reads (`:2757-2779`; helper `:1705-1759`). J1 and U1 are among the initial selected arms (`:2728-2747`), so their later `evaluate` calls at `:2845-2849` are cache reads, not scalar misses. The matched-anchor decomposition at `:2863-2877` is therefore full-grid dense-consistent.
+- **Mixed reporting can occur for S_UNI.** `unique_selected` is formed while S_UNI still equals BASE; the independently selected S_UNI is installed later and called via `evaluate`, which becomes a scalar full-48 miss when it is not BASE or another pre-batched arm (`:2742`, `:2766-2769`, `:2786-2805`). Its arm receipt is then pooled beside dense arms (`:2900-2927`, `:3068-3097`), and the merged `FULL_vs_S_UNI` diagnostic consumes the two (`:4606-4629`). This does not enter the three FULL-vs-DROP claim marginals, but it does affect the Level-A comparator. On Q1’s realised full-grid distribution, the rough numerical scale is ≤2.75×10⁻⁴ bit/config and ≤1.46×10⁻¹¹ J/config—not the multi-κ boundary-0 defect.
+- The same late S_UNI can enter `_usable_energy_range_step` through the copied evaluator cache (`:2804-2822`); that function compares per-beam energy alternatives but explicitly applies no gate (`:2521-2565`).
+- Dormant helpers `_configuration_factor_scores` (`:1356-1420`) and `_s0_select` (`:1997-2030`) are not called by the current runner. The former can mix if handed a partially populated evaluator; the latter is scalar-only. They are latent, not deployed, findings.
+
+### Pilot source, selection, coalition, and reports
+
+The cited pilot script is absent from this copy. For source audit only, I read `/home/sat/mcrl-v025-selector-ws/scripts/run_v025_pilot_c3.py`; its engine copy SHA-256 exactly matches the workspace engine (`d430baf38eee7973aa56a503e905548bbf55ae4a5eb6f2435c2a2543d4786196`). The pilot script also byte-matches `/home/sat/mcrl-v025-pilot-ws/scripts/run_v025_pilot_c3.py` (`95103bb96caaa130659fa0d509f19409574b406798a173e278a7d9dac12b7435`). No sibling file was modified.
+
+- The active flag selects the primitive fallback (`run_v025_pilot_c3.py:89`, `:525-543`). It scalar-caches BASE on a `(0,)` evaluator (`:383-390`).
+- **Ordinary primitive C1/C2 source-row labels are not mixed physical differences.** C1 and C2 are explicit κ-scaled gain-ratio surrogates (`:398-427`, `:460-462`). The scalar full-trajectory BASE nevertheless feeds features such as margin, power, and spectral efficiency (`:410-412`, `:431`, `:455-458`), so those features violate the stated boundary-0 intent. The disabled nonprimitive builder batches BASE and all action configs together before computing physical label differences (`:550-610`) and would be path-consistent.
+- **Coalition training rows are mixed.** The primitive builder calls `current.evaluate_many((base, selected))`; BASE is skipped because it is scalar-cached, while the pairwise selected row is dense boundary-0 (`:501-514`). `_coalition_row` then combines scalar reference and scalar-on-miss singleton outcomes with the dense selected outcome (`:910-939`). The joint term’s reference-offset error is the boundary-0 BASE gap; ψ additionally mixes scalar singletons with a dense joint.
+- **Pilot evaluation’s exact boundary-0 selectors are mixed.** `_exact_s0_boundary0` batch-populates candidates but retains scalar BASE, then ranks raw bits (`:1458-1500`). The call into `_s_uni_select` reuses that evaluator (`:1638-1652`); `_s_uni_select` reads BASE/current with `evaluate` and batches candidate neighborhoods (`run_v025_matrix_probe.py:1831-1924`), so its first sweep compares scalar BASE with dense candidates. `_exact_interactions` similarly batches catalogues/singletons and subtracts its cached anchor (`run_v025_pilot_c3.py:1328-1379`); P-a0 uses scalar BASE as that anchor. These can alter S0/S_UNI selection, joint deltas, and ψ—not merely reporting.
+- At the eight sampled real BASE anchors, the dense-minus-scalar bit gap was −13.2449 to +21.2834 κ. Including the pilot’s η-priced energy term, the exact constant error injected into a dense-candidate minus scalar-BASE objective ranged from −17.2608 to +28.6520 κ. This is the appropriate rough corruption scale for mixed source/selection differences. It is not an EE percentage.
+- **Pilot realised reports are path-consistent.** A fresh realised full-grid evaluator batch-populates selected arms before reads (`run_v025_pilot_c3.py:1678-1727`), and reporting singletons are also explicitly batched before the matched decomposition (`:1767-1805`). The reported pooled EE summary uses those realised bits/joules (`:1869-1894`). Selection may already have been corrupted upstream, but the endpoint subtraction itself is not mixed.
+
+### Diagnostics
+
+- `diagnose_v025_selector.py` reuses the primitive builder’s scalar-cached BASE, batch-populates configurations/singletons, and labels its results “Exact one-boundary F components” (`diagnose_v025_selector.py:194-224`). Its exact delta/ψ panel and later no-op coalition diagnostic (`:533-570`) can therefore contain the same mixed boundary-policy error.
+- The corrected `probe_c1_production_target.py` deliberately constructs a fresh evaluator, batches BASE and all material configurations together, and uses only that cache for production labels (`probe_c1_production_target.py:106-138`). Its only scalar/dense comparison is the explicit path-gap diagnostic at `:120-121`; it does not contaminate its corrected labels.
+- `compare_c1_resource_context.py` and `build_parametrisation_comparison_large_rows.py` state and implement fresh, single-call `evaluate_many` preparation for baseline and candidates (`compare_c1_resource_context.py:375-428`; `build_parametrisation_comparison_large_rows.py:165-193`, `:230-297`). `probe_interaction_existence.py` likewise batch-prepares BASE before iterative selection (`probe_interaction_existence.py:723-749`) and batch-prepares realised wanted rows before reporting (`:785-806`). No mixed subtraction was found in those paths.
+
+## Reproduction and verification
+
+```bash
+cd /home/sat/mcrl-v025-probe-ws
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1
+export PYTHONPATH=/home/sat/mcrl-v025-probe-ws/src
+nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
+  .scratch/eval-path/run_forensics.py
+```
+
+The completed run used one Python process, exited 0, serialized 224 rows, and took 682.17 s. JSON validation passed. The two directly relevant existing regressions also passed under the mandated interpreter:
+
+```text
+tests/physics_v025/test_stage4d_gate.py::test_committed_48_boundary_trajectories_match_scalar_resolution
+tests/physics_v025/test_stage4d_gate.py::test_dense_and_scalar_evaluation_enter_through_common_resolver
+2 passed
+```
+
+Those passes are compatible with this finding: the first is synthetic and tolerance-based; the second verifies common dispatch, not endpoint equality (`test_stage4d_gate.py:649-677`).
+
+## Owed-repair register — no repair performed
+
+1. Owners must declare separate authority for held-snapshot selection and full-trajectory committed physics, or declare one API contract that both methods implement.
+2. Make cache identity include evaluation semantics (at least field and boundary policy), or reject attempts to mix population methods in one evaluator.
+3. Add real-configuration parity tests for `(0,)`, full-48 nominal and realised fields, and ACM threshold-edge rows. Require the intended equality/tolerance explicitly.
+4. After authority is settled, regenerate or invalidate primitive coalition rows and rerun pilot S0/S_UNI/exact-interaction diagnostics. Audit downstream selections before interpreting any EE outcome.
+5. Add a real evaluator to Stage-C acceptance coverage so receipt provenance establishes which physical path produced bits and joules.
+
+Until those decisions and reruns occur, existing claims are not automatically false, but mixed-path selection/coalition evidence is not claim-grade.
+
+codex
+The published family runner confirms the direct-rule definitions and shows only the two search arms consulted a `StepEvaluator`; the direct four selected from legal-option metadata alone. I’m now extracting the exact frozen-anchor/tape construction and endpoint accounting so the clean run changes only evaluator-path semantics, not the family definition.
+exec
+/bin/bash -lc "wc -l /home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py /home/sat/mcrl-v025-surface-ws/.scratch/surface/run_parity.py /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py && sed -n '1,360p' /home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py && sed -n '1,340p' /home/sat/mcrl-v025-surface-ws/.scratch/surface/run_parity.py" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+  464 /home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py
+  295 /home/sat/mcrl-v025-surface-ws/.scratch/surface/run_parity.py
+  848 /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py
+ 1607 total
+#!/usr/bin/env python3
+"""Measure the non-learned static family on PANELCEIL's frozen training panel.
+
+This runner deliberately imports PANELCEIL's sealed construction helpers from
+the sibling read-only workspace.  It does not read evaluation-only dates and
+writes only the local receipt below.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from fractions import Fraction
+import hashlib
+import importlib.util
+import json
+import math
+import os
+from pathlib import Path
+import random
+import resource
+import sys
+import time
+
+
+WORKSPACE = Path("/home/sat/mcrl-v025-rank-ws")
+PANELCEIL_WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
+PANELCEIL_RUNNER = PANELCEIL_WORKSPACE / ".scratch/panelceil/run_panelceil.py"
+PANELCEIL_RECEIPT = PANELCEIL_WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
+OUTPUT = WORKSPACE / ".scratch/statics/statics-receipt.json"
+PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
+THREAD_VARS = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+MAX_RSS_BYTES = 5_000_000_000
+RANDOM_SEED = 20260910
+ARM_NAMES = (
+    "RANDOM", "ROUND_ROBIN", "RSS_MAX", "NEAREST_ELIGIBLE",
+    "MYOPIC_GREEDY", "FIRST_IMPROVEMENT_FP",
+)
+EXPECTED_EE_MBIT_J = {
+    "NEAREST_ELIGIBLE": 11.027760,
+    "FIRST_IMPROVEMENT_FP": 13.430253,
+}
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def canonical_digest(payload: dict) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("receipt_sha256", None)
+    return hashlib.sha256(json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+
+def atomic_write(payload: dict) -> None:
+    payload["receipt_sha256"] = canonical_digest(payload)
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(OUTPUT)
+
+
+def peak_rss_bytes() -> int:
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+
+
+def assert_runtime() -> None:
+    if sys.executable != PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("niceness is below 15")
+    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
+    if bad:
+        raise RuntimeError(f"thread pins are not all one: {bad}")
+    if peak_rss_bytes() >= MAX_RSS_BYTES:
+        raise MemoryError("peak RSS is not below 5 GB")
+
+
+def load_panelceil():
+    name = "statics_panelceil_reference"
+    spec = importlib.util.spec_from_file_location(name, PANELCEIL_RUNNER)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot import PANELCEIL runner")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def legal_options(panelceil, tape, step_index: int):
+    return panelceil.load_pilot().ENGINE._legal_options(tape, step_index)[0]
+
+
+def configured(runner, base, mapping, kind: str):
+    return runner._configuration(base, mapping, kind=kind)
+
+
+def random_configuration(runner, tape, step_index: int, base, anchor_index: int):
+    options, _ = runner._legal_options(tape, step_index)
+    rng = random.Random(RANDOM_SEED + anchor_index)
+    mapping = {
+        user: (None if not identities else identities[rng.randrange(len(identities))])
+        for user, identities in sorted(options.items())
+    }
+    return configured(runner, base, mapping, "statics-random")
+
+
+def round_robin_configuration(runner, tape, step_index: int, base):
+    options, _ = runner._legal_options(tape, step_index)
+    loads: Counter[tuple[int, int]] = Counter()
+    mapping = {}
+    for user, identities in sorted(options.items()):
+        if not identities:
+            mapping[user] = None
+            continue
+        ordinal, identity = min(
+            enumerate(identities), key=lambda item: (loads[item[1]], item[0])
+        )
+        del ordinal
+        mapping[user] = identity
+        loads[identity] += 1
+    return configured(runner, base, mapping, "statics-round-robin")
+
+
+def rss_max_configuration(runner, tape, step_index: int, base):
+    options, _ = runner._legal_options(tape, step_index)
+    arrays = tape.steps[step_index].arrays
+    if arrays is None:
+        raise RuntimeError("frozen exact panel must expose primitive arrays")
+    row_of = arrays._row_index()
+    mapping = {}
+    for user, identities in sorted(options.items()):
+        if not identities:
+            mapping[user] = None
+            continue
+        ordinal, identity = min(
+            enumerate(identities),
+            key=lambda item: (
+                -float(arrays.nominal_gain[0, row_of[(user, item[1])]]), item[0]
+            ),
+        )
+        del ordinal
+        mapping[user] = identity
+    return configured(runner, base, mapping, "statics-rss-max")
+
+
+def myopic_greedy(panelceil, runner, calibration, tape, step_index: int, base, incumbent, run_setting):
+    """One ascending-user exact best-response sweep on nominal boundary zero."""
+
+    evaluator = panelceil.new_selection_evaluator(
+        runner, tape, step_index, incumbent, run_setting, field="nominal"
+    )
+    base_profile = evaluator.evaluate(base)
+    guard = panelceil.served(base_profile)
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    candidate_evaluations = 0
+    changed_users = 0
+    for user in sorted(options):
+        rows = [current]
+        rows.extend(
+            panelceil.candidate(
+                runner, base, current, user, identity, "statics-myopic-greedy"
+            )
+            for identity in options[user]
+            if identity != current.mapping[user]
+        )
+        for offset in range(0, len(rows), panelceil.UNILATERAL_BATCH_SIZE):
+            evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
+        candidate_evaluations += len(rows)
+        eligible = []
+        for row in rows:
+            profile = evaluator._evaluated.get(row.configuration_id)
+            if profile is None or panelceil.served(profile) < guard:
+                continue
+            value: Fraction = panelceil.objective(
+                runner, calibration, incumbent, row, profile, rekeys
+            )
+            eligible.append((value, row.configuration_id, row))
+        if not eligible:
+            raise RuntimeError("myopic step lost its guarded incumbent")
+        selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
+        changed_users += selected.mapping[user] != current.mapping[user]
+        current = selected
+    return current, {
+        "algorithm": "one ascending-user exact greedy sweep",
+        "physics": "nominal boundary 0",
+        "objective": "F = decoded bits - eta_ref * joules",
+        "guard": f"served PHY >= base served PHY ({guard})",
+        "tie_break": "lexicographically smallest stable configuration ID",
+        "candidate_batch_size": panelceil.UNILATERAL_BATCH_SIZE,
+        "candidate_evaluations_including_incumbents": candidate_evaluations,
+        "users_changing_choice": changed_users,
+        "legal_option_census": census,
+    }
+
+
+def diversity(config, options) -> dict[str, object]:
+    mapping = config.mapping
+    chosen = [identity for identity in mapping.values() if identity is not None]
+    counts = Counter(chosen)
+    user_count = len(mapping)
+    ordinals = []
+    for user, identity in sorted(mapping.items()):
+        if identity is None:
+            continue
+        try:
+            ordinals.append(options[user].index(identity))
+        except ValueError as error:
+            raise RuntimeError(f"user {user} selected a non-legal identity") from error
+    return {
+        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
+        "active_beams": len(counts),
+        "active_satellites": len({identity[0] for identity in counts}),
+        "argmax_distinct": len(set(ordinals)),
+        "assigned_users": len(chosen),
+        "user_count": user_count,
+    }
+
+
+def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
+    return panelceil.committed_metrics(
+        runner, tape, step_index, incumbent, run_setting, {name: config}
+    )[name]
+
+
+def pool(anchors, arm: str) -> dict[str, object]:
+    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
+    bits = math.fsum(float(row["bits"]) for row in rows)
+    joules = math.fsum(float(row["joules"]) for row in rows)
+    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
+    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
+    result: dict[str, object] = {
+        "bits": bits,
+        "joules": joules,
+        "ee_bit_per_j": bits / joules,
+        "served_count": sum(int(row["served_count"]) for row in rows),
+        "rate_target_attained_count": sum(
+            int(row["rate_target_attained_count"]) for row in rows
+        ),
+        "user_count": sum(int(row["user_count"]) for row in rows),
+    }
+    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
+        values = [float(row[field]) for row in diversities]
+        result[field] = {
+            "mean": math.fsum(values) / len(values),
+            "min": min(values),
+            "max": max(values),
+        }
+    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
+        values = [float(row[field]) for row in timings]
+        result[field] = {
+            "mean": math.fsum(values) / len(values),
+            "min": min(values),
+            "max": max(values),
+            "total": math.fsum(values),
+        }
+    return result
+
+
+def main() -> int:
+    assert_runtime()
+    panelceil = load_panelceil()
+    panel = panelceil.frozen_panel()
+    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
+    if (
+        source_receipt.get("status") != "COMPLETE"
+        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
+    ):
+        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
+    pilot = panelceil.load_pilot()
+    runner = pilot.ENGINE
+    calibration = panelceil.load_calibration(pilot)
+    run_setting = runner.run_setting_for("a-r0")
+    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+    from mcrl.physics_v025.tapes import build_world_tape
+
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
+    tape_started = time.perf_counter()
+    tape = build_world_tape(
+        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
+        steps=33, start_time_s=0.0,
+    )
+    tape_seconds = time.perf_counter() - tape_started
+    if peak_rss_bytes() >= MAX_RSS_BYTES:
+        raise MemoryError("peak RSS is not below 5 GB after tape")
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
+
+    payload = {
+        "schema": "mcrl-v025-static-baseline-family-v1",
+        "status": "RUNNING",
+        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
+        "panel": panel,
+        "panel_count": len(panel),
+        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
+        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
+        "world_tape": {
+            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
+            "construction_seconds": tape_seconds,
+        },
+        "python": sys.executable,
+        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
+        "process_count": 1,
+        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
+        "random_seed": RANDOM_SEED,
+        "anchors": [],
+    }
+    if OUTPUT.exists():
+        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
+        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
+            raise RuntimeError("existing receipt does not match this frozen construction")
+        payload["anchors"] = previous.get("anchors", [])
+    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
+
+    for position, panel_row in enumerate(panel, 1):
+        index = int(panel_row["global_anchor_index"])
+        if index in completed:
+            print(
+                f"anchor {position}/{len(panel)} resume-complete peak RSS "
+                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
+            )
+            continue
+        step_index = int(panel_row["step_index"])
+        carrier = str(panel_row["carrier"])
+        base = runner._base_configuration(tape, step_index, carrier)
+        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
+        options, _ = runner._legal_options(tape, step_index)
+
+        configs = {}
+        selection_seconds = {}
+        detail = {}
+
+        started = time.perf_counter()
+        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
+        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
+        selection_seconds["RANDOM"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
+        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
+        selection_seconds["RSS_MAX"] = time.perf_counter() - started
+
+#!/usr/bin/env python3
+"""Parity gate for the selection-surface diagnostic.
+
+All selection profiles, including BASE, enter through fresh dense batches.
+The committed endpoints enter through one separate dense full-48 batch.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from fractions import Fraction
+import gc
+import importlib.util
+import json
+import math
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+
+
+WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
+PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
+OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
+PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
+THREAD_VARS = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+MAX_RSS_BYTES = 4_000_000_000
+EXPECTED = {
+    "nominal|best|one": 28.668530,
+    "realised|first|converged": 13.430253,
+}
+
+
+def peak_rss_bytes() -> int:
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+
+
+def check_runtime() -> None:
+    if sys.executable != PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("niceness below 15")
+    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
+    if bad:
+        raise RuntimeError(f"thread pins not one: {bad}")
+    if peak_rss_bytes() >= MAX_RSS_BYTES:
+        raise MemoryError("peak RSS is not below 4 GB")
+
+
+def load_panel():
+    name = "surface_panelceil_reference"
+    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot load PANELCEIL runner")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
+    return runner.StepEvaluator(
+        tape, runner._setting("a-r0"), step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field=field, counter=runner.EvaluationCounter(),
+        run_setting=run_setting, boundary_indices=boundaries,
+    )
+
+
+def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
+           *, field: str, rule: str, converged: bool):
+    evaluator = fresh_evaluator(
+        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
+    )
+    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
+    evaluator.evaluate_many((base,))
+    base_profile = evaluator._evaluated.get(base.configuration_id)
+    if base_profile is None:
+        raise RuntimeError("dense BASE is invalid")
+    guard = panel.served(base_profile)
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    passes = moves = comparisons = submitted = 0
+    started = time.perf_counter()
+    while True:
+        moves_this_pass = 0
+        for user in sorted(options):
+            current_profile = evaluator._evaluated.get(current.configuration_id)
+            if current_profile is None:
+                raise RuntimeError("current profile absent from dense cache")
+            current_value: Fraction = panel.objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            candidates = tuple(
+                panel.candidate(runner, base, current, user, identity, "surface-parity")
+                for identity in options[user]
+                if identity != current.mapping[user]
+            )
+            accepted = None
+            if rule == "first":
+                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
+                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
+                    evaluator.evaluate_many(batch)
+                    submitted += len(batch)
+                    for row in batch:
+                        comparisons += 1
+                        profile = evaluator._evaluated.get(row.configuration_id)
+                        if profile is None or panel.served(profile) < guard:
+                            continue
+                        value = panel.objective(
+                            runner, calibration, incumbent, row, profile, rekeys
+                        )
+                        if value > current_value:
+                            accepted = row
+                            break
+                    if accepted is not None:
+                        break
+            elif rule == "best":
+                # Incumbent participates in the same dense comparison and tie rule
+                # as the published one-sweep arm.
+                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
+                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
+                    evaluator.evaluate_many(batch)
+                    submitted += len(batch)
+                eligible = [(current_value, current.configuration_id, current)]
+                for row in candidates:
+                    comparisons += 1
+                    profile = evaluator._evaluated.get(row.configuration_id)
+                    if profile is None or panel.served(profile) < guard:
+                        continue
+                    value = panel.objective(
+                        runner, calibration, incumbent, row, profile, rekeys
+                    )
+                    eligible.append((value, row.configuration_id, row))
+                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
+                if selected.mapping[user] != current.mapping[user]:
+                    accepted = selected
+            else:
+                raise ValueError(rule)
+            if accepted is not None:
+                current = accepted
+                moves += 1
+                moves_this_pass += 1
+        passes += 1
+        if not converged or moves_this_pass == 0:
+            break
+        if passes > 100:
+            raise RuntimeError("search exceeded 100 passes")
+    detail = {
+        "field": field, "rule": rule,
+        "passes_mode": "converged" if converged else "one",
+        "passes": passes, "moves": moves, "guard": guard,
+        "comparisons": comparisons, "submitted": submitted,
+        "legal_option_census": census,
+        "selection_seconds": time.perf_counter() - started,
+        "base_was_dense_populated": True,
+        "physical_boundary_evaluations": evaluator.physical_evaluations,
+    }
+    del evaluator
+    gc.collect()
+    return current, detail
+
+
+def diversity(config) -> dict[str, float | int]:
+    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
+    users = len(config.mapping)
+    return {
+        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
+        "active_beams": len(counts),
+        "active_satellites": len({identity[0] for identity in counts}),
+    }
+
+
+def main() -> int:
+    check_runtime()
+    panel = load_panel()
+    frozen = panel.frozen_panel()
+    pilot = panel.load_pilot()
+    runner = pilot.ENGINE
+    calibration = panel.load_calibration(pilot)
+    run_setting = runner.run_setting_for("a-r0")
+    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+    from mcrl.physics_v025.tapes import build_world_tape
+
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
+    overall_started = time.perf_counter()
+    tape = build_world_tape(
+        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
+        steps=33, start_time_s=0.0,
+    )
+    check_runtime()
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
+    anchors = []
+    for position, panel_row in enumerate(frozen, 1):
+        index = int(panel_row["global_anchor_index"])
+        step_index = int(panel_row["step_index"])
+        carrier = str(panel_row["carrier"])
+        base = runner._base_configuration(tape, step_index, carrier)
+        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
+        configs = {}
+        details = {}
+        cell = "nominal|best|one"
+        configs[cell], details[cell] = search(
+            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
+            field="nominal", rule="best", converged=False,
+        )
+        cell = "realised|first|converged"
+        configs[cell], details[cell] = search(
+            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
+            field="realised", rule="first", converged=True,
+        )
+        endpoint = fresh_evaluator(
+            panel, runner, tape, step_index, incumbent, run_setting,
+            "realised", tuple(range(48)),
+        )
+        endpoint.evaluate_many(tuple(configs.values()))
+        metrics = {
+            name: panel.metric(endpoint._evaluated[config.configuration_id])
+            for name, config in configs.items()
+        }
+        anchors.append({
+            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
+            "cells": {
+                name: {
+                    "configuration_id": configs[name].configuration_id,
+                    "selection": details[name], "committed": metrics[name],
+                    "diversity": diversity(configs[name]),
+                }
+                for name in configs
+            },
+        })
+        del endpoint
+        gc.collect()
+        check_runtime()
+        print(
+            f"anchor {position}/{len(frozen)} completed peak RSS "
+            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
+        )
+
+    pooled = {}
+    for name in EXPECTED:
+        rows = [row["cells"][name] for row in anchors]
+        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
+        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
+        pooled[name] = {
+            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
+            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
+            "rate_target_attained_count": sum(
+                int(row["committed"]["rate_target_attained_count"]) for row in rows
+            ),
+            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
+            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
+            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
+            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
+        }
+    parity = {
+        name: {
+            "expected_rounded_6": expected,
+            "observed": pooled[name]["ee_mbit_per_j"],
+            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
+        }
+        for name, expected in EXPECTED.items()
+    }
+    passed = all(row["rounded_6_match"] for row in parity.values())
+    payload = {
+        "schema": "mcrl-v025-selection-surface-parity-v1",
+        "status": "PASS" if passed else "PARITY_FAILED",
+        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
+        "dense_base_only": True,
+        "python": sys.executable,
+        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
+        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
+        "process_count": 1,
+        "panel_count": len(frozen),
+        "anchors": anchors,
+        "pooled": pooled,
+        "parity": parity,
+        "peak_rss_bytes": peak_rss_bytes(),
+        "wall_seconds": time.perf_counter() - overall_started,
+    }
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
+    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
+    return 0 if passed else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+exec
+/bin/bash -lc "sed -n '220,520p' /home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py && rg -n \"def (fresh|new_selection|committed_metrics|metric|first_improvement|run_anchor)|evaluate\\(\" /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py | sed -n '1,240p' && sed -n '200,390p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py && sed -n '430,620p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+            ordinals.append(options[user].index(identity))
+        except ValueError as error:
+            raise RuntimeError(f"user {user} selected a non-legal identity") from error
+    return {
+        "modal_frac": 0.0 if not counts else max(counts.values()) / user_count,
+        "active_beams": len(counts),
+        "active_satellites": len({identity[0] for identity in counts}),
+        "argmax_distinct": len(set(ordinals)),
+        "assigned_users": len(chosen),
+        "user_count": user_count,
+    }
+
+
+def committed_one(panelceil, runner, tape, step_index, incumbent, run_setting, name, config):
+    return panelceil.committed_metrics(
+        runner, tape, step_index, incumbent, run_setting, {name: config}
+    )[name]
+
+
+def pool(anchors, arm: str) -> dict[str, object]:
+    rows = [anchor["arms"][arm]["committed"] for anchor in anchors]
+    bits = math.fsum(float(row["bits"]) for row in rows)
+    joules = math.fsum(float(row["joules"]) for row in rows)
+    diversities = [anchor["arms"][arm]["diversity"] for anchor in anchors]
+    timings = [anchor["arms"][arm]["timing"] for anchor in anchors]
+    result: dict[str, object] = {
+        "bits": bits,
+        "joules": joules,
+        "ee_bit_per_j": bits / joules,
+        "served_count": sum(int(row["served_count"]) for row in rows),
+        "rate_target_attained_count": sum(
+            int(row["rate_target_attained_count"]) for row in rows
+        ),
+        "user_count": sum(int(row["user_count"]) for row in rows),
+    }
+    for field in ("modal_frac", "active_beams", "active_satellites", "argmax_distinct"):
+        values = [float(row[field]) for row in diversities]
+        result[field] = {
+            "mean": math.fsum(values) / len(values),
+            "min": min(values),
+            "max": max(values),
+        }
+    for field in ("selection_seconds", "committed_seconds", "wall_seconds"):
+        values = [float(row[field]) for row in timings]
+        result[field] = {
+            "mean": math.fsum(values) / len(values),
+            "min": min(values),
+            "max": max(values),
+            "total": math.fsum(values),
+        }
+    return result
+
+
+def main() -> int:
+    assert_runtime()
+    panelceil = load_panelceil()
+    panel = panelceil.frozen_panel()
+    source_receipt = json.loads(PANELCEIL_RECEIPT.read_text(encoding="utf-8"))
+    if (
+        source_receipt.get("status") != "COMPLETE"
+        or source_receipt.get("receipt_sha256") != panelceil.canonical_digest(source_receipt)
+    ):
+        raise RuntimeError("PANELCEIL reference receipt is not sealed and complete")
+    pilot = panelceil.load_pilot()
+    runner = pilot.ENGINE
+    calibration = panelceil.load_calibration(pilot)
+    run_setting = runner.run_setting_for("a-r0")
+    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
+    from mcrl.physics_v025.tapes import build_world_tape
+
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
+    tape_started = time.perf_counter()
+    tape = build_world_tape(
+        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
+        steps=33, start_time_s=0.0,
+    )
+    tape_seconds = time.perf_counter() - tape_started
+    if peak_rss_bytes() >= MAX_RSS_BYTES:
+        raise MemoryError("peak RSS is not below 5 GB after tape")
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
+
+    payload = {
+        "schema": "mcrl-v025-static-baseline-family-v1",
+        "status": "RUNNING",
+        "claim_status": "DESIGN_PHASE_MEASUREMENT_NOT_A_CLAIM",
+        "panel": panel,
+        "panel_count": len(panel),
+        "panelceil_runner_sha256": sha256(PANELCEIL_RUNNER),
+        "panelceil_receipt_sha256": source_receipt["receipt_sha256"],
+        "world_tape": {
+            "domain": tape.domain, "seed": tape.seed, "digest": tape.digest,
+            "construction_seconds": tape_seconds,
+        },
+        "python": sys.executable,
+        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
+        "process_count": 1,
+        "thread_pins": {name: os.environ[name] for name in THREAD_VARS},
+        "random_seed": RANDOM_SEED,
+        "anchors": [],
+    }
+    if OUTPUT.exists():
+        previous = json.loads(OUTPUT.read_text(encoding="utf-8"))
+        if previous.get("panel") != panel or previous.get("random_seed") != RANDOM_SEED:
+            raise RuntimeError("existing receipt does not match this frozen construction")
+        payload["anchors"] = previous.get("anchors", [])
+    completed = {int(row["global_anchor_index"]) for row in payload["anchors"]}
+
+    for position, panel_row in enumerate(panel, 1):
+        index = int(panel_row["global_anchor_index"])
+        if index in completed:
+            print(
+                f"anchor {position}/{len(panel)} resume-complete peak RSS "
+                f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
+            )
+            continue
+        step_index = int(panel_row["step_index"])
+        carrier = str(panel_row["carrier"])
+        base = runner._base_configuration(tape, step_index, carrier)
+        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
+        options, _ = runner._legal_options(tape, step_index)
+
+        configs = {}
+        selection_seconds = {}
+        detail = {}
+
+        started = time.perf_counter()
+        configs["NEAREST_ELIGIBLE"] = runner._base_configuration(tape, step_index, carrier)
+        selection_seconds["NEAREST_ELIGIBLE"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["RANDOM"] = random_configuration(runner, tape, step_index, base, index)
+        selection_seconds["RANDOM"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["ROUND_ROBIN"] = round_robin_configuration(runner, tape, step_index, base)
+        selection_seconds["ROUND_ROBIN"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["RSS_MAX"] = rss_max_configuration(runner, tape, step_index, base)
+        selection_seconds["RSS_MAX"] = time.perf_counter() - started
+
+        started = time.perf_counter()
+        configs["MYOPIC_GREEDY"], detail["MYOPIC_GREEDY"] = myopic_greedy(
+            panelceil, runner, calibration, tape, step_index, base, incumbent, run_setting
+        )
+        selection_seconds["MYOPIC_GREEDY"] = time.perf_counter() - started
+
+        first = panelceil.first_improvement(
+            runner, calibration, tape, step_index, base, incumbent, run_setting
+        )
+        configs["FIRST_IMPROVEMENT_FP"] = first.selected
+        selection_seconds["FIRST_IMPROVEMENT_FP"] = float(
+            first.receipt["total_including_certificate_seconds"]
+        )
+        detail["FIRST_IMPROVEMENT_FP"] = first.receipt
+
+        reference_anchor = source_receipt["anchors"][index]
+        if (
+            configs["NEAREST_ELIGIBLE"].configuration_id
+            != reference_anchor["committed"]["BASE"]["configuration_id"]
+            or configs["FIRST_IMPROVEMENT_FP"].configuration_id
+            != reference_anchor["committed"]["U_FIRST"]["configuration_id"]
+        ):
+            raise RuntimeError(f"parity configuration mismatch at anchor {index}")
+
+        arms = {}
+        for name in ARM_NAMES:
+            commit_started = time.perf_counter()
+            committed = committed_one(
+                panelceil, runner, tape, step_index, incumbent, run_setting,
+                name, configs[name],
+            )
+            committed_seconds = time.perf_counter() - commit_started
+            arms[name] = {
+                "configuration_id": configs[name].configuration_id,
+                "assignments": [
+                    [user, None if identity is None else list(identity)]
+                    for user, identity in configs[name].assignments
+                ],
+                "committed": committed,
+                "diversity": diversity(configs[name], options),
+                "timing": {
+                    "selection_seconds": selection_seconds[name],
+                    "committed_seconds": committed_seconds,
+                    "wall_seconds": selection_seconds[name] + committed_seconds,
+                },
+                "detail": detail.get(name),
+            }
+
+        row = {
+            "global_anchor_index": index,
+            "anchor_id": f"{panel_row['world_id']}|{step_index}|{carrier}",
+            "step_index": step_index,
+            "carrier": carrier,
+            "arms": arms,
+            "peak_rss_bytes": peak_rss_bytes(),
+        }
+        if row["peak_rss_bytes"] >= MAX_RSS_BYTES:
+            raise MemoryError("peak RSS is not below 5 GB")
+        payload["anchors"].append(row)
+        payload["anchors"].sort(key=lambda item: item["global_anchor_index"])
+        payload["pooled"] = {
+            arm: pool(payload["anchors"], arm) for arm in ARM_NAMES
+        }
+        payload["peak_rss_bytes"] = peak_rss_bytes()
+        atomic_write(payload)
+        print(
+            f"anchor {position}/{len(panel)} completed peak RSS "
+            f"{peak_rss_bytes()/2**30:.3f} GiB "
+            + json.dumps({
+                "global": index,
+                "myopic_s": round(selection_seconds["MYOPIC_GREEDY"], 3),
+                "first_fp_s": round(selection_seconds["FIRST_IMPROVEMENT_FP"], 3),
+            }, sort_keys=True),
+            flush=True,
+        )
+
+    payload["pooled"] = {arm: pool(payload["anchors"], arm) for arm in ARM_NAMES}
+    parity = {}
+    for arm, expected in EXPECTED_EE_MBIT_J.items():
+        observed = float(payload["pooled"][arm]["ee_bit_per_j"]) / 1e6
+        parity[arm] = {
+            "expected_rounded_6_mbit_per_j": expected,
+            "observed_mbit_per_j": observed,
+            "rounded_6_match": round(observed, 6) == expected,
+            "all_anchor_configuration_ids_match_panelceil": True,
+        }
+    payload["parity"] = parity
+    payload["both_parity_checks_reproduced"] = all(
+        bool(row["rounded_6_match"]) for row in parity.values()
+    )
+    payload["status"] = "COMPLETE" if payload["both_parity_checks_reproduced"] else "PARITY_FAILED"
+    payload["peak_rss_bytes"] = peak_rss_bytes()
+    payload["completed_wall_seconds"] = time.perf_counter() - tape_started
+    atomic_write(payload)
+    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
+    print(json.dumps({
+        arm: payload["pooled"][arm]["ee_bit_per_j"] / 1e6 for arm in ARM_NAMES
+    }, sort_keys=True), flush=True)
+    print(f"both_parity_checks_reproduced={payload['both_parity_checks_reproduced']}", flush=True)
+    return 0 if payload["both_parity_checks_reproduced"] else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+231:def new_selection_evaluator(
+255:def first_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+257:    base_profile = evaluator.evaluate(base)  # F2: validated a0 exists before coordinator time.
+275:            current_profile = evaluator.evaluate(current)
+356:    base_profile = evaluator.evaluate(base)
+374:            current_profile = evaluator.evaluate(current)
+535:    base_profile = evaluator.evaluate(base)
+536:    seed_profile = evaluator.evaluate(first.selected)
+584:def metric(profile) -> dict[str, object]:
+601:def committed_metrics(runner, tape, step_index, incumbent, run_setting, configs):
+781:            runner, check_evaluator.evaluate(base), incumbent, context, corpus_base
+                break
+    if context is None or base is None:
+        raise RuntimeError("physics shard omitted anchor context or default profile")
+    if header["global_anchor_index"] != panel_row["global_anchor_index"]:
+        raise RuntimeError("physics header anchor mismatch")
+    return context, base
+
+
+def exact_float(value: float) -> Fraction:
+    if not math.isfinite(value):
+        raise RuntimeError("non-finite exact coefficient")
+    return Fraction.from_float(float(value))
+
+
+def served(profile) -> int:
+    return sum(bool(value) for value in profile.score.served_phy.values())
+
+
+def objective(runner, calibration, incumbent, config, profile, rekeys) -> Fraction:
+    # Match the standing anytime and coordination oracle: exact system
+    # objective F = B - eta_ref E.  Phi belongs to the source-label
+    # decomposition, not to either quoted ceiling's fixed-point construction.
+    return runner._objective(profile, calibration)
+
+
+def candidate(runner, base, current, user: int, identity, kind: str):
+    mapping = dict(current.mapping)
+    mapping[user] = identity
+    return runner._configuration(base, mapping, kind=kind)
+
+
+def new_selection_evaluator(
+    runner, tape, step_index, incumbent, run_setting, *, field="realised"
+):
+    return runner.StepEvaluator(
+        tape,
+        runner._setting("a-r0"),
+        step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field=field,
+        counter=runner.EvaluationCounter(),
+        run_setting=run_setting,
+        boundary_indices=(0,),
+    )
+
+
+@dataclass
+class SearchRun:
+    selected: object
+    moves: list[tuple[float, object]]
+    receipt: dict[str, object]
+    best_alternatives: dict[int, tuple[int, int]]
+
+
+def first_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)  # F2: validated a0 exists before coordinator time.
+    guard = served(base_profile)
+    started = time.perf_counter()
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    moves: list[tuple[float, object]] = [(0.0, base)]
+    passes_with_moves = comparisons = submissions = 0
+    while True:
+        pass_started = time.perf_counter() - started
+        moves_this_pass = 0
+        terminal_counts = {
+            "legal_unilateral_alternatives_evaluated": 0,
+            "physically_invalid_alternatives": 0,
+            "service_guard_rejected_alternatives": 0,
+            "strictly_improving_alternatives": 0,
+        }
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            identities = [row for row in options[user] if row != current.mapping[user]]
+            accepted = None
+            for offset in range(0, len(identities), UNILATERAL_BATCH_SIZE):
+                batch = tuple(candidate(
+                    runner, base, current, user, identity,
+                    "panelceil-first-improvement",
+                ) for identity in identities[offset:offset + UNILATERAL_BATCH_SIZE])
+                evaluator.evaluate_many(batch)
+                submissions += len(batch)
+                terminal_counts["legal_unilateral_alternatives_evaluated"] += len(batch)
+                for row in batch:
+                    comparisons += 1
+                    profile = evaluator._evaluated.get(row.configuration_id)
+                    if profile is None:
+                        terminal_counts["physically_invalid_alternatives"] += 1
+                        continue
+                    if served(profile) < guard:
+                        terminal_counts["service_guard_rejected_alternatives"] += 1
+                        continue
+                    value = objective(runner, calibration, incumbent, row, profile, rekeys)
+                    if value > current_value:
+                        terminal_counts["strictly_improving_alternatives"] += 1
+                        accepted = row
+                        break
+                if accepted is not None:
+                    current = accepted
+                    moves_this_pass += 1
+                    moves.append((time.perf_counter() - started, current))
+                    break
+        pass_finished = time.perf_counter() - started
+        if moves_this_pass == 0:
+            if terminal_counts["strictly_improving_alternatives"] != 0:
+                raise RuntimeError("zero-move certificate contains an improvement")
+            break
+        passes_with_moves += 1
+
+    best_alternatives = {}
+    for user in sorted(options):
+        rows = []
+        for identity in options[user]:
+            if identity == current.mapping[user]:
+                continue
+            row = candidate(runner, base, current, user, identity, "panelceil-terminal-alternate")
+            profile = evaluator._evaluated.get(row.configuration_id)
+            if profile is not None:
+                rows.append((
+                    objective(runner, calibration, incumbent, row, profile, rekeys),
+                    row.configuration_id,
+                    identity,
+                ))
+        if rows:
+            best_alternatives[user] = min(rows, key=lambda item: (-item[0], item[1]))[2]
+    return SearchRun(current, moves, {
+        "algorithm": "deterministic cyclic first-improvement",
+        "candidate_order": "ascending user ID; each user's declared legal-option order",
+        "microbatch_size": UNILATERAL_BATCH_SIZE,
+        "baseline_served_guard": guard,
+        "legal_option_census": census,
+        "accepted_moves": len(moves) - 1,
+        "passes_with_moves": passes_with_moves,
+        "total_passes_including_certificate": passes_with_moves + 1,
+        "candidate_comparisons_through_certificate": comparisons,
+        "physically_submitted_candidates_through_certificate": submissions,
+        "last_improvement_seconds": moves[-1][0],
+        "finding_seconds": pass_started,
+        "terminal_certificate_seconds": pass_finished - pass_started,
+        "total_including_certificate_seconds": pass_finished,
+        "termination_certificate": {
+            "complete": True,
+            "statement": "Every legal unilateral alternative was evaluated at the final iterate and none strictly improves guarded F.",
+            **terminal_counts,
+        },
+    }, best_alternatives)
+
+
+def best_improvement(runner, calibration, tape, step_index, base, incumbent, run_setting) -> SearchRun:
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)
+    guard = served(base_profile)
+    started = time.perf_counter()
+    options, census = runner._legal_options(tape, step_index)
+    rekeys = runner._rekeyed_users(tape, step_index)
+    current = base
+    moves: list[tuple[float, object]] = [(0.0, base)]
+    passes_with_moves = comparisons = 0
+    while True:
+        pass_started = time.perf_counter() - started
+        moves_this_pass = 0
+        terminal_counts = {
+            "legal_unilateral_alternatives_evaluated": 0,
+            "physically_invalid_alternatives": 0,
+            "service_guard_rejected_alternatives": 0,
+            "strictly_improving_alternatives": 0,
+        }
+        for user in sorted(options):
+            current_profile = evaluator.evaluate(current)
+            current_value = objective(
+                runner, calibration, incumbent, current, current_profile, rekeys
+            )
+            candidates = tuple(candidate(
+                runner, base, current, user, identity,
+                "panelceil-best-improvement",
+            ) for identity in options[user] if identity != current.mapping[user])
+            for offset in range(0, len(candidates), UNILATERAL_BATCH_SIZE):
+                evaluator.evaluate_many(
+                    candidates[offset:offset + UNILATERAL_BATCH_SIZE]
+                )
+            terminal_counts["legal_unilateral_alternatives_evaluated"] += len(candidates)
+            improving = []
+            for row in candidates:
+                comparisons += 1
+                profile = evaluator._evaluated.get(row.configuration_id)
+    }, {})
+
+
+def interference_contributors(tape, step_index: int, current, victim: int) -> tuple[int, ...]:
+    mapping = current.mapping
+    victim_beam = mapping[victim]
+    if victim_beam is None:
+        return ()
+    occupancy = Counter(identity for identity in mapping.values() if identity is not None)
+    arrays = tape.steps[step_index].arrays
+    if arrays is None:
+        raise RuntimeError("exact panel requires primitive arrays")
+    victim_row = arrays._row_index().get((victim, victim_beam))
+    aggressor_of = arrays._aggressor_index()
+    if victim_row is None:
+        return ()
+    scores = []
+    for user, beam in sorted(mapping.items()):
+        if user == victim or beam is None or beam == victim_beam:
+            continue
+        column = aggressor_of.get(beam)
+        if column is None:
+            continue
+        score = arrays._cross_at_index(0, victim_row, column)[0] / occupancy[beam]
+        if score > 0.0:
+            scores.append((score, user))
+    return tuple(user for _, user in sorted(scores, key=lambda item: (-item[0], item[1])))
+
+
+def build_joint_candidates(runner, tape, step_index: int, base, unilateral, best_alternatives):
+    options, _ = runner._legal_options(tape, step_index)
+    current = unilateral.mapping
+    by_beam = {
+        beam: tuple(user for user, identity in sorted(current.items()) if identity == beam)
+        for beam in sorted({identity for identity in current.values() if identity is not None})
+    }
+    aliases: dict[tuple, list[dict[str, object]]] = {}
+    configs = {}
+    families = Counter()
+    def add(mapping, family: str, coalition: Sequence[int], detail: str) -> None:
+        changed = tuple(user for user in sorted(current) if mapping[user] != current[user])
+        if len(changed) < 2:
+            return
+        assignments = tuple(sorted(mapping.items()))
+        aliases.setdefault(assignments, []).append({
+            "family": family, "coalition_users": list(sorted(coalition)),
+            "changed_users": list(changed), "detail": detail,
+        })
+        if assignments not in configs:
+            configs[assignments] = runner._configuration(base, mapping, kind=family)
+            families[family] += 1
+    occupant_rows = 0
+    for beam, occupants in by_beam.items():
+        for size in range(2, min(OCCUPANT_SUBSET_MAX_SIZE, len(occupants)) + 1):
+            for coalition in itertools.combinations(occupants, size):
+                if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                    break
+                if any(user not in best_alternatives for user in coalition):
+                    continue
+                mapping = dict(current)
+                for user in coalition:
+                    mapping[user] = best_alternatives[user]
+                add(mapping, "beam-occupant-subset", coalition,
+                    f"origin={beam[0]}:{beam[1]};size={size}")
+                occupant_rows += 1
+            if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+                break
+        if occupant_rows >= OCCUPANT_SUBSET_TOTAL_CAP:
+            break
+    for victim in sorted(current):
+        if victim not in best_alternatives:
+            continue
+        contributors = interference_contributors(tape, step_index, unilateral, victim)
+        for count in (2, 3):
+            if len(contributors) < count:
+                continue
+            coalition = (victim, *contributors[:count])
+            if any(user not in best_alternatives for user in coalition):
+                continue
+            mapping = dict(current)
+            for user in coalition:
+                mapping[user] = best_alternatives[user]
+            add(mapping, f"victim-plus-top-{count}-contributors", coalition,
+                f"victim={victim};contributors={','.join(map(str, contributors[:count]))}")
+    for beam, occupants in by_beam.items():
+        if len(occupants) < 2:
+            continue
+        common = set(options[occupants[0]])
+        for user in occupants[1:]:
+            common.intersection_update(options[user])
+        common.discard(beam)
+        for destination in sorted(common):
+            mapping = dict(current)
+            for user in occupants:
+                mapping[user] = destination
+            add(mapping, "complete-beam-evacuation", occupants,
+                f"origin={beam[0]}:{beam[1]};destination={destination[0]}:{destination[1]}")
+    ordered = tuple(configs[key] for key in sorted(configs))
+    if len(ordered) > JOINT_CANDIDATE_CAP:
+        raise RuntimeError(f"joint catalogue {len(ordered)} exceeds {JOINT_CANDIDATE_CAP}")
+    return ordered, aliases, dict(sorted(families.items()))
+
+
+def joint_optimum(runner, calibration, tape, step_index, base, incumbent, run_setting, first):
+    evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+    base_profile = evaluator.evaluate(base)
+    seed_profile = evaluator.evaluate(first.selected)
+    guard = served(base_profile)
+    candidates, aliases, families = build_joint_candidates(
+        runner, tape, step_index, base, first.selected, first.best_alternatives
+    )
+    before = evaluator.counter.boundary_evaluations
+    for offset in range(0, len(candidates), JOINT_BATCH_SIZE):
+        evaluator.evaluate_many(candidates[offset:offset + JOINT_BATCH_SIZE])
+    best = first.selected
+    best_profile = seed_profile
+    rekeys = runner._rekeyed_users(tape, step_index)
+    qualifying = 0
+    for row in candidates:
+        profile = evaluator._evaluated.get(row.configuration_id)
+        if profile is None or served(profile) < guard:
+            continue
+        value = objective(runner, calibration, incumbent, row, profile, rekeys)
+        best_value = objective(runner, calibration, incumbent, best, best_profile, rekeys)
+        if value > objective(runner, calibration, incumbent, first.selected, seed_profile, rekeys):
+            qualifying += 1
+        if value > best_value or (
+            value == best_value and best is not first.selected
+            and row.configuration_id < best.configuration_id
+        ):
+            best, best_profile = row, profile
+    changed = [user for user in sorted(first.selected.mapping)
+               if first.selected.mapping[user] != best.mapping[user]]
+    return best, {
+        "catalogue_unique": len(candidates),
+        "catalogue_aliases": sum(len(value) for value in aliases.values()),
+        "family_unique_counts": families,
+        "joint_boundary_evaluations": evaluator.counter.boundary_evaluations - before,
+        "qualifying_strict_objective_improvements": qualifying,
+        "strict_selection_objective_improvement": best.assignments != first.selected.assignments,
+        "selected_coalition_size": len(changed),
+        "selected_coalition_users": changed,
+    }
+
+
+def config_at(run: SearchRun, seconds: float):
+    selected = run.moves[0][1]
+    for accepted, config in run.moves[1:]:
+        if accepted > seconds:
+            break
+        selected = config
+    return selected
+
+
+def metric(profile) -> dict[str, object]:
+    attained = profile.score.rate_target_attained
+    if attained is None:
+        raise RuntimeError("committed profile omitted rate-target attainment")
+    return {
+        "configuration_id": profile.config.configuration_id,
+        "assignments": [[user, None if identity is None else list(identity)]
+                        for user, identity in profile.config.assignments],
+        "bits": float(profile.bits),
+        "joules": float(profile.joules),
+        "ee_bit_per_j": float(profile.bits) / float(profile.joules),
+        "served_count": served(profile),
+        "rate_target_attained_count": sum(bool(value) for value in attained.values()),
+        "user_count": len(attained),
+    }
+
+
+def committed_metrics(runner, tape, step_index, incumbent, run_setting, configs):
+    evaluator = runner.StepEvaluator(
+        tape, runner._setting("a-r0"), step_index,
+        transition_from=incumbent,
+        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
+        field="realised", counter=runner.EvaluationCounter(),
+        run_setting=run_setting, boundary_indices=tuple(range(48)),
+    )
+    result = {}
+    for name, config in configs.items():
+        evaluator.evaluate_many((config,))
+        profile = evaluator._evaluated.get(config.configuration_id)
+        if profile is None:
+            raise RuntimeError(f"invalid committed config for {name}")
+        result[name] = metric(profile)
+    return result
+
+
+def context_mapping(rows) -> dict[int, tuple[int, int] | None]:
+    return {
+
+exec
+/bin/bash -lc "sed -n '1,230p' /home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py && git -C /home/sat/mcrl-v025-rank2-ws status --short --branch && git -C /home/sat/mcrl-v025-rank2-ws log -5 --oneline --decorate && git -C /home/sat/mcrl-v025-rank2-ws ls-tree -r --name-only HEAD | sed -n '1,200p'" in /home/sat/mcrl-v025-rank2-ws
+ exited 128 in 0ms:
+#!/usr/bin/env python3
+"""Exact/oracle ceilings on the EXACTGEN2 prefix frozen on 2026-09-10.
+
+The source tree and virtual environment are read-only inputs.  This runner uses
+one Python process, one thread per numerical runtime, and writes only its local
+resumable receipt.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from dataclasses import dataclass
+from fractions import Fraction
+import hashlib
+import importlib.util
+import itertools
+import json
+import math
+import os
+from pathlib import Path
+import resource
+import sys
+import time
+from typing import Iterable, Mapping, Sequence
+
+
+WORKSPACE = Path("/home/sat/mcrl-v025-ceiling30-ws")
+SOURCE_ROOT = Path("/home/sat/mcrl-v025-c1c2suff-ws")
+PILOT_PATH = SOURCE_ROOT / "scripts/run_v025_pilot_c3.py"
+CALIBRATION_PATH = (
+    SOURCE_ROOT
+    / "artifacts/v025-pilot-c3-20260909-PILOT_NOT_CLAIM"
+    / "PILOT_NOT_CLAIM-calibration.json"
+)
+CORPUS = Path(
+    "/home/sat/mcrl-v025-datepool-ws/artifacts/"
+    "v025-exact-source-20260910-BUILD_NOT_CLAIM"
+)
+STAGING = CORPUS / ".staging-separated-v1"
+OUTPUT = WORKSPACE / ".scratch/panelceil/panelceil-receipt.json"
+PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
+THREAD_VARS = (
+    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
+)
+MAX_RSS_BYTES = 5_000_000_000
+CHECKPOINTS = (1.0, 2.0, 5.0, 10.0, 20.0, 30.08, 45.0, 60.0)
+UNILATERAL_BATCH_SIZE = 16
+JOINT_BATCH_SIZE = 32
+OCCUPANT_SUBSET_MAX_SIZE = 4
+OCCUPANT_SUBSET_TOTAL_CAP = 1_024
+JOINT_CANDIDATE_CAP = 4_096
+CARRIERS = ("nearest-eligible", "stay-if-possible", "random-masked")
+RESULT_SHA256 = (
+    "3d60bb26178b4a46a0783c55b8b1ffd1607183bd45a010dbb5690bb8c07e075e",
+    "22b07dd2b3c0485efc219e8eab73841638c31529bb2084cd094f33db1d549338",
+    "b819cbbbcff71d400eb6f668a1d44331a0fe957bff981279be06d6fdb1062171",
+    "2bf74d32269ad6848cc2e105a7aa5f72a6ffb53605625e406c962c8effa3a41f",
+    "0c5b13ff841c64c63594a404fe26075a19266f97c2a18497ee9089b26ca6a845",
+    "39ef0bd999f05b61540db8c3144aff5db07b54224b8437536ed7bba2748fc465",
+    "af628997b5a9092ba1a8189f29efaceac475e26cb7e9aafeff0a408738c2c79b",
+    "7d930399012976e9b0b6a30a2b1f41350b6e6baedcf998a23a7f0f4b5fa76e25",
+    "9b647b26b6b03df2ebd1254061f03236523f5b26051b245f60ced8f4f0c3ba38",
+    "d3a04cb6fe982c8fbd2bd685266cece2db31fd02115fecc689a1f74978947d8d",
+    "76d93fe4b070920aabf2917dafcbff8c535a8478b50422942fff0147b417a74a",
+    "c8fbdcd0e317c816213c85764bf6b95333d242e1e9e52dbb7b286b75ff25632d",
+)
+PILOT_SHA256 = "95103bb96caaa130659fa0d509f19409574b406798a173e278a7d9dac12b7435"
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def canonical_digest(payload: Mapping[str, object]) -> str:
+    unsigned = dict(payload)
+    unsigned.pop("receipt_sha256", None)
+    return hashlib.sha256(json.dumps(
+        unsigned, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+
+
+def atomic_write(payload: dict) -> None:
+    payload["receipt_sha256"] = canonical_digest(payload)
+    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
+    temporary = OUTPUT.with_name(f".{OUTPUT.name}.{os.getpid()}.tmp")
+    temporary.write_text(
+        json.dumps(payload, sort_keys=True, indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(OUTPUT)
+
+
+def peak_rss_bytes() -> int:
+    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
+
+
+def assert_rss() -> int:
+    value = peak_rss_bytes()
+    if value >= MAX_RSS_BYTES:
+        raise MemoryError(f"peak RSS {value} is not below 5 GB")
+    return value
+
+
+def assert_runtime() -> None:
+    if sys.executable != PYTHON:
+        raise RuntimeError(f"wrong interpreter: {sys.executable}")
+    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
+        raise RuntimeError("niceness is below 15")
+    bad = {name: os.environ.get(name) for name in THREAD_VARS if os.environ.get(name) != "1"}
+    if bad:
+        raise RuntimeError(f"thread pins are not all one: {bad}")
+
+
+def load_pilot():
+    if sha256(PILOT_PATH) != PILOT_SHA256:
+        raise RuntimeError("source pilot changed after panel freeze")
+    sys.path.insert(0, str(SOURCE_ROOT / "src"))
+    name = "panelceil_exactgen2_pilot"
+    spec = importlib.util.spec_from_file_location(name, PILOT_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("cannot import source pilot")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_calibration(pilot):
+    payload = json.loads(CALIBRATION_PATH.read_text(encoding="ascii"))
+    def ratio(name: str) -> Fraction:
+        numerator, denominator = payload[name]
+        return Fraction(numerator, denominator)
+    return pilot.PilotCalibration(
+        eta_ref=ratio("eta_ref"),
+        lambda_bits_per_j=ratio("lambda_bits_per_j"),
+        kappa_bits_per_user_step=ratio("kappa_bits_per_user_step"),
+        bits_ref=ratio("bits_ref"),
+        joules_ref=ratio("joules_ref"),
+        users=int(payload["users"]),
+    )
+
+
+def frozen_panel() -> list[dict[str, object]]:
+    rows = []
+    for index, expected_hash in enumerate(RESULT_SHA256):
+        root = STAGING / f"global-{index:03d}"
+        result_path = root / f"BUILD_NOT_CLAIM-anchor-{index:03d}.result.json"
+        if not result_path.is_file() or sha256(result_path) != expected_hash:
+            raise RuntimeError(f"frozen result absent or changed: {result_path}")
+        row = json.loads(result_path.read_text(encoding="utf-8"))
+        step, carrier_index = divmod(index, len(CARRIERS))
+        if (
+            row["global_anchor_index"] != index
+            or row["world_index"] != 1
+            or row["step_index"] != step
+            or row["carrier_index"] != carrier_index
+            or row["carrier"] != CARRIERS[carrier_index]
+        ):
+            raise RuntimeError(f"declared-order mismatch at anchor {index}")
+        physics_path = root / "physics" / str(row["physics_relative_path"])
+        if not physics_path.is_file() or sha256(physics_path) != row["physics_sha256"]:
+            raise RuntimeError(f"physics shard absent or changed at anchor {index}")
+        rows.append({
+            "global_anchor_index": index,
+            "world_index": 1,
+            "world_id": row["world_id"],
+            "step_index": step,
+            "carrier_index": carrier_index,
+            "carrier": row["carrier"],
+            "result_path": str(result_path),
+            "result_sha256": expected_hash,
+            "physics_path": str(physics_path),
+            "physics_sha256": row["physics_sha256"],
+            "rows": row["row_count"],
+            "configurations": row["configuration_count"],
+        })
+    return rows
+
+
+def source_base_metric(panel_row: Mapping[str, object]) -> tuple[dict, dict]:
+    context = None
+    base = None
+    with Path(str(panel_row["physics_path"])).open(encoding="utf-8") as handle:
+        header = json.loads(next(handle))
+        for line in handle:
+            row = json.loads(line)
+            if row["schema"] == "mcrl-v025-exact-source-anchor-context-v1":
+                context = row
+            elif (
+                row["schema"] == "mcrl-v025-exact-source-configuration-physics-v1"
+                and row["delta_from_default"] == []
+            ):
+                base = row["current"]
+            if context is not None and base is not None:
+                break
+    if context is None or base is None:
+        raise RuntimeError("physics shard omitted anchor context or default profile")
+    if header["global_anchor_index"] != panel_row["global_anchor_index"]:
+        raise RuntimeError("physics header anchor mismatch")
+    return context, base
+
+
+def exact_float(value: float) -> Fraction:
+    if not math.isfinite(value):
+        raise RuntimeError("non-finite exact coefficient")
+    return Fraction.from_float(float(value))
+
+
+def served(profile) -> int:
+    return sum(bool(value) for value in profile.score.served_phy.values())
+
+
+def objective(runner, calibration, incumbent, config, profile, rekeys) -> Fraction:
+    # Match the standing anytime and coordination oracle: exact system
+    # objective F = B - eta_ref E.  Phi belongs to the source-label
+    # decomposition, not to either quoted ceiling's fixed-point construction.
+    return runner._objective(profile, calibration)
+
+
+def candidate(runner, base, current, user: int, identity, kind: str):
+    mapping = dict(current.mapping)
+    mapping[user] = identity
+    return runner._configuration(base, mapping, kind=kind)
+
+
+## No commits yet on main
+fatal: your current branch 'main' does not have any commits yet
+
+exec
+/bin/bash -lc "jq '{status, peak_rss_bytes, completed_wall_seconds, anchors: [.anchors[] | {i:.global_anchor_index, myopic:.arms.MYOPIC_GREEDY.detail.users_changing_choice, fp_moves:.arms.FIRST_IMPROVEMENT_FP.detail.accepted_moves, fp_passes:.arms.FIRST_IMPROVEMENT_FP.detail.total_passes_including_certificate}]}' /home/sat/mcrl-v025-rank-ws/.scratch/statics/statics-receipt.json && jq '{status,peak_rss_bytes,wall_seconds, anchors:[.anchors[] | {i:.global_anchor_index, myopic_moves:.cells[\"nominal|best|one\"].selection.moves, myopic_passes:.cells[\"nominal|best|one\"].selection.passes, fp_moves:.cells[\"realised|first|converged\"].selection.moves,fp_passes:.cells[\"realised|first|converged\"].selection.passes}]}' /home/sat/mcrl-v025-surface-ws/.scratch/surface/parity.json" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+{
+  "status": "COMPLETE",
+  "peak_rss_bytes": 2702925824,
+  "completed_wall_seconds": 572.7910720760119,
+  "anchors": [
+    {
+      "i": 0,
+      "myopic": 96,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 1,
+      "myopic": 96,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 2,
+      "myopic": 94,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 3,
+      "myopic": 0,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 4,
+      "myopic": 92,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 5,
+      "myopic": 92,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 6,
+      "myopic": 90,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 7,
+      "myopic": 98,
+      "fp_moves": 345,
+      "fp_passes": 10
+    },
+    {
+      "i": 8,
+      "myopic": 90,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 9,
+      "myopic": 84,
+      "fp_moves": 0,
+      "fp_passes": 1
+    },
+    {
+      "i": 10,
+      "myopic": 98,
+      "fp_moves": 354,
+      "fp_passes": 12
+    },
+    {
+      "i": 11,
+      "myopic": 71,
+      "fp_moves": 0,
+      "fp_passes": 1
+    }
+  ]
+}
+{
+  "status": "PARITY_FAILED",
+  "peak_rss_bytes": 2812706816,
+  "wall_seconds": 997.635190778994,
+  "anchors": [
+    {
+      "i": 0,
+      "myopic_moves": 96,
+      "myopic_passes": 1,
+      "fp_moves": 377,
+      "fp_passes": 10
+    },
+    {
+      "i": 1,
+      "myopic_moves": 96,
+      "myopic_passes": 1,
+      "fp_moves": 377,
+      "fp_passes": 10
+    },
+    {
+      "i": 2,
+      "myopic_moves": 94,
+      "myopic_passes": 1,
+      "fp_moves": 386,
+      "fp_passes": 11
+    },
+    {
+      "i": 3,
+      "myopic_moves": 97,
+      "myopic_passes": 1,
+      "fp_moves": 346,
+      "fp_passes": 9
+    },
+    {
+      "i": 4,
+      "myopic_moves": 95,
+      "myopic_passes": 1,
+      "fp_moves": 377,
+      "fp_passes": 11
+    },
+    {
+      "i": 5,
+      "myopic_moves": 94,
+      "myopic_passes": 1,
+      "fp_moves": 377,
+      "fp_passes": 11
+    },
+    {
+      "i": 6,
+      "myopic_moves": 90,
+      "myopic_passes": 1,
+      "fp_moves": 316,
+      "fp_passes": 9
+    },
+    {
+      "i": 7,
+      "myopic_moves": 98,
+      "myopic_passes": 1,
+      "fp_moves": 346,
+      "fp_passes": 10
+    },
+    {
+      "i": 8,
+      "myopic_moves": 90,
+      "myopic_passes": 1,
+      "fp_moves": 345,
+      "fp_passes": 14
+    },
+    {
+      "i": 9,
+      "myopic_moves": 84,
+      "myopic_passes": 1,
+      "fp_moves": 315,
+      "fp_passes": 9
+    },
+    {
+      "i": 10,
+      "myopic_moves": 98,
+      "myopic_passes": 1,
+      "fp_moves": 346,
+      "fp_passes": 9
+    },
+    {
+      "i": 11,
+      "myopic_moves": 84,
+      "myopic_passes": 1,
+      "fp_moves": 302,
+      "fp_passes": 9
+    }
+  ]
+}
+
+exec
+/bin/bash -lc "ps -eo pid,ni,rss,etime,cmd | rg '[p]ython|PID' | sed -n '1,120p' && date -u +'%Y-%m-%dT%H:%M:%SZ'" in /home/sat/mcrl-v025-rank2-ws
+ succeeded in 0ms:
+    PID  NI   RSS     ELAPSED CMD
+      1   0 16892       00:00 codex-linux-sandbox --sandbox-policy-cwd /home/sat/mcrl-v025-rank2-ws --command-cwd /home/sat/mcrl-v025-rank2-ws --permission-profile {"type":"managed","file_system":{"type":"restricted","entries":[{"path":{"type":"special","value":{"kind":"root"}},"access":"read"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rank2-ws"},"access":"write"},{"path":{"type":"special","value":{"kind":"slash_tmp"}},"access":"write"},{"path":{"type":"special","value":{"kind":"tmpdir"}},"access":"write"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rank2-ws/.git"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rank2-ws/.agents"},"access":"read","missing_path_behavior":"skip"},{"path":{"type":"path","path":"/home/sat/mcrl-v025-rank2-ws/.codex"},"access":"read","missing_path_behavior":"skip"}]},"network":"restricted"} --apply-seccomp-then-exec -- /bin/bash -c __CODEX_SNAPSHOT_OVERRIDE_SET_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS+x}" __CODEX_SNAPSHOT_OVERRIDE_0="${CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS-}" __CODEX_SNAPSHOT_OVERRIDE_SET_1="${CODEX_PERMISSION_PROFILE+x}" __CODEX_SNAPSHOT_OVERRIDE_1="${CODEX_PERMISSION_PROFILE-}" __CODEX_SNAPSHOT_OVERRIDE_SET_2="${CODEX_PLUGIN_METRICS_OUTPUT+x}" __CODEX_SNAPSHOT_OVERRIDE_2="${CODEX_PLUGIN_METRICS_OUTPUT-}" __CODEX_SNAPSHOT_OVERRIDE_SET_3="${CODEX_SESSION_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_3="${CODEX_SESSION_ID-}" __CODEX_SNAPSHOT_OVERRIDE_SET_4="${CODEX_THREAD_ID+x}" __CODEX_SNAPSHOT_OVERRIDE_4="${CODEX_THREAD_ID-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0="${ALL_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_0="${ALL_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1="${BUNDLE_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_1="${BUNDLE_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2="${BUNDLE_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_2="${BUNDLE_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3="${BUNDLE_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_3="${BUNDLE_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4="${BUNDLE_SSL_CA_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_4="${BUNDLE_SSL_CA_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5="${CARGO_HTTP_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_5="${CARGO_HTTP_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6="${CODEX_CA_CERTIFICATE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_6="${CODEX_CA_CERTIFICATE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_7="${CODEX_NETWORK_ALLOW_LOCAL_BINDING-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8="${CODEX_NETWORK_PROXY_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_8="${CODEX_NETWORK_PROXY_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9="${CODEX_NETWORK_PROXY_ATTRIBUTION+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_9="${CODEX_NETWORK_PROXY_ATTRIBUTION-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_10="${CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_11="${CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12="${CURL_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_12="${CURL_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13="${DOCKER_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_13="${DOCKER_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14="${DOCKER_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_14="${DOCKER_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15="${ELECTRON_GET_USE_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_15="${ELECTRON_GET_USE_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16="${FTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_16="${FTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17="${GIT_SSL_CAINFO+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_17="${GIT_SSL_CAINFO-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18="${HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_18="${HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19="${HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_19="${HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20="${NODE_EXTRA_CA_CERTS+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_20="${NODE_EXTRA_CA_CERTS-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21="${NODE_USE_ENV_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_21="${NODE_USE_ENV_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22="${NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_22="${NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23="${NPM_CONFIG_CAFILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_23="${NPM_CONFIG_CAFILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24="${NPM_CONFIG_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_24="${NPM_CONFIG_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25="${NPM_CONFIG_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_25="${NPM_CONFIG_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26="${NPM_CONFIG_NOPROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_26="${NPM_CONFIG_NOPROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27="${NPM_CONFIG_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_27="${NPM_CONFIG_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28="${PIP_CERT+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_28="${PIP_CERT-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29="${PIP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_29="${PIP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30="${REQUESTS_CA_BUNDLE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_30="${REQUESTS_CA_BUNDLE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31="${SSL_CERT_FILE+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_31="${SSL_CERT_FILE-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32="${WSS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_32="${WSS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33="${WS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_33="${WS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34="${YARN_HTTPS_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_34="${YARN_HTTPS_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35="${YARN_HTTP_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_35="${YARN_HTTP_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36="${YARN_NO_PROXY+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_36="${YARN_NO_PROXY-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37="${all_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_37="${all_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38="${ftp_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_38="${ftp_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39="${http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_39="${http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40="${https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_40="${https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41="${no_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_41="${no_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42="${npm_config_cafile+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_42="${npm_config_cafile-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43="${npm_config_http_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_43="${npm_config_http_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44="${npm_config_https_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_44="${npm_config_https_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45="${npm_config_noproxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_45="${npm_config_noproxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46="${npm_config_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_46="${npm_config_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47="${ws_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_47="${ws_proxy-}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48="${wss_proxy+x}" __CODEX_SNAPSHOT_PROXY_OVERRIDE_48="${wss_proxy-}" __CODEX_SNAPSHOT_PROXY_ENV_SET="${CODEX_NETWORK_PROXY_ACTIVE+x}"  if . '/home/sat/.codex/shell_snapshots/01a08c14-e524-7da2-ab1e-778f17fcfd18.1789056574763091622.sh' >/dev/null 2>&1; then :; fi  if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_0}" ]; then export CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS="${__CODEX_SNAPSHOT_OVERRIDE_0}"; else unset CODEX_APPLY_PATCH_PRESERVE_LINE_ENDINGS; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_1}" ]; then export CODEX_PERMISSION_PROFILE="${__CODEX_SNAPSHOT_OVERRIDE_1}"; else unset CODEX_PERMISSION_PROFILE; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_2}" ]; then export CODEX_PLUGIN_METRICS_OUTPUT="${__CODEX_SNAPSHOT_OVERRIDE_2}"; else unset CODEX_PLUGIN_METRICS_OUTPUT; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_3}" ]; then export CODEX_SESSION_ID="${__CODEX_SNAPSHOT_OVERRIDE_3}"; else unset CODEX_SESSION_ID; fi if [ -n "${__CODEX_SNAPSHOT_OVERRIDE_SET_4}" ]; then export CODEX_THREAD_ID="${__CODEX_SNAPSHOT_OVERRIDE_4}"; else unset CODEX_THREAD_ID; fi if [ -n "$__CODEX_SNAPSHOT_PROXY_ENV_SET" ] || [ -n "${CODEX_NETWORK_PROXY_ACTIVE+x}" ]; then if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_0}" ]; then export ALL_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_0}"; else unset ALL_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_1}" ]; then export BUNDLE_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_1}"; else unset BUNDLE_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_2}" ]; then export BUNDLE_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_2}"; else unset BUNDLE_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_3}" ]; then export BUNDLE_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_3}"; else unset BUNDLE_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_4}" ]; then export BUNDLE_SSL_CA_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_4}"; else unset BUNDLE_SSL_CA_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_5}" ]; then export CARGO_HTTP_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_5}"; else unset CARGO_HTTP_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_6}" ]; then export CODEX_CA_CERTIFICATE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_6}"; else unset CODEX_CA_CERTIFICATE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_7}" ]; then export CODEX_NETWORK_ALLOW_LOCAL_BINDING="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_7}"; else unset CODEX_NETWORK_ALLOW_LOCAL_BINDING; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_8}" ]; then export CODEX_NETWORK_PROXY_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_8}"; else unset CODEX_NETWORK_PROXY_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_9}" ]; then export CODEX_NETWORK_PROXY_ATTRIBUTION="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_9}"; else unset CODEX_NETWORK_PROXY_ATTRIBUTION; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_10}" ]; then export CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_10}"; else unset CODEX_NETWORK_PROXY_BROKERED_CREDENTIALS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_11}" ]; then export CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_11}"; else unset CODEX_NETWORK_PROXY_CREDENTIAL_BROKER_ACTIVE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_12}" ]; then export CURL_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_12}"; else unset CURL_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_13}" ]; then export DOCKER_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_13}"; else unset DOCKER_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_14}" ]; then export DOCKER_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_14}"; else unset DOCKER_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_15}" ]; then export ELECTRON_GET_USE_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_15}"; else unset ELECTRON_GET_USE_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_16}" ]; then export FTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_16}"; else unset FTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_17}" ]; then export GIT_SSL_CAINFO="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_17}"; else unset GIT_SSL_CAINFO; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_18}" ]; then export HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_18}"; else unset HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_19}" ]; then export HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_19}"; else unset HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_20}" ]; then export NODE_EXTRA_CA_CERTS="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_20}"; else unset NODE_EXTRA_CA_CERTS; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_21}" ]; then export NODE_USE_ENV_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_21}"; else unset NODE_USE_ENV_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_22}" ]; then export NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_22}"; else unset NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_23}" ]; then export NPM_CONFIG_CAFILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_23}"; else unset NPM_CONFIG_CAFILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_24}" ]; then export NPM_CONFIG_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_24}"; else unset NPM_CONFIG_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_25}" ]; then export NPM_CONFIG_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_25}"; else unset NPM_CONFIG_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_26}" ]; then export NPM_CONFIG_NOPROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_26}"; else unset NPM_CONFIG_NOPROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_27}" ]; then export NPM_CONFIG_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_27}"; else unset NPM_CONFIG_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_28}" ]; then export PIP_CERT="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_28}"; else unset PIP_CERT; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_29}" ]; then export PIP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_29}"; else unset PIP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_30}" ]; then export REQUESTS_CA_BUNDLE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_30}"; else unset REQUESTS_CA_BUNDLE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_31}" ]; then export SSL_CERT_FILE="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_31}"; else unset SSL_CERT_FILE; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_32}" ]; then export WSS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_32}"; else unset WSS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_33}" ]; then export WS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_33}"; else unset WS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_34}" ]; then export YARN_HTTPS_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_34}"; else unset YARN_HTTPS_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_35}" ]; then export YARN_HTTP_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_35}"; else unset YARN_HTTP_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_36}" ]; then export YARN_NO_PROXY="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_36}"; else unset YARN_NO_PROXY; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_37}" ]; then export all_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_37}"; else unset all_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_38}" ]; then export ftp_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_38}"; else unset ftp_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_39}" ]; then export http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_39}"; else unset http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_40}" ]; then export https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_40}"; else unset https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_41}" ]; then export no_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_41}"; else unset no_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_42}" ]; then export npm_config_cafile="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_42}"; else unset npm_config_cafile; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_43}" ]; then export npm_config_http_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_43}"; else unset npm_config_http_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_44}" ]; then export npm_config_https_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_44}"; else unset npm_config_https_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_45}" ]; then export npm_config_noproxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_45}"; else unset npm_config_noproxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_46}" ]; then export npm_config_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_46}"; else unset npm_config_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_47}" ]; then export ws_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_47}"; else unset ws_proxy; fi if [ -n "${__CODEX_SNAPSHOT_PROXY_OVERRIDE_SET_48}" ]; then export wss_proxy="${__CODEX_SNAPSHOT_PROXY_OVERRIDE_48}"; else unset wss_proxy; fi fi if [ -n "${PATH:-}" ]; then export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path':"$PATH"; else export PATH='/home/sat/.npm-global/lib/node_modules/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/codex-path'; fi  exec '/bin/bash' -c 'ps -eo pid,ni,rss,etime,cmd | rg '"'"'[p]ython|PID'"'"' | sed -n '"'"'1,120p'"'"' && date -u +'"'"'%Y-%m-%dT%H:%M:%SZ'"'"''
+      2   0  3732       00:00 /bin/bash -c ps -eo pid,ni,rss,etime,cmd | rg '[p]ython|PID' | sed -n '1,120p' && date -u +'%Y-%m-%dT%H:%M:%SZ'
+      4   0  4512       00:00 rg [p]ython|PID
+2026-09-10T16:12:00Z
+

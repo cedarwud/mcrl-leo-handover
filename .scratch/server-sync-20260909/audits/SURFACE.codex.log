@@ -15680,3 +15680,2695 @@ index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63a
 +if __name__ == "__main__":
 +    raise SystemExit(main())
 
+apply patch
+patch: completed
+/home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md
+diff --git a/.scratch/surface/run_parity.py b/.scratch/surface/run_parity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63af6fdfd22
+--- /dev/null
++++ b/.scratch/surface/run_parity.py
+@@ -0,0 +1,295 @@
++#!/usr/bin/env python3
++"""Parity gate for the selection-surface diagnostic.
++
++All selection profiles, including BASE, enter through fresh dense batches.
++The committed endpoints enter through one separate dense full-48 batch.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 4_000_000_000
++EXPECTED = {
++    "nominal|best|one": 28.668530,
++    "realised|first|converged": 13.430253,
++}
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness below 15")
++    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins not one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 4 GB")
++
++
++def load_panel():
++    name = "surface_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    return runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++
++
++def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++           *, field: str, rule: str, converged: bool):
++    evaluator = fresh_evaluator(
++        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
++    )
++    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
++    evaluator.evaluate_many((base,))
++    base_profile = evaluator._evaluated.get(base.configuration_id)
++    if base_profile is None:
++        raise RuntimeError("dense BASE is invalid")
++    guard = panel.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    passes = moves = comparisons = submitted = 0
++    started = time.perf_counter()
++    while True:
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = evaluator._evaluated.get(current.configuration_id)
++            if current_profile is None:
++                raise RuntimeError("current profile absent from dense cache")
++            current_value: Fraction = panel.objective(
++                runner, calibration, incumbent, current, current_profile, rekeys
++            )
++            candidates = tuple(
++                panel.candidate(runner, base, current, user, identity, "surface-parity")
++                for identity in options[user]
++                if identity != current.mapping[user]
++            )
++            accepted = None
++            if rule == "first":
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                    for row in batch:
++                        comparisons += 1
++                        profile = evaluator._evaluated.get(row.configuration_id)
++                        if profile is None or panel.served(profile) < guard:
++                            continue
++                        value = panel.objective(
++                            runner, calibration, incumbent, row, profile, rekeys
++                        )
++                        if value > current_value:
++                            accepted = row
++                            break
++                    if accepted is not None:
++                        break
++            elif rule == "best":
++                # Incumbent participates in the same dense comparison and tie rule
++                # as the published one-sweep arm.
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                eligible = [(current_value, current.configuration_id, current)]
++                for row in candidates:
++                    comparisons += 1
++                    profile = evaluator._evaluated.get(row.configuration_id)
++                    if profile is None or panel.served(profile) < guard:
++                        continue
++                    value = panel.objective(
++                        runner, calibration, incumbent, row, profile, rekeys
++                    )
++                    eligible.append((value, row.configuration_id, row))
++                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++                if selected.mapping[user] != current.mapping[user]:
++                    accepted = selected
++            else:
++                raise ValueError(rule)
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moves_this_pass += 1
++        passes += 1
++        if not converged or moves_this_pass == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("search exceeded 100 passes")
++    detail = {
++        "field": field, "rule": rule,
++        "passes_mode": "converged" if converged else "one",
++        "passes": passes, "moves": moves, "guard": guard,
++        "comparisons": comparisons, "submitted": submitted,
++        "legal_option_census": census,
++        "selection_seconds": time.perf_counter() - started,
++        "base_was_dense_populated": True,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, detail
++
++
++def diversity(config) -> dict[str, float | int]:
++    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
++    users = len(config.mapping)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    overall_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    anchors = []
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        configs = {}
++        details = {}
++        cell = "nominal|best|one"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="nominal", rule="best", converged=False,
++        )
++        cell = "realised|first|converged"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="realised", rule="first", converged=True,
++        )
++        endpoint = fresh_evaluator(
++            panel, runner, tape, step_index, incumbent, run_setting,
++            "realised", tuple(range(48)),
++        )
++        endpoint.evaluate_many(tuple(configs.values()))
++        metrics = {
++            name: panel.metric(endpoint._evaluated[config.configuration_id])
++            for name, config in configs.items()
++        }
++        anchors.append({
++            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
++            "cells": {
++                name: {
++                    "configuration_id": configs[name].configuration_id,
++                    "selection": details[name], "committed": metrics[name],
++                    "diversity": diversity(configs[name]),
++                }
++                for name in configs
++            },
++        })
++        del endpoint
++        gc.collect()
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++        )
++
++    pooled = {}
++    for name in EXPECTED:
++        rows = [row["cells"][name] for row in anchors]
++        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
++        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
++        pooled[name] = {
++            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
++            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
++            "rate_target_attained_count": sum(
++                int(row["committed"]["rate_target_attained_count"]) for row in rows
++            ),
++            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
++        }
++    parity = {
++        name: {
++            "expected_rounded_6": expected,
++            "observed": pooled[name]["ee_mbit_per_j"],
++            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
++        }
++        for name, expected in EXPECTED.items()
++    }
++    passed = all(row["rounded_6_match"] for row in parity.values())
++    payload = {
++        "schema": "mcrl-v025-selection-surface-parity-v1",
++        "status": "PASS" if passed else "PARITY_FAILED",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "dense_base_only": True,
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
++        "process_count": 1,
++        "panel_count": len(frozen),
++        "anchors": anchors,
++        "pooled": pooled,
++        "parity": parity,
++        "peak_rss_bytes": peak_rss_bytes(),
++        "wall_seconds": time.perf_counter() - overall_started,
++    }
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
++    return 0 if passed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/SELECTION-SURFACE-2026-09-10.md b/SELECTION-SURFACE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..32189c06075a598686d91c324035f18dbac6ec2c
+--- /dev/null
++++ b/SELECTION-SURFACE-2026-09-10.md
+@@ -0,0 +1,116 @@
++**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
++
++# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
++
++`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
++
++## Stop decision
++
++The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
++
++No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
++
++## Verified by running code
++
++### Mandatory parity gates
++
++Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call.
++
++| cell | expected EE | fresh-dense EE | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
++|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
++| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
++| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
++
++`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
++
++The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
++
++The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
++
++### Why the published parity is not reproducible under the required evaluator rule
++
++The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
++
++```python
++evaluator = panelceil.new_selection_evaluator(
++    runner, tape, step_index, incumbent, run_setting, field="nominal"
++)
++base_profile = evaluator.evaluate(base)
++guard = panelceil.served(base_profile)
++# ...
++evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++```
++
++(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
++
++The published realised fixed point does the same:
++
++```python
++evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
++base_profile = evaluator.evaluate(base)
++guard = served(base_profile)
++# ...
++evaluator.evaluate_many(batch)
++```
++
++(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
++
++This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
++
++The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
++
++### Deployed path: direct code reading
++
++The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
++
++```python
++selection_evaluator = StepEvaluator(
++    tape,
++    setting,
++    step_index,
++    transition_from=incumbent,
++    cell_rekeyed_users=cell_rekeys,
++    field="nominal",
++    counter=counter,
++    run_setting=active_run,
++    boundary_indices=(0,),
++)
++selection_evaluator.evaluate_many(catalog)
++# ...
++stage1_profiles = {
++    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
++}
++```
++
++(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
++
++Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
++
++## Derived on paper from verified aggregates
++
++- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
++- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
++- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
++
++These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
++
++## Inferred
++
++The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
++
++## Machine evidence and reproduction
++
++```text
++a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
++6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
++```
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
++BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
++nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
++  .scratch/surface/run_parity.py
++```
++
++The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+
+diff --git a/.scratch/surface/run_parity.py b/.scratch/surface/run_parity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63af6fdfd22
+--- /dev/null
++++ b/.scratch/surface/run_parity.py
+@@ -0,0 +1,295 @@
++#!/usr/bin/env python3
++"""Parity gate for the selection-surface diagnostic.
++
++All selection profiles, including BASE, enter through fresh dense batches.
++The committed endpoints enter through one separate dense full-48 batch.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 4_000_000_000
++EXPECTED = {
++    "nominal|best|one": 28.668530,
++    "realised|first|converged": 13.430253,
++}
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness below 15")
++    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins not one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 4 GB")
++
++
++def load_panel():
++    name = "surface_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    return runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++
++
++def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++           *, field: str, rule: str, converged: bool):
++    evaluator = fresh_evaluator(
++        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
++    )
++    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
++    evaluator.evaluate_many((base,))
++    base_profile = evaluator._evaluated.get(base.configuration_id)
++    if base_profile is None:
++        raise RuntimeError("dense BASE is invalid")
++    guard = panel.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    passes = moves = comparisons = submitted = 0
++    started = time.perf_counter()
++    while True:
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = evaluator._evaluated.get(current.configuration_id)
++            if current_profile is None:
++                raise RuntimeError("current profile absent from dense cache")
++            current_value: Fraction = panel.objective(
++                runner, calibration, incumbent, current, current_profile, rekeys
++            )
++            candidates = tuple(
++                panel.candidate(runner, base, current, user, identity, "surface-parity")
++                for identity in options[user]
++                if identity != current.mapping[user]
++            )
++            accepted = None
++            if rule == "first":
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                    for row in batch:
++                        comparisons += 1
++                        profile = evaluator._evaluated.get(row.configuration_id)
++                        if profile is None or panel.served(profile) < guard:
++                            continue
++                        value = panel.objective(
++                            runner, calibration, incumbent, row, profile, rekeys
++                        )
++                        if value > current_value:
++                            accepted = row
++                            break
++                    if accepted is not None:
++                        break
++            elif rule == "best":
++                # Incumbent participates in the same dense comparison and tie rule
++                # as the published one-sweep arm.
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                eligible = [(current_value, current.configuration_id, current)]
++                for row in candidates:
++                    comparisons += 1
++                    profile = evaluator._evaluated.get(row.configuration_id)
++                    if profile is None or panel.served(profile) < guard:
++                        continue
++                    value = panel.objective(
++                        runner, calibration, incumbent, row, profile, rekeys
++                    )
++                    eligible.append((value, row.configuration_id, row))
++                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++                if selected.mapping[user] != current.mapping[user]:
++                    accepted = selected
++            else:
++                raise ValueError(rule)
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moves_this_pass += 1
++        passes += 1
++        if not converged or moves_this_pass == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("search exceeded 100 passes")
++    detail = {
++        "field": field, "rule": rule,
++        "passes_mode": "converged" if converged else "one",
++        "passes": passes, "moves": moves, "guard": guard,
++        "comparisons": comparisons, "submitted": submitted,
++        "legal_option_census": census,
++        "selection_seconds": time.perf_counter() - started,
++        "base_was_dense_populated": True,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, detail
++
++
++def diversity(config) -> dict[str, float | int]:
++    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
++    users = len(config.mapping)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    overall_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    anchors = []
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        configs = {}
++        details = {}
++        cell = "nominal|best|one"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="nominal", rule="best", converged=False,
++        )
++        cell = "realised|first|converged"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="realised", rule="first", converged=True,
++        )
++        endpoint = fresh_evaluator(
++            panel, runner, tape, step_index, incumbent, run_setting,
++            "realised", tuple(range(48)),
++        )
++        endpoint.evaluate_many(tuple(configs.values()))
++        metrics = {
++            name: panel.metric(endpoint._evaluated[config.configuration_id])
++            for name, config in configs.items()
++        }
++        anchors.append({
++            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
++            "cells": {
++                name: {
++                    "configuration_id": configs[name].configuration_id,
++                    "selection": details[name], "committed": metrics[name],
++                    "diversity": diversity(configs[name]),
++                }
++                for name in configs
++            },
++        })
++        del endpoint
++        gc.collect()
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++        )
++
++    pooled = {}
++    for name in EXPECTED:
++        rows = [row["cells"][name] for row in anchors]
++        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
++        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
++        pooled[name] = {
++            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
++            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
++            "rate_target_attained_count": sum(
++                int(row["committed"]["rate_target_attained_count"]) for row in rows
++            ),
++            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
++        }
++    parity = {
++        name: {
++            "expected_rounded_6": expected,
++            "observed": pooled[name]["ee_mbit_per_j"],
++            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
++        }
++        for name, expected in EXPECTED.items()
++    }
++    passed = all(row["rounded_6_match"] for row in parity.values())
++    payload = {
++        "schema": "mcrl-v025-selection-surface-parity-v1",
++        "status": "PASS" if passed else "PARITY_FAILED",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "dense_base_only": True,
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
++        "process_count": 1,
++        "panel_count": len(frozen),
++        "anchors": anchors,
++        "pooled": pooled,
++        "parity": parity,
++        "peak_rss_bytes": peak_rss_bytes(),
++        "wall_seconds": time.perf_counter() - overall_started,
++    }
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
++    return 0 if passed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/SELECTION-SURFACE-2026-09-10.md b/SELECTION-SURFACE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..32189c06075a598686d91c324035f18dbac6ec2c
+--- /dev/null
++++ b/SELECTION-SURFACE-2026-09-10.md
+@@ -0,0 +1,116 @@
++**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
++
++# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
++
++`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
++
++## Stop decision
++
++The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
++
++No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
++
++## Verified by running code
++
++### Mandatory parity gates
++
++Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call.
++
++| cell | expected EE | fresh-dense EE | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
++|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
++| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
++| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
++
++`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
++
++The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
++
++The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
++
++### Why the published parity is not reproducible under the required evaluator rule
++
++The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
++
++```python
++evaluator = panelceil.new_selection_evaluator(
++    runner, tape, step_index, incumbent, run_setting, field="nominal"
++)
++base_profile = evaluator.evaluate(base)
++guard = panelceil.served(base_profile)
++# ...
++evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++```
++
++(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
++
++The published realised fixed point does the same:
++
++```python
++evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
++base_profile = evaluator.evaluate(base)
++guard = served(base_profile)
++# ...
++evaluator.evaluate_many(batch)
++```
++
++(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
++
++This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
++
++The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
++
++### Deployed path: direct code reading
++
++The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
++
++```python
++selection_evaluator = StepEvaluator(
++    tape,
++    setting,
++    step_index,
++    transition_from=incumbent,
++    cell_rekeyed_users=cell_rekeys,
++    field="nominal",
++    counter=counter,
++    run_setting=active_run,
++    boundary_indices=(0,),
++)
++selection_evaluator.evaluate_many(catalog)
++# ...
++stage1_profiles = {
++    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
++}
++```
++
++(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
++
++Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
++
++## Derived on paper from verified aggregates
++
++- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
++- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
++- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
++
++These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
++
++## Inferred
++
++The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
++
++## Machine evidence and reproduction
++
++```text
++a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
++6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
++```
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
++BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
++nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
++  .scratch/surface/run_parity.py
++```
++
++The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+
+exec
+/bin/bash -lc "sed -n '1,260p' SELECTION-SURFACE-2026-09-10.md
+jq -e '.status==\"PARITY_FAILED\" and .panel_count==12 and .process_count==1 and .peak_rss_bytes<4000000000 and ([.parity[].rounded_6_match]|all(.==false))' .scratch/surface/parity.json
+sha256sum .scratch/surface/run_parity.py .scratch/surface/parity.json SELECTION-SURFACE-2026-09-10.md
+git status --short" in /home/sat/mcrl-v025-surface-ws
+ succeeded in 0ms:
+**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
+
+# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
+
+`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
+
+## Stop decision
+
+The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
+
+No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
+
+## Verified by running code
+
+### Mandatory parity gates
+
+Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call.
+
+| cell | expected EE | fresh-dense EE | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
+|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
+| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
+
+`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
+
+The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
+
+The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
+
+### Why the published parity is not reproducible under the required evaluator rule
+
+The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
+
+```python
+evaluator = panelceil.new_selection_evaluator(
+    runner, tape, step_index, incumbent, run_setting, field="nominal"
+)
+base_profile = evaluator.evaluate(base)
+guard = panelceil.served(base_profile)
+# ...
+evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
+```
+
+(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
+
+The published realised fixed point does the same:
+
+```python
+evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
+base_profile = evaluator.evaluate(base)
+guard = served(base_profile)
+# ...
+evaluator.evaluate_many(batch)
+```
+
+(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
+
+This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
+
+The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
+
+### Deployed path: direct code reading
+
+The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
+
+```python
+selection_evaluator = StepEvaluator(
+    tape,
+    setting,
+    step_index,
+    transition_from=incumbent,
+    cell_rekeyed_users=cell_rekeys,
+    field="nominal",
+    counter=counter,
+    run_setting=active_run,
+    boundary_indices=(0,),
+)
+selection_evaluator.evaluate_many(catalog)
+# ...
+stage1_profiles = {
+    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
+}
+```
+
+(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
+
+Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
+
+## Derived on paper from verified aggregates
+
+- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
+- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
+- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
+
+These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
+
+## Inferred
+
+The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
+
+## Machine evidence and reproduction
+
+```text
+a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
+6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
+f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
+```
+
+```bash
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
+BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
+nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
+  .scratch/surface/run_parity.py
+```
+
+The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+true
+a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
+6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
+e8bfeac2e35b62501febff9ea18144a94ecb54051720a4eb63b1704407970b10  SELECTION-SURFACE-2026-09-10.md
+?? .scratch/
+?? SELECTION-SURFACE-2026-09-10.md
+
+diff --git a/.scratch/surface/run_parity.py b/.scratch/surface/run_parity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63af6fdfd22
+--- /dev/null
++++ b/.scratch/surface/run_parity.py
+@@ -0,0 +1,295 @@
++#!/usr/bin/env python3
++"""Parity gate for the selection-surface diagnostic.
++
++All selection profiles, including BASE, enter through fresh dense batches.
++The committed endpoints enter through one separate dense full-48 batch.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 4_000_000_000
++EXPECTED = {
++    "nominal|best|one": 28.668530,
++    "realised|first|converged": 13.430253,
++}
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness below 15")
++    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins not one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 4 GB")
++
++
++def load_panel():
++    name = "surface_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    return runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++
++
++def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++           *, field: str, rule: str, converged: bool):
++    evaluator = fresh_evaluator(
++        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
++    )
++    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
++    evaluator.evaluate_many((base,))
++    base_profile = evaluator._evaluated.get(base.configuration_id)
++    if base_profile is None:
++        raise RuntimeError("dense BASE is invalid")
++    guard = panel.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    passes = moves = comparisons = submitted = 0
++    started = time.perf_counter()
++    while True:
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = evaluator._evaluated.get(current.configuration_id)
++            if current_profile is None:
++                raise RuntimeError("current profile absent from dense cache")
++            current_value: Fraction = panel.objective(
++                runner, calibration, incumbent, current, current_profile, rekeys
++            )
++            candidates = tuple(
++                panel.candidate(runner, base, current, user, identity, "surface-parity")
++                for identity in options[user]
++                if identity != current.mapping[user]
++            )
++            accepted = None
++            if rule == "first":
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                    for row in batch:
++                        comparisons += 1
++                        profile = evaluator._evaluated.get(row.configuration_id)
++                        if profile is None or panel.served(profile) < guard:
++                            continue
++                        value = panel.objective(
++                            runner, calibration, incumbent, row, profile, rekeys
++                        )
++                        if value > current_value:
++                            accepted = row
++                            break
++                    if accepted is not None:
++                        break
++            elif rule == "best":
++                # Incumbent participates in the same dense comparison and tie rule
++                # as the published one-sweep arm.
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                eligible = [(current_value, current.configuration_id, current)]
++                for row in candidates:
++                    comparisons += 1
++                    profile = evaluator._evaluated.get(row.configuration_id)
++                    if profile is None or panel.served(profile) < guard:
++                        continue
++                    value = panel.objective(
++                        runner, calibration, incumbent, row, profile, rekeys
++                    )
++                    eligible.append((value, row.configuration_id, row))
++                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++                if selected.mapping[user] != current.mapping[user]:
++                    accepted = selected
++            else:
++                raise ValueError(rule)
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moves_this_pass += 1
++        passes += 1
++        if not converged or moves_this_pass == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("search exceeded 100 passes")
++    detail = {
++        "field": field, "rule": rule,
++        "passes_mode": "converged" if converged else "one",
++        "passes": passes, "moves": moves, "guard": guard,
++        "comparisons": comparisons, "submitted": submitted,
++        "legal_option_census": census,
++        "selection_seconds": time.perf_counter() - started,
++        "base_was_dense_populated": True,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, detail
++
++
++def diversity(config) -> dict[str, float | int]:
++    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
++    users = len(config.mapping)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    overall_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    anchors = []
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        configs = {}
++        details = {}
++        cell = "nominal|best|one"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="nominal", rule="best", converged=False,
++        )
++        cell = "realised|first|converged"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="realised", rule="first", converged=True,
++        )
++        endpoint = fresh_evaluator(
++            panel, runner, tape, step_index, incumbent, run_setting,
++            "realised", tuple(range(48)),
++        )
++        endpoint.evaluate_many(tuple(configs.values()))
++        metrics = {
++            name: panel.metric(endpoint._evaluated[config.configuration_id])
++            for name, config in configs.items()
++        }
++        anchors.append({
++            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
++            "cells": {
++                name: {
++                    "configuration_id": configs[name].configuration_id,
++                    "selection": details[name], "committed": metrics[name],
++                    "diversity": diversity(configs[name]),
++                }
++                for name in configs
++            },
++        })
++        del endpoint
++        gc.collect()
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++        )
++
++    pooled = {}
++    for name in EXPECTED:
++        rows = [row["cells"][name] for row in anchors]
++        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
++        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
++        pooled[name] = {
++            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
++            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
++            "rate_target_attained_count": sum(
++                int(row["committed"]["rate_target_attained_count"]) for row in rows
++            ),
++            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
++        }
++    parity = {
++        name: {
++            "expected_rounded_6": expected,
++            "observed": pooled[name]["ee_mbit_per_j"],
++            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
++        }
++        for name, expected in EXPECTED.items()
++    }
++    passed = all(row["rounded_6_match"] for row in parity.values())
++    payload = {
++        "schema": "mcrl-v025-selection-surface-parity-v1",
++        "status": "PASS" if passed else "PARITY_FAILED",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "dense_base_only": True,
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
++        "process_count": 1,
++        "panel_count": len(frozen),
++        "anchors": anchors,
++        "pooled": pooled,
++        "parity": parity,
++        "peak_rss_bytes": peak_rss_bytes(),
++        "wall_seconds": time.perf_counter() - overall_started,
++    }
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
++    return 0 if passed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/SELECTION-SURFACE-2026-09-10.md b/SELECTION-SURFACE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..32189c06075a598686d91c324035f18dbac6ec2c
+--- /dev/null
++++ b/SELECTION-SURFACE-2026-09-10.md
+@@ -0,0 +1,116 @@
++**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
++
++# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
++
++`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
++
++## Stop decision
++
++The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
++
++No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
++
++## Verified by running code
++
++### Mandatory parity gates
++
++Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call.
++
++| cell | expected EE | fresh-dense EE | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
++|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
++| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
++| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
++
++`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
++
++The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
++
++The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
++
++### Why the published parity is not reproducible under the required evaluator rule
++
++The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
++
++```python
++evaluator = panelceil.new_selection_evaluator(
++    runner, tape, step_index, incumbent, run_setting, field="nominal"
++)
++base_profile = evaluator.evaluate(base)
++guard = panelceil.served(base_profile)
++# ...
++evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++```
++
++(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
++
++The published realised fixed point does the same:
++
++```python
++evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
++base_profile = evaluator.evaluate(base)
++guard = served(base_profile)
++# ...
++evaluator.evaluate_many(batch)
++```
++
++(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
++
++This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
++
++The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
++
++### Deployed path: direct code reading
++
++The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
++
++```python
++selection_evaluator = StepEvaluator(
++    tape,
++    setting,
++    step_index,
++    transition_from=incumbent,
++    cell_rekeyed_users=cell_rekeys,
++    field="nominal",
++    counter=counter,
++    run_setting=active_run,
++    boundary_indices=(0,),
++)
++selection_evaluator.evaluate_many(catalog)
++# ...
++stage1_profiles = {
++    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
++}
++```
++
++(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
++
++Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
++
++## Derived on paper from verified aggregates
++
++- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
++- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
++- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
++
++These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
++
++## Inferred
++
++The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
++
++## Machine evidence and reproduction
++
++```text
++a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
++6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
++```
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
++BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
++nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
++  .scratch/surface/run_parity.py
++```
++
++The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+
+apply patch
+patch: completed
+/home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md
+diff --git a/.scratch/surface/run_parity.py b/.scratch/surface/run_parity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63af6fdfd22
+--- /dev/null
++++ b/.scratch/surface/run_parity.py
+@@ -0,0 +1,295 @@
++#!/usr/bin/env python3
++"""Parity gate for the selection-surface diagnostic.
++
++All selection profiles, including BASE, enter through fresh dense batches.
++The committed endpoints enter through one separate dense full-48 batch.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 4_000_000_000
++EXPECTED = {
++    "nominal|best|one": 28.668530,
++    "realised|first|converged": 13.430253,
++}
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness below 15")
++    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins not one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 4 GB")
++
++
++def load_panel():
++    name = "surface_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    return runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++
++
++def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++           *, field: str, rule: str, converged: bool):
++    evaluator = fresh_evaluator(
++        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
++    )
++    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
++    evaluator.evaluate_many((base,))
++    base_profile = evaluator._evaluated.get(base.configuration_id)
++    if base_profile is None:
++        raise RuntimeError("dense BASE is invalid")
++    guard = panel.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    passes = moves = comparisons = submitted = 0
++    started = time.perf_counter()
++    while True:
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = evaluator._evaluated.get(current.configuration_id)
++            if current_profile is None:
++                raise RuntimeError("current profile absent from dense cache")
++            current_value: Fraction = panel.objective(
++                runner, calibration, incumbent, current, current_profile, rekeys
++            )
++            candidates = tuple(
++                panel.candidate(runner, base, current, user, identity, "surface-parity")
++                for identity in options[user]
++                if identity != current.mapping[user]
++            )
++            accepted = None
++            if rule == "first":
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                    for row in batch:
++                        comparisons += 1
++                        profile = evaluator._evaluated.get(row.configuration_id)
++                        if profile is None or panel.served(profile) < guard:
++                            continue
++                        value = panel.objective(
++                            runner, calibration, incumbent, row, profile, rekeys
++                        )
++                        if value > current_value:
++                            accepted = row
++                            break
++                    if accepted is not None:
++                        break
++            elif rule == "best":
++                # Incumbent participates in the same dense comparison and tie rule
++                # as the published one-sweep arm.
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                eligible = [(current_value, current.configuration_id, current)]
++                for row in candidates:
++                    comparisons += 1
++                    profile = evaluator._evaluated.get(row.configuration_id)
++                    if profile is None or panel.served(profile) < guard:
++                        continue
++                    value = panel.objective(
++                        runner, calibration, incumbent, row, profile, rekeys
++                    )
++                    eligible.append((value, row.configuration_id, row))
++                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++                if selected.mapping[user] != current.mapping[user]:
++                    accepted = selected
++            else:
++                raise ValueError(rule)
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moves_this_pass += 1
++        passes += 1
++        if not converged or moves_this_pass == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("search exceeded 100 passes")
++    detail = {
++        "field": field, "rule": rule,
++        "passes_mode": "converged" if converged else "one",
++        "passes": passes, "moves": moves, "guard": guard,
++        "comparisons": comparisons, "submitted": submitted,
++        "legal_option_census": census,
++        "selection_seconds": time.perf_counter() - started,
++        "base_was_dense_populated": True,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, detail
++
++
++def diversity(config) -> dict[str, float | int]:
++    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
++    users = len(config.mapping)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    overall_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    anchors = []
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        configs = {}
++        details = {}
++        cell = "nominal|best|one"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="nominal", rule="best", converged=False,
++        )
++        cell = "realised|first|converged"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="realised", rule="first", converged=True,
++        )
++        endpoint = fresh_evaluator(
++            panel, runner, tape, step_index, incumbent, run_setting,
++            "realised", tuple(range(48)),
++        )
++        endpoint.evaluate_many(tuple(configs.values()))
++        metrics = {
++            name: panel.metric(endpoint._evaluated[config.configuration_id])
++            for name, config in configs.items()
++        }
++        anchors.append({
++            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
++            "cells": {
++                name: {
++                    "configuration_id": configs[name].configuration_id,
++                    "selection": details[name], "committed": metrics[name],
++                    "diversity": diversity(configs[name]),
++                }
++                for name in configs
++            },
++        })
++        del endpoint
++        gc.collect()
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++        )
++
++    pooled = {}
++    for name in EXPECTED:
++        rows = [row["cells"][name] for row in anchors]
++        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
++        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
++        pooled[name] = {
++            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
++            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
++            "rate_target_attained_count": sum(
++                int(row["committed"]["rate_target_attained_count"]) for row in rows
++            ),
++            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
++        }
++    parity = {
++        name: {
++            "expected_rounded_6": expected,
++            "observed": pooled[name]["ee_mbit_per_j"],
++            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
++        }
++        for name, expected in EXPECTED.items()
++    }
++    passed = all(row["rounded_6_match"] for row in parity.values())
++    payload = {
++        "schema": "mcrl-v025-selection-surface-parity-v1",
++        "status": "PASS" if passed else "PARITY_FAILED",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "dense_base_only": True,
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
++        "process_count": 1,
++        "panel_count": len(frozen),
++        "anchors": anchors,
++        "pooled": pooled,
++        "parity": parity,
++        "peak_rss_bytes": peak_rss_bytes(),
++        "wall_seconds": time.perf_counter() - overall_started,
++    }
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
++    return 0 if passed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/SELECTION-SURFACE-2026-09-10.md b/SELECTION-SURFACE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..765310deb6720cb9bb5a9071886bdd31a05d3ceb
+--- /dev/null
++++ b/SELECTION-SURFACE-2026-09-10.md
+@@ -0,0 +1,116 @@
++**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
++
++# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
++
++`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
++
++## Stop decision
++
++The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
++
++No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
++
++## Verified by running code
++
++### Mandatory parity gates
++
++Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call. Endpoint bits are the full-buffer numerator with no demand cap, and pooled EE is `sum(bits) / sum(joules)`.
++
++| cell | expected EE (Mbit/J) | fresh-dense EE (Mbit/J) | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
++|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
++| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
++| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
++
++`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
++
++The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
++
++The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
++
++### Why the published parity is not reproducible under the required evaluator rule
++
++The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
++
++```python
++evaluator = panelceil.new_selection_evaluator(
++    runner, tape, step_index, incumbent, run_setting, field="nominal"
++)
++base_profile = evaluator.evaluate(base)
++guard = panelceil.served(base_profile)
++# ...
++evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++```
++
++(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
++
++The published realised fixed point does the same:
++
++```python
++evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
++base_profile = evaluator.evaluate(base)
++guard = served(base_profile)
++# ...
++evaluator.evaluate_many(batch)
++```
++
++(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
++
++This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
++
++The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
++
++### Deployed path: direct code reading
++
++The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
++
++```python
++selection_evaluator = StepEvaluator(
++    tape,
++    setting,
++    step_index,
++    transition_from=incumbent,
++    cell_rekeyed_users=cell_rekeys,
++    field="nominal",
++    counter=counter,
++    run_setting=active_run,
++    boundary_indices=(0,),
++)
++selection_evaluator.evaluate_many(catalog)
++# ...
++stage1_profiles = {
++    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
++}
++```
++
++(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
++
++Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
++
++## Derived on paper from verified aggregates
++
++- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
++- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
++- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
++
++These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
++
++## Inferred
++
++The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
++
++## Machine evidence and reproduction
++
++```text
++a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
++6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
++```
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
++BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
++nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
++  .scratch/surface/run_parity.py
++```
++
++The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+
+diff --git a/.scratch/surface/run_parity.py b/.scratch/surface/run_parity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63af6fdfd22
+--- /dev/null
++++ b/.scratch/surface/run_parity.py
+@@ -0,0 +1,295 @@
++#!/usr/bin/env python3
++"""Parity gate for the selection-surface diagnostic.
++
++All selection profiles, including BASE, enter through fresh dense batches.
++The committed endpoints enter through one separate dense full-48 batch.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 4_000_000_000
++EXPECTED = {
++    "nominal|best|one": 28.668530,
++    "realised|first|converged": 13.430253,
++}
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness below 15")
++    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins not one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 4 GB")
++
++
++def load_panel():
++    name = "surface_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    return runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++
++
++def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++           *, field: str, rule: str, converged: bool):
++    evaluator = fresh_evaluator(
++        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
++    )
++    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
++    evaluator.evaluate_many((base,))
++    base_profile = evaluator._evaluated.get(base.configuration_id)
++    if base_profile is None:
++        raise RuntimeError("dense BASE is invalid")
++    guard = panel.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    passes = moves = comparisons = submitted = 0
++    started = time.perf_counter()
++    while True:
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = evaluator._evaluated.get(current.configuration_id)
++            if current_profile is None:
++                raise RuntimeError("current profile absent from dense cache")
++            current_value: Fraction = panel.objective(
++                runner, calibration, incumbent, current, current_profile, rekeys
++            )
++            candidates = tuple(
++                panel.candidate(runner, base, current, user, identity, "surface-parity")
++                for identity in options[user]
++                if identity != current.mapping[user]
++            )
++            accepted = None
++            if rule == "first":
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                    for row in batch:
++                        comparisons += 1
++                        profile = evaluator._evaluated.get(row.configuration_id)
++                        if profile is None or panel.served(profile) < guard:
++                            continue
++                        value = panel.objective(
++                            runner, calibration, incumbent, row, profile, rekeys
++                        )
++                        if value > current_value:
++                            accepted = row
++                            break
++                    if accepted is not None:
++                        break
++            elif rule == "best":
++                # Incumbent participates in the same dense comparison and tie rule
++                # as the published one-sweep arm.
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                eligible = [(current_value, current.configuration_id, current)]
++                for row in candidates:
++                    comparisons += 1
++                    profile = evaluator._evaluated.get(row.configuration_id)
++                    if profile is None or panel.served(profile) < guard:
++                        continue
++                    value = panel.objective(
++                        runner, calibration, incumbent, row, profile, rekeys
++                    )
++                    eligible.append((value, row.configuration_id, row))
++                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++                if selected.mapping[user] != current.mapping[user]:
++                    accepted = selected
++            else:
++                raise ValueError(rule)
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moves_this_pass += 1
++        passes += 1
++        if not converged or moves_this_pass == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("search exceeded 100 passes")
++    detail = {
++        "field": field, "rule": rule,
++        "passes_mode": "converged" if converged else "one",
++        "passes": passes, "moves": moves, "guard": guard,
++        "comparisons": comparisons, "submitted": submitted,
++        "legal_option_census": census,
++        "selection_seconds": time.perf_counter() - started,
++        "base_was_dense_populated": True,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, detail
++
++
++def diversity(config) -> dict[str, float | int]:
++    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
++    users = len(config.mapping)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    overall_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    anchors = []
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        configs = {}
++        details = {}
++        cell = "nominal|best|one"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="nominal", rule="best", converged=False,
++        )
++        cell = "realised|first|converged"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="realised", rule="first", converged=True,
++        )
++        endpoint = fresh_evaluator(
++            panel, runner, tape, step_index, incumbent, run_setting,
++            "realised", tuple(range(48)),
++        )
++        endpoint.evaluate_many(tuple(configs.values()))
++        metrics = {
++            name: panel.metric(endpoint._evaluated[config.configuration_id])
++            for name, config in configs.items()
++        }
++        anchors.append({
++            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
++            "cells": {
++                name: {
++                    "configuration_id": configs[name].configuration_id,
++                    "selection": details[name], "committed": metrics[name],
++                    "diversity": diversity(configs[name]),
++                }
++                for name in configs
++            },
++        })
++        del endpoint
++        gc.collect()
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++        )
++
++    pooled = {}
++    for name in EXPECTED:
++        rows = [row["cells"][name] for row in anchors]
++        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
++        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
++        pooled[name] = {
++            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
++            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
++            "rate_target_attained_count": sum(
++                int(row["committed"]["rate_target_attained_count"]) for row in rows
++            ),
++            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
++        }
++    parity = {
++        name: {
++            "expected_rounded_6": expected,
++            "observed": pooled[name]["ee_mbit_per_j"],
++            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
++        }
++        for name, expected in EXPECTED.items()
++    }
++    passed = all(row["rounded_6_match"] for row in parity.values())
++    payload = {
++        "schema": "mcrl-v025-selection-surface-parity-v1",
++        "status": "PASS" if passed else "PARITY_FAILED",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "dense_base_only": True,
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
++        "process_count": 1,
++        "panel_count": len(frozen),
++        "anchors": anchors,
++        "pooled": pooled,
++        "parity": parity,
++        "peak_rss_bytes": peak_rss_bytes(),
++        "wall_seconds": time.perf_counter() - overall_started,
++    }
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
++    return 0 if passed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/SELECTION-SURFACE-2026-09-10.md b/SELECTION-SURFACE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..765310deb6720cb9bb5a9071886bdd31a05d3ceb
+--- /dev/null
++++ b/SELECTION-SURFACE-2026-09-10.md
+@@ -0,0 +1,116 @@
++**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
++
++# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
++
++`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
++
++## Stop decision
++
++The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
++
++No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
++
++## Verified by running code
++
++### Mandatory parity gates
++
++Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call. Endpoint bits are the full-buffer numerator with no demand cap, and pooled EE is `sum(bits) / sum(joules)`.
++
++| cell | expected EE (Mbit/J) | fresh-dense EE (Mbit/J) | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
++|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
++| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
++| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
++
++`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
++
++The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
++
++The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
++
++### Why the published parity is not reproducible under the required evaluator rule
++
++The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
++
++```python
++evaluator = panelceil.new_selection_evaluator(
++    runner, tape, step_index, incumbent, run_setting, field="nominal"
++)
++base_profile = evaluator.evaluate(base)
++guard = panelceil.served(base_profile)
++# ...
++evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++```
++
++(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
++
++The published realised fixed point does the same:
++
++```python
++evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
++base_profile = evaluator.evaluate(base)
++guard = served(base_profile)
++# ...
++evaluator.evaluate_many(batch)
++```
++
++(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
++
++This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
++
++The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
++
++### Deployed path: direct code reading
++
++The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
++
++```python
++selection_evaluator = StepEvaluator(
++    tape,
++    setting,
++    step_index,
++    transition_from=incumbent,
++    cell_rekeyed_users=cell_rekeys,
++    field="nominal",
++    counter=counter,
++    run_setting=active_run,
++    boundary_indices=(0,),
++)
++selection_evaluator.evaluate_many(catalog)
++# ...
++stage1_profiles = {
++    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
++}
++```
++
++(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
++
++Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
++
++## Derived on paper from verified aggregates
++
++- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
++- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
++- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
++
++These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
++
++## Inferred
++
++The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
++
++## Machine evidence and reproduction
++
++```text
++a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
++6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
++```
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
++BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
++nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
++  .scratch/surface/run_parity.py
++```
++
++The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+
+codex
+Both mandatory parity gates failed under the required fresh-dense evaluator rule, so the cube and correlation analysis were correctly stopped.
+
+- Nominal / best / one: expected `28.668530`, observed `31.078504`
+- Realised / first / converged: expected `13.430253`, observed `31.028111`
+- Peak RSS: 2.620 GiB; one Python process; niceness 15; all threads pinned to 1
+- Code inspection confirms the deployed selector uses nominal dense boundary 0, not realised boundary 0.
+
+Report: [SELECTION-SURFACE-2026-09-10.md](/home/sat/mcrl-v025-surface-ws/SELECTION-SURFACE-2026-09-10.md)
+
+Machine evidence: [parity.json](/home/sat/mcrl-v025-surface-ws/.scratch/surface/parity.json) and [run_parity.py](/home/sat/mcrl-v025-surface-ws/.scratch/surface/run_parity.py).
+diff --git a/.scratch/surface/run_parity.py b/.scratch/surface/run_parity.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..53a53b3389705c8dfa9f7e162b26b63af6fdfd22
+--- /dev/null
++++ b/.scratch/surface/run_parity.py
+@@ -0,0 +1,295 @@
++#!/usr/bin/env python3
++"""Parity gate for the selection-surface diagnostic.
++
++All selection profiles, including BASE, enter through fresh dense batches.
++The committed endpoints enter through one separate dense full-48 batch.
++"""
++
++from __future__ import annotations
++
++from collections import Counter
++from fractions import Fraction
++import gc
++import importlib.util
++import json
++import math
++import os
++from pathlib import Path
++import resource
++import sys
++import time
++
++
++WORKSPACE = Path("/home/sat/mcrl-v025-surface-ws")
++PANEL_RUNNER = Path("/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py")
++OUTPUT = WORKSPACE / ".scratch/surface/parity.json"
++PYTHON = "/home/sat/mcrl-leo-handover/.venv/bin/python"
++THREAD_VARS = (
++    "OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
++    "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "BLIS_NUM_THREADS",
++)
++MAX_RSS_BYTES = 4_000_000_000
++EXPECTED = {
++    "nominal|best|one": 28.668530,
++    "realised|first|converged": 13.430253,
++}
++
++
++def peak_rss_bytes() -> int:
++    return int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss) * 1024
++
++
++def check_runtime() -> None:
++    if sys.executable != PYTHON:
++        raise RuntimeError(f"wrong interpreter: {sys.executable}")
++    if os.getpriority(os.PRIO_PROCESS, 0) < 15:
++        raise RuntimeError("niceness below 15")
++    bad = {key: os.environ.get(key) for key in THREAD_VARS if os.environ.get(key) != "1"}
++    if bad:
++        raise RuntimeError(f"thread pins not one: {bad}")
++    if peak_rss_bytes() >= MAX_RSS_BYTES:
++        raise MemoryError("peak RSS is not below 4 GB")
++
++
++def load_panel():
++    name = "surface_panelceil_reference"
++    spec = importlib.util.spec_from_file_location(name, PANEL_RUNNER)
++    if spec is None or spec.loader is None:
++        raise RuntimeError("cannot load PANELCEIL runner")
++    module = importlib.util.module_from_spec(spec)
++    sys.modules[name] = module
++    spec.loader.exec_module(module)
++    return module
++
++
++def fresh_evaluator(panel, runner, tape, step_index, incumbent, run_setting, field, boundaries):
++    return runner.StepEvaluator(
++        tape, runner._setting("a-r0"), step_index,
++        transition_from=incumbent,
++        cell_rekeyed_users=runner._rekeyed_users(tape, step_index),
++        field=field, counter=runner.EvaluationCounter(),
++        run_setting=run_setting, boundary_indices=boundaries,
++    )
++
++
++def search(panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++           *, field: str, rule: str, converged: bool):
++    evaluator = fresh_evaluator(
++        panel, runner, tape, step_index, incumbent, run_setting, field, (0,)
++    )
++    # Dense-populate BASE before it is read.  No scalar cache entry can exist.
++    evaluator.evaluate_many((base,))
++    base_profile = evaluator._evaluated.get(base.configuration_id)
++    if base_profile is None:
++        raise RuntimeError("dense BASE is invalid")
++    guard = panel.served(base_profile)
++    options, census = runner._legal_options(tape, step_index)
++    rekeys = runner._rekeyed_users(tape, step_index)
++    current = base
++    passes = moves = comparisons = submitted = 0
++    started = time.perf_counter()
++    while True:
++        moves_this_pass = 0
++        for user in sorted(options):
++            current_profile = evaluator._evaluated.get(current.configuration_id)
++            if current_profile is None:
++                raise RuntimeError("current profile absent from dense cache")
++            current_value: Fraction = panel.objective(
++                runner, calibration, incumbent, current, current_profile, rekeys
++            )
++            candidates = tuple(
++                panel.candidate(runner, base, current, user, identity, "surface-parity")
++                for identity in options[user]
++                if identity != current.mapping[user]
++            )
++            accepted = None
++            if rule == "first":
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                    for row in batch:
++                        comparisons += 1
++                        profile = evaluator._evaluated.get(row.configuration_id)
++                        if profile is None or panel.served(profile) < guard:
++                            continue
++                        value = panel.objective(
++                            runner, calibration, incumbent, row, profile, rekeys
++                        )
++                        if value > current_value:
++                            accepted = row
++                            break
++                    if accepted is not None:
++                        break
++            elif rule == "best":
++                # Incumbent participates in the same dense comparison and tie rule
++                # as the published one-sweep arm.
++                for offset in range(0, len(candidates), panel.UNILATERAL_BATCH_SIZE):
++                    batch = candidates[offset:offset + panel.UNILATERAL_BATCH_SIZE]
++                    evaluator.evaluate_many(batch)
++                    submitted += len(batch)
++                eligible = [(current_value, current.configuration_id, current)]
++                for row in candidates:
++                    comparisons += 1
++                    profile = evaluator._evaluated.get(row.configuration_id)
++                    if profile is None or panel.served(profile) < guard:
++                        continue
++                    value = panel.objective(
++                        runner, calibration, incumbent, row, profile, rekeys
++                    )
++                    eligible.append((value, row.configuration_id, row))
++                selected = min(eligible, key=lambda item: (-item[0], item[1]))[2]
++                if selected.mapping[user] != current.mapping[user]:
++                    accepted = selected
++            else:
++                raise ValueError(rule)
++            if accepted is not None:
++                current = accepted
++                moves += 1
++                moves_this_pass += 1
++        passes += 1
++        if not converged or moves_this_pass == 0:
++            break
++        if passes > 100:
++            raise RuntimeError("search exceeded 100 passes")
++    detail = {
++        "field": field, "rule": rule,
++        "passes_mode": "converged" if converged else "one",
++        "passes": passes, "moves": moves, "guard": guard,
++        "comparisons": comparisons, "submitted": submitted,
++        "legal_option_census": census,
++        "selection_seconds": time.perf_counter() - started,
++        "base_was_dense_populated": True,
++        "physical_boundary_evaluations": evaluator.physical_evaluations,
++    }
++    del evaluator
++    gc.collect()
++    return current, detail
++
++
++def diversity(config) -> dict[str, float | int]:
++    counts = Counter(identity for identity in config.mapping.values() if identity is not None)
++    users = len(config.mapping)
++    return {
++        "modal_frac": 0.0 if not counts else max(counts.values()) / users,
++        "active_beams": len(counts),
++        "active_satellites": len({identity[0] for identity in counts}),
++    }
++
++
++def main() -> int:
++    check_runtime()
++    panel = load_panel()
++    frozen = panel.frozen_panel()
++    pilot = panel.load_pilot()
++    runner = pilot.ENGINE
++    calibration = panel.load_calibration(pilot)
++    run_setting = runner.run_setting_for("a-r0")
++    from mcrl.physics_v025.provider_legacy import LegacyWorldProvider
++    from mcrl.physics_v025.tapes import build_world_tape
++
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB before tape", flush=True)
++    overall_started = time.perf_counter()
++    tape = build_world_tape(
++        domain=pilot.TRAIN_WORLDS[0], provider=LegacyWorldProvider(role="pilot-source"),
++        steps=33, start_time_s=0.0,
++    )
++    check_runtime()
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB after tape", flush=True)
++    anchors = []
++    for position, panel_row in enumerate(frozen, 1):
++        index = int(panel_row["global_anchor_index"])
++        step_index = int(panel_row["step_index"])
++        carrier = str(panel_row["carrier"])
++        base = runner._base_configuration(tape, step_index, carrier)
++        incumbent = runner._base_configuration(tape, max(0, step_index - 1), carrier)
++        configs = {}
++        details = {}
++        cell = "nominal|best|one"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="nominal", rule="best", converged=False,
++        )
++        cell = "realised|first|converged"
++        configs[cell], details[cell] = search(
++            panel, runner, calibration, tape, step_index, base, incumbent, run_setting,
++            field="realised", rule="first", converged=True,
++        )
++        endpoint = fresh_evaluator(
++            panel, runner, tape, step_index, incumbent, run_setting,
++            "realised", tuple(range(48)),
++        )
++        endpoint.evaluate_many(tuple(configs.values()))
++        metrics = {
++            name: panel.metric(endpoint._evaluated[config.configuration_id])
++            for name, config in configs.items()
++        }
++        anchors.append({
++            "global_anchor_index": index, "step_index": step_index, "carrier": carrier,
++            "cells": {
++                name: {
++                    "configuration_id": configs[name].configuration_id,
++                    "selection": details[name], "committed": metrics[name],
++                    "diversity": diversity(configs[name]),
++                }
++                for name in configs
++            },
++        })
++        del endpoint
++        gc.collect()
++        check_runtime()
++        print(
++            f"anchor {position}/{len(frozen)} completed peak RSS "
++            f"{peak_rss_bytes()/2**30:.3f} GiB", flush=True,
++        )
++
++    pooled = {}
++    for name in EXPECTED:
++        rows = [row["cells"][name] for row in anchors]
++        bits = math.fsum(float(row["committed"]["bits"]) for row in rows)
++        joules = math.fsum(float(row["committed"]["joules"]) for row in rows)
++        pooled[name] = {
++            "bits": bits, "joules": joules, "ee_mbit_per_j": bits / joules / 1e6,
++            "served_count": sum(int(row["committed"]["served_count"]) for row in rows),
++            "rate_target_attained_count": sum(
++                int(row["committed"]["rate_target_attained_count"]) for row in rows
++            ),
++            "modal_frac_mean": math.fsum(float(row["diversity"]["modal_frac"]) for row in rows) / len(rows),
++            "active_beams_mean": math.fsum(float(row["diversity"]["active_beams"]) for row in rows) / len(rows),
++            "active_satellites_mean": math.fsum(float(row["diversity"]["active_satellites"]) for row in rows) / len(rows),
++            "selection_seconds": math.fsum(float(row["selection"]["selection_seconds"]) for row in rows),
++        }
++    parity = {
++        name: {
++            "expected_rounded_6": expected,
++            "observed": pooled[name]["ee_mbit_per_j"],
++            "rounded_6_match": round(float(pooled[name]["ee_mbit_per_j"]), 6) == expected,
++        }
++        for name, expected in EXPECTED.items()
++    }
++    passed = all(row["rounded_6_match"] for row in parity.values())
++    payload = {
++        "schema": "mcrl-v025-selection-surface-parity-v1",
++        "status": "PASS" if passed else "PARITY_FAILED",
++        "claim_status": "DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM",
++        "dense_base_only": True,
++        "python": sys.executable,
++        "niceness": os.getpriority(os.PRIO_PROCESS, 0),
++        "thread_pins": {key: os.environ[key] for key in THREAD_VARS},
++        "process_count": 1,
++        "panel_count": len(frozen),
++        "anchors": anchors,
++        "pooled": pooled,
++        "parity": parity,
++        "peak_rss_bytes": peak_rss_bytes(),
++        "wall_seconds": time.perf_counter() - overall_started,
++    }
++    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
++    OUTPUT.write_text(json.dumps(payload, sort_keys=True, indent=2) + "\n", encoding="utf-8")
++    print(f"peak RSS {peak_rss_bytes()/2**30:.3f} GiB final ({peak_rss_bytes()} bytes)", flush=True)
++    print(json.dumps({"parity": parity, "pooled": pooled}, sort_keys=True), flush=True)
++    return 0 if passed else 2
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/SELECTION-SURFACE-2026-09-10.md b/SELECTION-SURFACE-2026-09-10.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..765310deb6720cb9bb5a9071886bdd31a05d3ceb
+--- /dev/null
++++ b/SELECTION-SURFACE-2026-09-10.md
+@@ -0,0 +1,116 @@
++**No cube factor can be named because both mandatory fresh-dense parity gates failed; whether nominal boundary-0 correlates better than realised boundary-0 was therefore not measured, and the deployed selector uses nominal dense boundary 0.**
++
++# SELECTION SURFACE — parity-stop diagnostic — 2026-09-10
++
++`DESIGN_PHASE_DIAGNOSTIC_NOT_A_CLAIM`
++
++## Stop decision
++
++The requested experiment cannot proceed to causal attribution under its own parity rule. Both published cells changed when `BASE` was dense-populated before comparison with dense candidates. Per instruction, the other six cube cells, candidate correlations, rank agreements, top-1 agreements, and increasing-horizon subsets were not run. A factor attribution or over-fitting conclusion from this stopped experiment would be invalid.
++
++No learner or checkpoint was read. Only the frozen 12-anchor development panel was used; no evaluation-only claim date was read. `BASIN` had no output file when checked, so no result was imported or duplicated and nothing was written in its workspace.
++
++## Verified by running code
++
++### Mandatory parity gates
++
++Each cell started from the same reconstructed `PANELCEIL BASE`, used the same legal set, service-guard definition, ordered candidates, and stable configuration-ID tie rule as its published counterpart. Selection used a fresh `StepEvaluator` with `boundary_indices=(0,)`; `BASE` entered through `evaluate_many` before any profile read. The two selected configurations at an anchor then entered together through one separate fresh realised dense full-48 `evaluate_many` call. Endpoint bits are the full-buffer numerator with no demand cap, and pooled EE is `sum(bits) / sum(joules)`.
++
++| cell | expected EE (Mbit/J) | fresh-dense EE (Mbit/J) | rounded-six parity | pooled bits | pooled joules | served PHY | target attained | `modal_frac` | active beams | active satellites | selection wall s |
++|---|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|
++| nominal / best / one | 28.668530 | **31.078504** | **FAIL** | 1.558660774521e12 | 50152.374745 | 1200/1200 (100.000%) | 284/1200 (23.667%) | 0.0317 | 93.583 | 8.083 | 67.781 |
++| realised / first / converged | 13.430253 | **31.028111** | **FAIL** | 1.623572418390e12 | 52325.854277 | 1200/1200 (100.000%) | 342/1200 (28.500%) | 0.0425 | 86.167 | 8.333 | 650.772 |
++
++`modal_frac` and active counts are means across the 12 anchors. Selection wall time includes every pass for the fixed-point cell but excludes shared tape construction and the common endpoint measurement. Whole-process wall time, including the tape and endpoints, was 997.635 s.
++
++The fresh-dense configuration matched the published configuration at 8/12 anchors for nominal/best/one and 0/12 for realised/first/converged. The realised fixed point made a move at all 12 anchors (4,210 moves total, 9–14 passes per anchor); the published run moved at only 2/12 anchors (699 moves total). This is not a rounding-only endpoint discrepancy.
++
++The run printed `anchor 1/12` through `anchor 12/12`. It used one Python process, niceness 15, the mandated interpreter, and all six recorded BLAS/OpenMP controls set to `1`. Peak RSS was **2.620 GiB (2,812,706,816 bytes)**, below 4 GB.
++
++### Why the published parity is not reproducible under the required evaluator rule
++
++The published nominal arm scalar-populates `BASE` before batching the neighbourhood:
++
++```python
++evaluator = panelceil.new_selection_evaluator(
++    runner, tape, step_index, incumbent, run_setting, field="nominal"
++)
++base_profile = evaluator.evaluate(base)
++guard = panelceil.served(base_profile)
++# ...
++evaluator.evaluate_many(rows[offset:offset + panelceil.UNILATERAL_BATCH_SIZE])
++```
++
++(`/home/sat/mcrl-v025-rank-ws/.scratch/statics/run_statics.py:161-165,180-181`)
++
++The published realised fixed point does the same:
++
++```python
++evaluator = new_selection_evaluator(runner, tape, step_index, incumbent, run_setting)
++base_profile = evaluator.evaluate(base)
++guard = served(base_profile)
++# ...
++evaluator.evaluate_many(batch)
++```
++
++(`/home/sat/mcrl-v025-ceiling30-ws/.scratch/panelceil/run_panelceil.py:255-258,281-286`)
++
++This matters because `evaluate_many` skips any ID already in `_evaluated`, then sends missing rows to the dense integrator with `self.boundary_indices`; `evaluate` takes a cache miss through `tape.geometry_for` instead (`run_v025_matrix_probe.py:793-824,903-918`). Thus the earlier scalar `BASE` remains beside dense candidates even though the evaluator was constructed for boundary 0. The task explicitly disallows that mixed comparison.
++
++The observed guards changed at 11/12 nominal anchors and all 12 realised anchors after dense-populating `BASE`. For realised boundary 0, the published-to-fresh guard changes were especially large (for example 89→49 at anchor 2 and 92→56 at anchor 8), which changed the admissible moves and fixed points.
++
++### Deployed path: direct code reading
++
++The deployed selector constructs the selection evaluator with `field="nominal"` and `boundary_indices=(0,)`, then dense-populates the entire catalogue, including `BASE`, before reading profiles:
++
++```python
++selection_evaluator = StepEvaluator(
++    tape,
++    setting,
++    step_index,
++    transition_from=incumbent,
++    cell_rekeyed_users=cell_rekeys,
++    field="nominal",
++    counter=counter,
++    run_setting=active_run,
++    boundary_indices=(0,),
++)
++selection_evaluator.evaluate_many(catalog)
++# ...
++stage1_profiles = {
++    row.configuration_id: selection_evaluator.evaluate(row) for row in catalog
++}
++```
++
++(`/home/sat/mcrl-v025-c1c2suff-ws/.scratch/multi-catfish-v025-physics-successor/probe/run_v025_matrix_probe.py:2608-2629`)
++
++Committed reporting uses a separate default full-48 evaluator and batch-populates the selected configurations (`run_v025_matrix_probe.py:2757-2769`). Therefore, if a future valid diagnostic establishes that realised boundary-0 selection is systematically worse than nominal boundary-0 selection, the deployed path does **not** select on that worse realised surface: it selects on **nominal dense boundary 0**. This is a conditional code consequence, not a result of the failed causal diagnostic. Global evaluator-path authority remains `UNDETERMINED`, as recorded in `EVALPATH-2026-09-10.md`.
++
++## Derived on paper from verified aggregates
++
++- The published contrast is 15.238277 Mbit/J and a 2.134623 ratio.
++- Under the required fresh-dense rule, the two parity cells differ by only 0.050393 Mbit/J and a 1.001624 ratio.
++- Relative to their required parity targets, nominal/best/one moved by +2.409974 Mbit/J and realised/first/converged moved by +17.597858 Mbit/J.
++
++These arithmetic differences do not identify a selection-surface, move-rule, or pass-count effect because the parity gate failed before the factorial cells were measured.
++
++## Inferred
++
++The direct code path and the guard/configuration changes strongly indicate that the published 28.668530-versus-13.430253 contrast is not a valid starting contrast for the requested fresh-dense cube. The most likely mechanism is scalar-cached `BASE` meeting dense boundary-0 candidates, with the realised fixed point particularly sensitive through its service guard and repeated traversal. This is an inference about why parity failed, not an EE claim and not evidence for or against boundary-0 fading over-fit.
++
++## Machine evidence and reproduction
++
++```text
++a4b26a6da43f346c4de8086c5f452a4bebbae5b99f61551a7893f3c254252179  .scratch/surface/run_parity.py
++6e2a2ae8f5e46f32698ef8923d9811ae9b8f0bca50329996e5c98366f41d2ba9  .scratch/surface/parity.json
++f7c96208b8be5748c7aee940a5f6f145cfa758dd3df6c6a28730fbc6fdba8583  published static runner (read-only)
++```
++
++```bash
++OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
++BLIS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 \
++nice -n 15 /home/sat/mcrl-leo-handover/.venv/bin/python \
++  .scratch/surface/run_parity.py
++```
++
++The runner exits `2` when either rounded-six parity check fails; this run exited `2` after safely writing the receipt.
+
+tokens used
+139,045
