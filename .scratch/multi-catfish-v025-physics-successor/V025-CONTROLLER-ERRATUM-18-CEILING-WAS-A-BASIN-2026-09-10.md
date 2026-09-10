@@ -79,3 +79,64 @@ demand-blind one-liner beats threefold, and reporting those measurements as prop
 method. The measurements were arithmetically right. **The reference was wrong, and I never
 checked it, because no non-learned comparison family had ever been run on this panel.**
 The owner asked for one this afternoon.
+
+---
+
+## Correction to this erratum — 2026-09-10 ~15:50Z, from `KILL-TRIAGE-2026-09-10.md`
+
+**The mechanism I gave above is wrong. The conclusion survives, for a different and larger
+reason.**
+
+I wrote that the ceilings were "measured over a catalogue constructed from a profile inside
+that basin", implying the learned `a0`. **They were not.** KILLTRIAGE read the builder:
+
+> the bounded joint catalogue is **reseeded from each anchor's certified first-improvement
+> fixed point**, and the denominator is that same fixed point. `_base_configuration` reads a
+> **carrier** action from the tape — `nearest-eligible`, `stay-if-possible`, or deterministic
+> hash-selected `random-masked`. **None reads Q1, Q2, or learned `a0`.**
+
+**Consequence: whether the learned `a0` is degenerate has no bearing on those three figures.**
+That is a real narrowing and it cuts against the line of argument I was developing.
+
+**What survives, and is now larger than what I claimed.** The catalogue is within-beam occupant
+subsets of size 2–4, a victim plus its top 2/3 nominal interferers, and complete-beam
+evacuations, under `OCCUPANT_SUBSET_TOTAL_CAP = 1_024` and `JOINT_CANDIDATE_CAP = 4_096`. The
+run exhausted 8,864 configurations over 12 anchors, **331–1,159 per anchor**. The nominal joint
+action space is `28^100 = 5.18e144`. **The searched support is about 142 orders of magnitude
+smaller.**
+
+So the sentence in my own outcome plan —
+
+> "At this operating point **no learned method can be substantial on either axis, however good
+> it is**."
+
+— is bucketed **C** by the triage, with the note that it "**already outruns its evidence
+independently of learned-`a0` quality**." I generalised a 1,159-row local search to a 5.18e144
+space. That is the actual error, and it is not a collapse story.
+
+## The triage's counts
+
+**38 recorded negative rulings: M = 22, B = 4, C = 3, P = 3, U = 6.**
+
+- **22 stand regardless** — reference/action-array contract mismatch, estimator mismatch,
+  same-slot and realised-fading unobservability, representation collapse, cache and harness
+  defects, coverage failures, path artefacts, negative declared-target learnability.
+- **3 physics rulings stand** — including "load balancing is not an EE lever", whose stated
+  cause is the active-beam power mechanism and does not reference the learned base at all.
+- **3 ceiling rulings are *not* overturned by collapse** — heuristic-seeded, as above.
+- **4 are at risk**, all B: `#12` V0.20 `NOMINAL_ZR`; `#14` C2 clean-room `C3_CONTEXT_FAIL`;
+  `#15` the exact C3 oracle marginals negative in every cell; `#19` C3 F1
+  `FAST_SCREEN_NO_SUPPORT`.
+- **6 cannot be determined**, including `#37` — the `FULL - ALL_NEUTRAL_CONTROL = -0.01745`
+  contrast, which the triage classes U because it compares two training-source arms rather than
+  a candidate to a base or a ceiling.
+
+**Two of the four at-risk entries are the C3 kills.** `#15` is additionally weak on scope: a
+later review found it priced a **narrower unilateral object** and "cannot bear a broader
+set-coordination claim". Its retest needs **no training** — a path-consistent exact probe on
+the same cells against an independently competent reference. `BASIN` Part 4 is running that
+recomputation on the V0.25 panel around `RSS_MAX`.
+
+**Weakest kill on its own terms, independent of any collapse question:** `#19`, which the
+record itself limits to one world, one lineage and two canonical steps and calls a fast screen
+rather than structural impossibility.
