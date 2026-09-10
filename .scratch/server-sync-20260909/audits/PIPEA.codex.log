@@ -1,0 +1,111 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /home/sat/mcrl-v025-strategic-astra-ws
+model: gpt-6-astra
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR]
+reasoning effort: high
+reasoning summaries: none
+session id: 01a08b83-b27a-7163-9dfd-1fb89f7b45e3
+--------
+user
+# PIPEAUDIT — find the interface the controller has not read, and the reading that will be wrong
+
+**Read-only.** Change nothing. Never touch `/home/sat/mcrl-leo-handover` or its `.venv`.
+**One python process, `nice -n 15`, arithmetic and file reading only.** No measurements — this
+machine hit load 157 with 0 GB free twice today and is at load 15 now.
+
+## What has and has not been audited
+
+The controller's **records** have been audited, his **reasoning** interrogated, and the
+project's **feasibility** adjudicated. **His pipeline design has never been audited.** That is
+this job.
+
+A first training run is about to start. Its entire value depends on the pipeline producing
+something interpretable. Today, four blockers were found **only** by reading a consumer's
+contract, each of which would otherwise have surfaced at launch after the preparation was spent:
+
+- the only code that had ever trained the arms was hard-coded to two epochs, with `--output`
+  its only argument and no corpus input;
+- the training runner fails closed without C3 coalition shards, and the corpus had none;
+- the stored physics contains no joint evaluation with changed set >= 2, so the C3 target was
+  unrecoverable from it;
+- the health monitor's regex never matched the new runner name, so every job launched after
+  09:50 looked orphaned — following it would have killed the whole afternoon's work.
+
+**The controller has now written, in the pipeline contract: "the surprise blocker class should
+be exhausted for this chain."** That is the kind of confident claim that has been wrong
+repeatedly today. **Attack it.**
+
+## What to read
+
+In `controller-records/` in this workspace (mirrored from the controller's repo):
+
+1. `V025-CONTROLLER-PIPELINE-CONTRACT-2026-09-10.md` — the four-stage interface contract
+2. `V025-CONTROLLER-PREDECLARATION-FIRST-TRAINING-2026-09-10.md` — **including all three
+   amendments at its end** (dual-axis scoring; the knockout-separation requirement; the
+   declared 20-anchor panel)
+3. `V025-CONTROLLER-FIGURE-PLAN-2026-09-10.md` — eight figures and the fields they require
+4. `V025-CONTROLLER-PREDECLARATION-ACCELERATION-ABLATION-2026-09-10.md`
+5. `V025-CONTROLLER-QUEUE-2026-09-10.md`
+
+On the server, the code and receipts the contract describes:
+
+- `/home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py` and
+  `TRAINING-RUNNER-2026-09-10.md`
+- `/home/sat/mcrl-v025-selector-ws/scripts/score_stagec_checkpoints.py` and
+  `DUAL-AXIS-SCORER-2026-09-10.md`
+- `/home/sat/mcrl-v025-datepool-ws/artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/`
+  (a concurrent job is writing here — **read only**)
+- `/home/sat/mcrl-v025-mutants-ws/NEUTRAL-VS-KNOCKOUT-2026-09-10.md`
+- `/home/sat/mcrl-v025-harness-ws/ANYTIME-UNILATERAL-2026-09-10.md`
+
+**A controller record proves he asserted something, not that it happened.** Read the code.
+
+## The three questions
+
+**Q1 — Which interface has he not read?** Trace corpus → runner → checkpoint → scorer →
+figure, and find where a producer's output and a consumer's requirement are assumed to match
+rather than verified. Name the file and line on both sides. **Prefer things that fail at launch
+or, worse, that silently produce a number nobody can interpret.**
+
+**Q2 — Which pre-declared reading will turn out to be wrong?** The run's readings are fixed:
+a negative-or-zero primary contrast is "the result"; a flat contrast across checkpoints means
+"the heads learned nothing usable"; the continuation rule triggers on convergence, not
+direction; the primary contrast is void unless neutral separates from knockout. **Find the
+outcome these readings mishandle** — the result that is neither clearly flat nor clearly
+converged, the arm that differs for a reason the reading does not admit, the co-metric that
+moves in the opposite direction to EE. Say what the reading should be instead, **now, before
+any number exists**.
+
+**Q3 — What is missing that neither the contract nor the pre-declaration mentions?** Not a
+refinement of what is there — something absent. Consider at least: how deadline misses interact
+with the endpoint when `a0` executes; whether the 20-anchor prefix can support any interval at
+all; whether the scorer's authenticated panel can be built at all from what will exist; what
+happens if arms tie; whether anything records enough to reproduce the run from receipts alone.
+
+## Rules
+
+- Separate **verified against a file you opened**, **derived on paper**, **inferred**.
+- Cite file and line for every load-bearing claim.
+- Loss values are never evidence about EE.
+- **Rank your findings by whether they would waste the run.** A defect that makes the output
+  uninterpretable outranks one that makes it imperfect.
+- Before concluding, state the strongest reason the controller's "surprise blockers are
+  exhausted" claim might actually be right, and answer it.
+- You are not told what any other reviewer says. Do not try to infer it.
+
+Write to `PIPEAUDIT-<YOURNAME>-2026-09-10.md` in this workspace, first line one bolded sentence
+naming the single defect most likely to waste the first training run.
+codex
+I’ll trace the interfaces in one `nice -n 15` Python process, using only file reads and paper calculations. I’ll write only the requested audit report and leave the source workspaces untouched.
+exec
+/bin/bash -lc 'nice -n 15 python -B -i -q' in /home/sat/mcrl-v025-strategic-astra-ws
+codex
+The scorer has a second required input that the four-stage contract omits: an authenticated panel containing candidate outcomes and reference certificates. I’m checking whether the corpus can supply it, and whether the scorer handles the 10-second fallback correctly.
+codex
+Two gaps are confirmed in the scorer code. Its “selection” is an exhaustive ranking of stored profiles, with no deadline or fallback execution. Timing is stored once per anchor and arm, then reused for every checkpoint and seed. That can populate F8 without establishing any learned decision met the budget.
+codex
+The declared 20 anchors are all from one TRAIN world and one date: three carrier variants at each of six time steps, plus two at a seventh. They do not provide 20 independent date observations. I also found a separate reading error: a flat contrast can conceal both arms improving together, so it cannot establish that the heads learned nothing usable.
