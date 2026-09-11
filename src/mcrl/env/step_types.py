@@ -201,6 +201,18 @@ class StepResult:
     action_masks: list[ActionMask]
     rewards: list[RewardComponents]
 
+    served: tuple[bool, ...] | None = None
+    """B0 D-2: which users the environment actually served this step.
+
+    ``RewardComponents`` alone cannot answer this — an unserved user scores
+    ``r2 = 0`` and ``r3 = 0``, values a *served* user can also take — so the
+    outage floor needs the flag rather than an inference from the rewards.
+    ``None`` means "this container was built without the information" (test
+    fixtures predating D-2); the floor is then not applied rather than
+    guessed at.  ``runtime/trainer_env.py`` always fills it from
+    ``StepOutcome.resolution.served``.
+    """
+
     # PATCH P-21: ``beam_throughputs``, ``active_beam_mask`` and
     # ``beam_transmit_power_w`` are gone with them.  Nothing read any of the
     # three, and all were documented with shape ``(L*K,)`` — a fixed 28-wide

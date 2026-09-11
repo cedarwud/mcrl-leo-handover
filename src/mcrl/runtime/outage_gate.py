@@ -34,7 +34,80 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
+import numpy as np
+
+from ..env.action_contract import PHI2
 from ..errors import MCRLContractError
+
+# -- B0 D-2: the outage floor ---------------------------------------------
+#
+# The docstring above states the inversion and this is the minimal change
+# that removes it.  An unserved user used to score ``r2 = 0`` and
+# ``r3 = 0``, while every SERVED step scores ``r2 <= 0`` and
+# ``r3 = -U_{b_u} <= -1`` (a served user counts itself in its own beam's
+# load).  So outage strictly dominated service on ``r3`` and tied the best
+# served value on ``r2``.  Those steps are not no-ops: a user that chose a
+# valid action and was then denied service by per-link power infeasibility
+# or by contention enters replay carrying that free ride.
+#
+# **No penalty magnitude is invented here.**  The deferred discounted
+# re-entry penalty this module's docstring describes, and the threshold it
+# marks "S, PROPOSED -- Not yet frozen", remain undeclared, and nothing in
+# the repository declares one.  What is used instead is a quantity the
+# objective already fixes: **the worst value each bounded head can take for
+# a SERVED user**.  Scoring an outage there makes service never worse than
+# outage -- which is exactly the inversion and no more -- without choosing
+# any number the objective does not already contain.
+#
+# It is a LOOSE bound on r3, deliberately: the tightest honest value would
+# need W-13 to freeze one, and it has not.
+
+OUTAGE_R2_FLOOR: float = -PHI2
+"""``r2`` for an unserved user: the worst ``r2`` a served user can take.
+
+``HANDOVER_COST`` (``env/action_contract.py:414-418``) ranges over
+``{0, PHI1, PHI2}``, so a served ``r2`` lies in ``{0, -PHI1, -PHI2}`` and
+``-PHI2 = -1.0`` is its minimum.  Derived from the frozen ``PHI2``, not
+chosen.
+"""
+
+
+def outage_r3_floor(num_users: int) -> float:
+    """``r3`` for an unserved user: the worst ``r3`` a served user can take.
+
+    ``r3 = -U_{b_u}`` in whole users (B13/PATCH P-13), and the eligible load
+    of one beam cannot exceed the population, so a served ``r3`` lies in
+    ``[-num_users, -1]`` and ``-num_users`` is its minimum.  ``num_users``
+    is a declared configuration value, not an invented magnitude.
+    """
+    return -float(int(num_users))
+
+
+def apply_outage_floor(
+    reward_vector: np.ndarray | tuple[float, float, float],
+    *,
+    num_users: int,
+) -> np.ndarray:
+    """Return the reward vector an **unserved** user scores.
+
+    ``r1`` is passed through: it is already ``~0`` for an unserved user and
+    it is not a bounded head, so flooring it would be an objective change
+    rather than a defect fix.  ``r2`` and ``r3`` are replaced by the worst
+    value each can take for a served user.
+
+    Call this only for users the environment reports as unserved.
+    """
+    rewards = np.asarray(reward_vector, dtype=np.float64)
+    if rewards.shape != (3,):
+        raise ValueError(
+            "apply_outage_floor requires a shape-(3,) reward vector, "
+            f"got {rewards.shape}"
+        )
+    floored = rewards.copy()
+    floored[1] = OUTAGE_R2_FLOOR
+    floored[2] = outage_r3_floor(num_users)
+    return floored
+
 
 OUTAGE_RATE_NEGLIGIBLE_DEFAULT: float = 1e-3
 """**S, PROPOSED** — proposed ceiling on the dropped-transition fraction.

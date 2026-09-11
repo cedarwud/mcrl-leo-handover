@@ -62,6 +62,7 @@ from ..runtime.objective_math import (
     apply_reward_calibration,
     scalarize_objectives,
 )
+from ..runtime.outage_gate import apply_outage_floor
 from ..runtime.collapse_metrics import compute_collapse_metrics
 from ..runtime.collapse_penalty import (
     PenaltyConfig,
@@ -766,6 +767,7 @@ class MODQNTrainer:
         uid: int,
         *,
         is_eval: bool = False,
+        num_users: int | None = None,
     ) -> np.ndarray:
         """Return the three-objective reward vector for one user.
 
@@ -780,10 +782,23 @@ class MODQNTrainer:
         default pointed at ``r1_throughput``, which the environment had
         begun filling with bits/J — a field whose name disagreed with its
         contents, selected by a switch with one live position.
+
+        **B0 D-2 (2026-09-11): an unserved user is floored, not free.**  The
+        environment scores an outage ``r2 = 0`` and ``r3 = 0``, while every
+        *served* step scores ``r2 <= 0`` and ``r3 = -U_{b_u} <= -1``, so an
+        outage strictly dominated service on ``r3`` and tied the best served
+        value on ``r2``.  Those steps are not no-ops — a user that chose a
+        valid action and was then denied service by per-link power
+        infeasibility or contention enters replay carrying that free ride —
+        so the inversion is live.  ``runtime.outage_gate.apply_outage_floor``
+        replaces the two bounded heads with **the worst value each can take
+        for a served user**, which removes the inversion without inventing a
+        penalty magnitude the repository does not declare.  ``r1`` is left
+        alone.  ``num_users`` defaults to this trainer's population.
         """
         del is_eval  # both paths take the same reward; kept for the signature
         rw = result.rewards[uid]
-        return np.array(
+        vector = np.array(
             [
                 rw.r1_system_ee_contribution,
                 rw.r2_handover,
@@ -791,6 +806,17 @@ class MODQNTrainer:
             ],
             dtype=np.float64,
         )
+        # B0 D-2.  ``served is None`` means the container was built without the
+        # information (pre-D-2 fixtures); it is not guessed at from the rewards,
+        # because a served user can legitimately score r2 = 0 and cannot be told
+        # apart from an outage by the reward vector alone.
+        served = getattr(result, "served", None)
+        if served is not None and not bool(served[uid]):
+            vector = apply_outage_floor(
+                vector,
+                num_users=self.num_users if num_users is None else int(num_users),
+            )
+        return vector
 
     def _evaluate_one_seed(
         self,

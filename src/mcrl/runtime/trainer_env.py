@@ -231,6 +231,10 @@ class TrainerEnvironment:
             user_states=list(outcome.observation.user_states),
             action_masks=_masks(outcome.observation),
             rewards=list(outcome.rewards),
+            # B0 D-2: the trainer needs to know who was actually served, or
+            # it cannot tell an outage's free ``r2 = 0, r3 = 0`` apart from a
+            # served user that happened to score the same.
+            served=tuple(bool(flag) for flag in outcome.resolution.served),
         )
 
     # -- everything the contract discards ---------------------------------
