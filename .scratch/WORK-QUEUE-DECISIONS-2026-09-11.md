@@ -111,6 +111,24 @@ bounded ACRM, JSRL. Layer 2 was never what failed and can be kept whole. What ch
   search (service-respecting teacher). The count is whatever survives — possibly more than three, possibly fewer.
 - In scenario A none of these exists on this physics, and the fallback of Amendment 2 §4 applies.
 
+## Scenario status and external documents (2026-09-12 ~01:15 Taipei = 17:15 UTC)
+
+- Owner pasted `dr19.md` (Deep Research addendum on privileged teachers) and `gpt6.md` (fresh-context reading of repo and
+  sat). Controller check: `.scratch/reviews/external-gpt/DR19-GPT6-CONTROLLER-CHECK-2026-09-12.md` — every gpt6 number
+  verified against the artefacts; dr19 adopted on method, corrected on the catfish lineage (the mechanism family is
+  peer-reviewed: CER/CuSP/Sukhbaatar/Hughes, erratum 26; only the name and the RIS thesis are not) and on teacher cost.
+- **Parity PASS** (recorded by the ceiling agent, 580 steps exact) → search numbers citable as lower bounds; the 14:40 withdrawal
+  note is lifted for the verified numbers.
+- **Scenario A excluded** (+41.4 % constrained lower bound, 24/24; +23.9 % rate-floored, 6 ep). **B's nominal condition met by a
+  deployable witness** (LP-prev(1,0): eval +6.66 %, cal +4.75 %, bits ≥ 0.95, served ≥ 0.998). B1 / B2 / C pending A-real/B-real.
+- **Amendment 3 to Ruling 2** (`…-AMENDMENT-3-TEACHERS-LADDER-AND-SCENARIO-STATUS-2026-09-12.md`): teacher ladder T0 (LP rule,
+  admitted by the oracle screen) / T_DR / T_SEQ / T_JOINT with costs; representability metric `R_repr` with one-hot and
+  soft-advantage clones; causal ladder D0–D4 for when training is authorised; learner criterion proposed as `ρ ≥ 0.5 × R_repr`
+  (owner to confirm); **B2 reclassified as an execution-contract change → owner decision**.
+- Dispatched/queued: oracle agent saves per-user 28-action advantage vectors; ceiling agent re-runs rate-floor 0:6 with a
+  joint-action dump (T_JOINT labels) after its fill cells; B1 agent's follow-on = T0 representability screen (local BC probe).
+- Q9b (registry rows for H4, LP, ceiling, oracle): after the ceiling and oracle reports; sonnet after its weekly reset.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
