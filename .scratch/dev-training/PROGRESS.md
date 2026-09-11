@@ -211,3 +211,15 @@ hold up to 3 more; limit 8 for this lane's own processes was respected (7).
   freeze only; not formal evidence. The aggregator now holds 23 results under the collision-safe identity
   (`results/DEV-AGGREGATE.{json,md}`).
 - No development process is running on sat after this point; no E1 run is launched (E1's design is the controller's to declare).
+
+## E1 launched (Amendment 10, read in full before launch) — 2026-09-11 23:07 UTC
+Nine fresh-start runs, 300 episodes, DEVVAL 100/200/300, code `05aadf1b` (the frozen provisional algorithm), cwd
+`/home/sat/mcrl-v025-dev-e0-ws/tree-v0.4`. Details and the pre-declared reading rule: `E1-LAUNCH-2026-09-12.md`.
+- `runs-e1-d0-d3`: D0 k3 `945927542022` PID 3616542, k4 `673611ca6da3` 3616543, k5 `ddd5bab02457` 3616544;
+  D3-T0 k3 `ccca3463753d` 3616545, k4 `ce689b57833f` 3616546, k5 `9bf13b57e608` 3616547.
+- `runs-e1-d2tau0p3` (`--tau 0.3`): D2-T0 k3 `87e8fce4b4d8` PID 3616588, k4 `9905fcc0a2f1` 3616589, k5 `bab4ac8d4656` 3616590.
+- Two roots because `--tau` is per launcher call and tau is inside the config hash: D0 and D3-T0 keep the frozen default
+  (which neither mechanism reads), only D2 carries tau = 0.3. D3-null is NOT re-run (Amendment 10 §2). Seeds k = 3, 4, 5 only;
+  k = 0-2 are spent, k = 6-9 reserved. 9 processes, leaving the Catfish-2 lane its 3.
+- Decision checkpoint is ep 300 only; 100 and 200 are divergence / bug / QoS-collapse tripwires. No configuration may change
+  on an intermediate reading.

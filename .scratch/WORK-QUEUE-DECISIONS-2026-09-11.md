@@ -383,6 +383,24 @@ D2 tuning closed) and item D applied (`dev_e0_aggregate.py`, commit `27f69edf`, 
    That is a design fact for any later privileged or imperfect teacher, and an argument for the gated margin the literature
    review recommended if such a teacher is ever injected.
 
+## E1 launched 23:08 UTC — nine runs, frozen backbone, fresh seeds (`.scratch/dev-training/E1-LAUNCH-2026-09-12.md`)
+
+Code `05aadf1b` (the frozen provisional algorithm), digest `7440236979d6`, cwd `tree-v0.4`, all fresh starts, 300 episodes,
+DEVVAL at 100/200/300, `nice -n 10`, MemoryMax 5G, nine processes with the Catfish-2 lane keeping its three.
+
+| arm | k = 3 | k = 4 | k = 5 | root |
+|---|---|---|---|---|
+| D0 | `945927542022` (PID 3616542) | `673611ca6da3` (3616543) | `ddd5bab02457` (3616544) | `runs-e1-d0-d3` |
+| **D3-T0** | `ccca3463753d` (3616545) | `ce689b57833f` (3616546) | `9bf13b57e608` (3616547) | `runs-e1-d0-d3` |
+| D2-T0 τ = 0.3 | `87e8fce4b4d8` (3616588) | `9905fcc0a2f1` (3616589) | `bab4ac8d4656` (3616590) | `runs-e1-d2tau0p3` |
+
+Seeds k = 3, 4, 5 verified unused before launch (only k = 0/1/2 appear in any earlier result). D3-null is not re-run; the length
+stays 300 so ε decays over the frozen 67 episodes; the backbone was verified frozen in every payload. Only **ep 300** decides;
+100 and 200 are divergence, bug and QoS tripwires. Structural note from the launch: `--tau` is part of every arm's config hash,
+so D0 and D3-T0 run in one root at the frozen default (a value neither mechanism reads) and only the soft comparator carries
+`--tau 0.3` in its own root — recording τ on arms that ignore it would have changed their hashes and misdescribed them.
+Expected finish 23:25–23:45 UTC; the controller re-derives the ep-300 numbers from the JSONs before recording the verdict.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
