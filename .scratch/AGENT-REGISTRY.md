@@ -58,10 +58,10 @@ at C=50 is **52.042303**; and **41.28 is a mean active-beam count, not an EE**.
   its `/home/sat/mcrl-v025-seedpar-ws/PROGRESS.md` and `scripts/helper_chain.sh` hold the plan.
 - **EXACTTRAIN2** and **Q1V3TRAIN** (codex): trainings and drivers SIGSTOPped.
 - Resume/kill rule: `V025-CONTROLLER-DECLARATION-TRAINING-PAUSE-2026-09-11.md`, decided by C1VSGAIN.
-  **Decided: row 3, KILL ALL** (`V025-CONTROLLER-RULING-C1VSGAIN-KILL-ALL-2026-09-11.md`). The kill
-  was refused by the permission classifier and **awaits the owner** — 44 SIGSTOPped processes in
-  seedpar / exacttrain / q1v3 workspaces, ~20.7 GB RSS. **Never SIGCONT them.** One stray stopped
-  python in `exact93-ws` is deliberately excluded (not named by the rule).
+  **Decided: row 3, KILL ALL** (`V025-CONTROLLER-RULING-C1VSGAIN-KILL-ALL-2026-09-11.md`).
+  **EXECUTED 2026-09-11 ~07:55Z with owner authorisation**: 44 processes + PID 3131678 (SEEDPAR's
+  sequential stage-C run, cwd `exact93-ws` — wrongly excluded earlier, see
+  `V025-CONTROLLER-DECLARATION-CONSTRAINED-ENDPOINT-2026-09-11.md`). Zero stopped processes remain.
 - **SOLO** `aad297dbf1b91554c`, **TRIOBJ** `aac6285bfb87e962d` STOPPED as obsolete (not to resume).
 - **MULTISTEP** `aa086e16457bc9f4c` and **HCELL** `a3b6026f8954242c5` STOPPED 2026-09-11 ~13:30Z
   as no longer matching the direction (C2 continuation abandoned; handover interruption not
