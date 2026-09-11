@@ -20,7 +20,6 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | fix per-head bootstrap, outage free ride, uncalibrated logged scalar; 500-ep pilot |
 | **HARVEST** | `ad98bdcb7c81b29a0` | local `.scratch/concept-harvest` | `CONCEPT-HARVEST-2026-09-11.md` | read-only: every old-project concept → RETRY / ADAPT / DROP by whether the *cause* of its old outcome is present here |
 | **CAPPENALTY** | `aec999753c170e5f3` | local `.scratch/cap-penalty` + `/home/sat/mcrl-v025-cap-penalty-ws` | `CAP-PENALTY-2026-09-11.md` | (1) find where the sibling measured the penalty's effect; (2) per-sat beam cap k=3 as off-by-default flag → does it create rank collapse, does the penalty prevent it |
