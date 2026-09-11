@@ -98,43 +98,22 @@ def test_the_only_finiteness_policy_is_the_fail_loud_one():
 
 
 def test_the_max_is_taken_on_the_target_network_not_the_online_one():
-    """Double-DQN would argmax on the ONLINE net and gather on the target.
-
-    ⚠ **Amended 2026-09-11 by B0 D-1.**  The ``"argmax" not in source``
-    assertion is gone: the corrected target *does* argmax, but on the
-    **scalarised sum of the three TARGET networks** and gathers on the target
-    networks too.  The anti-Double-DQN content of this test is that the online
-    networks (``self.q_nets``) never appear in the next-state computation, and
-    that half is asserted here more directly than before.
-    """
+    """Double-DQN would argmax on the ONLINE net and gather on the target."""
     source = inspect.getsource(MODQNTrainer.update)
-    assert "self.target_nets[objective](ns)" in source
-    # Not Double-DQN: nothing reads an ONLINE net at the NEXT state.
-    assert "self.q_nets[obj_idx](ns)" not in source
-    assert "self.q_nets[objective](ns)" not in source
-    # The online net is read at the CURRENT state only.
-    assert "self.q_nets[obj_idx](st)" in source
+    assert "self.target_nets[obj_idx](ns)" in source
+    assert "q_next_all.max(dim=1).values" in source
+    # No argmax-then-gather anywhere in the update.
+    assert "argmax" not in source
+    assert ".gather(1, next" not in source
 
 
 def test_each_objective_uses_its_own_target_network():
-    """Each head's TD target is still its OWN target network's value.
-
-    ⚠ **Amended 2026-09-11 by B0 D-1.**  What changed is the *action* the
-    value is read at: one shared ``argmax_a Σ ω_i Q^target_i(s',a)`` instead
-    of three per-head maximisers.  What did NOT change is that head ``i``'s
-    target value comes from ``target_nets[i]`` and from no other network.
-    The original form of this test asserted ``"objective_weights" not in
-    source``, i.e. that the scalarising weights never reach the target —
-    B1 / SDD §8.  **B0 deliberately reverses that**; see the module docstring
-    of ``tests/test_b0_d1_scalarised_bootstrap.py``.
-    """
+    """B1: no shared scalarised action across the three objectives."""
     source = inspect.getsource(MODQNTrainer.update)
     assert "for obj_idx in range(3)" in source
-    assert "q_next_by_objective[obj_idx]" in source
-    # The weights come from the config — the same field select_actions reads —
-    # and never from a literal in the trainer.
-    assert "cfg.objective_weights" in source
-    assert "(0.5, 0.3, 0.2)" not in source
+    assert "self.target_nets[obj_idx]" in source
+    # The scalarising weights belong to action SELECTION, never to the target.
+    assert "objective_weights" not in source
     assert "_scalarize_q_values" not in source
 
 
@@ -178,16 +157,8 @@ def test_a_double_dqn_target_would_give_a_different_answer():
     )
 
 
-def test_the_target_and_the_selector_read_the_same_weights():
-    """⚠ **Amended 2026-09-11 by B0 D-1 — this test was inverted.**
-
-    It used to assert ``"objective_weights" not in update``: the scalarising
-    weights belong to selection only, because §8 forbids a shared scalarised
-    action.  B0 D-1 establishes the opposite requirement — the bootstrap must
-    evaluate all three heads under the **deployed** policy, and the deployed
-    policy is the scalarised argmax — so the invariant that replaces it is
-    that both sites read the *same* config field, so they can never drift.
-    """
+def test_the_scalarised_weights_never_reach_the_target():
+    """They belong to selection only — §8 forbids a shared scalarised action."""
     selection = inspect.getsource(MODQNTrainer.select_actions)
     assert "objective_weights" in selection
     assert "scalarized_q_values" in selection
@@ -195,7 +166,7 @@ def test_the_target_and_the_selector_read_the_same_weights():
     assert "objective_weights" in diagnostic_surface
     assert "_scalarize_q_values" in diagnostic_surface
     update = inspect.getsource(MODQNTrainer.update)
-    assert "cfg.objective_weights" in update
+    assert "objective_weights" not in update
 
 
 # -- the surviving selection path is single too ---------------------------

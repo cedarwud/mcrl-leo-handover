@@ -51,6 +51,21 @@ class TrainerConfig:
     episodes: int = 9000
     objective_weights: tuple[float, float, float] = (0.5, 0.3, 0.2)
 
+    # -- TD bootstrap action (B1 / SDD §8; controller ruling 2026-09-11) ----
+    #
+    # DEFAULT = MODQN eq. (16) vanilla: each objective bootstraps at ITS OWN
+    # target-network max.  That is the published algorithm, frozen by B1 so
+    # that the baseline arm is unambiguously published MODQN -- and the
+    # owner's success gate is "beat baseline MODQN".  Do not change the
+    # default.
+    #
+    # ``TD_BOOTSTRAP_SHARED`` evaluates every head at ONE shared continuation
+    # action ``argmax_a Σ_i ω_i Q^target_i(s', a)`` (the successor-feature
+    # ψ^π object).  It exists for the successor learner, which DR-1 requires
+    # to use it; it is NOT a correction of the baseline.  Commit 5219995a
+    # made it unconditional; the ruling converted it to this switch.
+    td_bootstrap_mode: str = "eq16-per-head-max"
+
     # -- ASSUME-MODQN-REP-004: epsilon schedule ----------------------------
     epsilon_start: float = 1.0
     epsilon_end: float = 0.01

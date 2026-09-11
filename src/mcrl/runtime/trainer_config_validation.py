@@ -44,6 +44,12 @@ VALID_LOAD_NORMALIZATIONS = frozenset({"divide_by_num_users", "raw"})
 
 _WEIGHT_SUM_TOLERANCE = 1e-9
 
+TD_BOOTSTRAP_EQ16 = "eq16-per-head-max"
+"""MODQN eq. (16): each head bootstraps at its own target max.  B1 default."""
+TD_BOOTSTRAP_SHARED = "shared-continuation-argmax"
+"""All heads at one ``argmax_a Σ ω_i Q^target_i(s', a)``.  Successor only."""
+VALID_TD_BOOTSTRAP_MODES = frozenset({TD_BOOTSTRAP_EQ16, TD_BOOTSTRAP_SHARED})
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
@@ -97,6 +103,13 @@ def validate_trainer_config(config: TrainerConfig) -> None:
         abs(sum(weights) - 1.0) <= _WEIGHT_SUM_TOLERANCE,
         f"objective_weights must sum to 1, got {sum(weights)} from {weights}; "
         "a different sum silently rescales the whole reward",
+    )
+
+    # -- TD bootstrap action (B1 default; ruling 2026-09-11) -------------
+    _require(
+        config.td_bootstrap_mode in VALID_TD_BOOTSTRAP_MODES,
+        f"td_bootstrap_mode must be one of {sorted(VALID_TD_BOOTSTRAP_MODES)}, "
+        f"got {config.td_bootstrap_mode!r}",
     )
 
     # -- exploration schedule (ASSUME-MODQN-REP-004) ----------------------

@@ -14,12 +14,13 @@ evaluated under **one** policy.
 networks once over the masked next actions, then gather head *i*'s target at
 that shared action.
 
-⚠ **This departs from frozen ruling B1 / SDD §8.**  §8's forbidden list names
-"Double-DQN 共用純量化動作", and ``tests/test_w08_vanilla_td_target.py``
-asserted the per-head max as the contract.  B0 keeps the *vanilla* half
-(argmax **and** gather both on the target networks — never the online ones)
-and changes only the shared-action half.  See
-``.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md``.
+**Ruling 2026-09-11: this is a FLAG, not a baseline correction.**  B1 /
+SDD §8 stands for the baseline arm: the default ``td_bootstrap_mode`` is MODQN
+eq. (16) per-head max (published MODQN; the owner's gate is "beat baseline
+MODQN").  The shared continuation action is the successor learner's target.
+Tests below marked *flag on* set ``td_bootstrap_mode=TD_BOOTSTRAP_SHARED``;
+the *default path* tests check that eq. (16) is what runs when it is unset.
+``tests/test_w08_vanilla_td_target.py`` guards the default path's source.
 
 Weights are read from ``TrainerConfig.objective_weights``
 (``runtime/trainer_spec.py:52``), never hardcoded in the trainer.
@@ -34,6 +35,10 @@ import torch.nn as nn
 
 from mcrl.algorithms.modqn import MODQNTrainer
 from mcrl.env.action_contract import NUM_ACTIONS
+from mcrl.runtime.trainer_config_validation import (
+    TD_BOOTSTRAP_EQ16,
+    TD_BOOTSTRAP_SHARED,
+)
 from mcrl.runtime.trainer_spec import TrainerConfig
 
 from _fake_env import ScriptedEnv
@@ -70,19 +75,24 @@ def _disagreeing_rows() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return rows[0], rows[1], rows[2]
 
 
-def _trainer(weights: tuple[float, float, float] = WEIGHTS) -> MODQNTrainer:
+def _trainer(
+    weights: tuple[float, float, float] = WEIGHTS,
+    *,
+    mode: str | None = TD_BOOTSTRAP_SHARED,
+) -> MODQNTrainer:
+    """``mode=None`` leaves the config default untouched (the eq. (16) path)."""
     env = ScriptedEnv(
         np.ones((2, 2, NUM_ACTIONS), dtype=bool), num_beams=NUM_ACTIONS
     )
-    return MODQNTrainer(
-        env,
-        TrainerConfig(
-            batch_size=BATCH,
-            episodes=1,
-            discount_factor=DISCOUNT,
-            objective_weights=weights,
-        ),
+    kwargs = dict(
+        batch_size=BATCH,
+        episodes=1,
+        discount_factor=DISCOUNT,
+        objective_weights=weights,
     )
+    if mode is not None:
+        kwargs["td_bootstrap_mode"] = mode
+    return MODQNTrainer(env, TrainerConfig(**kwargs))
 
 
 def _fill(trainer: MODQNTrainer, next_mask: np.ndarray) -> None:
@@ -113,7 +123,7 @@ def test_the_fixture_actually_makes_the_two_rules_disagree():
 
 
 def test_every_head_bootstraps_at_the_scalarised_argmax():
-    """The TD target for head i is Q^target_i(s', a') with a' SHARED."""
+    """*Flag on.*  The TD target for head i is Q^target_i(s', a') with a' SHARED."""
     q0, q1, q2 = _disagreeing_rows()
     rows = (q0, q1, q2)
     scalarised = WEIGHTS[0] * q0 + WEIGHTS[1] * q1 + WEIGHTS[2] * q2
@@ -195,3 +205,51 @@ def test_the_weights_come_from_the_config_not_a_literal():
             (q_current[objective] - DISCOUNT * float(rows[objective][shared])) ** 2,
             rel=1e-4,
         )
+
+
+# -- the DEFAULT path is MODQN eq. (16), untouched ---------------------------
+
+
+def test_the_default_bootstrap_mode_is_eq16():
+    """B1: an unset config is published MODQN, per-head max."""
+    assert TrainerConfig().td_bootstrap_mode == TD_BOOTSTRAP_EQ16
+
+
+def test_the_default_path_bootstraps_each_head_at_its_own_max():
+    """Same disagreeing fixture, flag OFF: every head reads its own max."""
+    q0, q1, q2 = _disagreeing_rows()
+    rows = (q0, q1, q2)
+    trainer = _trainer(mode=None)
+    for objective in range(3):
+        trainer.target_nets[objective] = _FixedRow(rows[objective])
+    _fill(trainer, np.ones(NUM_ACTIONS, dtype=bool))
+
+    states = torch.zeros(BATCH, trainer.state_dim)
+    with torch.no_grad():
+        q_current = [float(trainer.q_nets[j](states)[0, 0]) for j in range(3)]
+    losses = trainer.update()
+
+    for objective in range(3):
+        own_max_target = DISCOUNT * float(rows[objective].max())
+        assert losses[objective] == pytest.approx(
+            (q_current[objective] - own_max_target) ** 2, rel=1e-4
+        ), f"head {objective} did not take its own max on the default path"
+
+
+def test_the_default_path_never_computes_the_shared_action(monkeypatch):
+    """Nothing of the successor rule runs when the flag is off."""
+    trainer = _trainer(mode=None)
+
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("shared continuation computed on the eq. (16) path")
+
+    monkeypatch.setattr(trainer, "_shared_continuation_action", _forbidden)
+    _fill(trainer, np.ones(NUM_ACTIONS, dtype=bool))
+    trainer.update()  # must not raise
+
+
+def test_an_unknown_bootstrap_mode_is_refused():
+    from mcrl.errors import MCRLContractError
+
+    with pytest.raises(MCRLContractError):
+        TrainerConfig(td_bootstrap_mode="double_q")
