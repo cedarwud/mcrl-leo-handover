@@ -89,6 +89,16 @@ def main() -> int:
 
     calib = json.loads(a.calibration.read_text())
     calib_sha = C.sha256_file(a.calibration)
+    code = C.code_manifest()
+    code_digest = C.manifest_digest(code)
+    run_manifest_path = a.root / "RUN-MANIFEST.json"
+    if not run_manifest_path.is_file():
+        raise SystemExit(f"no {run_manifest_path}; launch through scripts/cf3_launch.py")
+    run_manifest = json.loads(run_manifest_path.read_text())
+    if (run_manifest.get("code") != code or run_manifest.get("calibration_sha256") != calib_sha
+            or bool(run_manifest.get("smoke")) != bool(a.smoke)):
+        raise SystemExit("RUN-MANIFEST.json does not match this code / calibration / mode; "
+                         "refusing to run (fail closed)")
     tle_sha = tp.assert_tle_archive_pinned()
     record = tp.validate_server_setup(tp.CANONICAL_PREREG,
                                       probe_summary_path=tp.CORRECTED_PROBE_SUMMARY)
@@ -134,6 +144,7 @@ def main() -> int:
         "config": asdict(config), "settings": None if settings is None else asdict(settings),
         "calibration_sha256": calib_sha, "tle_file_set_sha256": tle_sha,
         "prereg_digest": record.digest, "smoke": bool(a.smoke),
+        "code": code, "code_digest": code_digest,
     }
     status = {
         "status": "running", "arm": arm, "name": ARMS[arm], "seed_index": k,
@@ -220,29 +231,56 @@ def main() -> int:
         append_reading(row)
 
     def gate(episode_done: int, row: dict) -> None:
+        """Declared learning check.  A1 seeds 0-2 each publish their reading;
+        ONE process (O_EXCL lock) writes DECISION.json; every process reads
+        it back and rejects any file whose fingerprint is not its own."""
         gate_dir.mkdir(parents=True, exist_ok=True)
         append_reading(dict(row, gate="pending"))
+        ref = float(calib["random_reference_ee"])
+        gfp = {"code_digest": code_digest, "calibration_sha256": calib_sha,
+               "tle_file_set_sha256": tle_sha, "gate_episode": episode_done,
+               "random_reference_ee": ref, "gate_seeds": list(C.GATE_SEEDS)}
         if arm == "A1" and k in C.GATE_SEEDS:
             C.write_json(gate_dir / f"A1-s{k}.json",
                          {"seed_index": k, "measured_ee": row["measured_ee"],
-                          "episode": episode_done, "utc": utc()})
+                          "episode": episode_done, "utc": utc(), "gate_fingerprint": gfp})
         deadline = time.time() + a.gate_timeout_s
         files = [gate_dir / f"A1-s{j}.json" for j in C.GATE_SEEDS]
         while not all(f.is_file() for f in files):
             if time.time() > deadline:
-                raise cfr.LearningCheckStop("timed out waiting for the three A1 readings")
+                raise cfr.LearningCheckStop("timed out waiting for the A1 gate readings")
             time.sleep(20)
-        ref = float(calib["random_reference_ee"])
-        vals = [json.loads(f.read_text())["measured_ee"] for f in files]
-        wins = sum(v > ref for v in vals)
-        decision = {"A1_measured_ee": vals, "random_reference_ee": ref, "wins": wins,
-                    "pass": wins >= 2, "decided_utc": utc(), "by": f"{arm}s{k}"}
-        dfile = gate_dir / "DECISION.json"
+        seeds = [json.loads(f.read_text()) for f in files]
+        for srow in seeds:
+            if srow.get("gate_fingerprint") != gfp:
+                raise SystemExit(f"stale/mismatched A1 gate file {srow}; fail closed")
+        dfile, lock = gate_dir / "DECISION.json", gate_dir / "DECISION.lock"
         if not dfile.is_file():
-            C.write_json(dfile, decision)
+            try:
+                fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, f"{arm}s{k} pid {os.getpid()} {utc()}".encode())
+                os.close(fd)
+                vals = [srow["measured_ee"] for srow in seeds]
+                wins = sum(v > ref for v in vals)
+                decision = {"A1_seed_indices": list(C.GATE_SEEDS), "A1_measured_ee": vals,
+                            "random_reference_ee": ref, "wins": wins, "pass": wins >= 2,
+                            "decided_utc": utc(), "by": f"{arm}s{k}",
+                            "gate_fingerprint": gfp, "code_commit": code["commit"]}
+                tmp = gate_dir / f"DECISION.json.{os.getpid()}.tmp"
+                tmp.write_text(json.dumps(decision, indent=2, sort_keys=True))
+                os.replace(tmp, dfile)
+            except FileExistsError:
+                pass
+        while not dfile.is_file():
+            if time.time() > deadline:
+                raise cfr.LearningCheckStop("timed out waiting for DECISION.json")
+            time.sleep(5)
+        decision = json.loads(dfile.read_text())
+        if decision.get("gate_fingerprint") != gfp:
+            raise SystemExit("DECISION.json fingerprint does not match this run; fail closed")
         status["learning_check"] = decision
         if not decision["pass"]:
-            raise cfr.LearningCheckStop(f"A1 beat RANDOM on {wins}/3 seeds")
+            raise cfr.LearningCheckStop(f"A1 beat RANDOM on {decision['wins']}/3 seeds")
 
     def on_episode(log) -> None:
         row = log if cf_arm else asdict(log)
@@ -290,8 +328,9 @@ def main() -> int:
         print(f"[{arm}s{k}] stopped cleanly at {a.stop_after}", flush=True)
         return 0
     except cfr.LearningCheckStop as stop:
-        done = len(logs) + 1 if cf_arm else len(logs)
-        save(done)
+        # train_cf appended the gate episode's log and ran the callback before
+        # re-raising, so len(logs) IS the number of completed episodes.
+        save(len(logs))
         status.update(status="stopped-learning-check", reason=str(stop), stopped_utc=utc())
         C.write_json(status_path, status)
         print(f"[{arm}s{k}] STOPPED by learning check: {stop}", flush=True)

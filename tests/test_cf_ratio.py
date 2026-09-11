@@ -141,6 +141,27 @@ def mutant(monkeypatch):
             return real(gain, legal, allowed, inc, margin_db)
 
         monkeypatch.setattr(cfs, "pick", bad_pick)
+    elif MUTANT == "gate_stop_before_log":
+        real_train = T.train_cf
+
+        def train_cf(self, **kw):
+            cb = kw.get("episode_callback")
+            gate = self.learning_gate
+
+            def early(ep, row):
+                gate(ep, row)
+            self.learning_gate = early
+            # emulate the old defect: the exception escapes before the log
+            real_q = self.quarter_update
+
+            def q(episode_done, *, final=False):
+                if episode_done == self.settings.eta_first_update_episode and gate:
+                    gate(episode_done, {})
+                return real_q(episode_done, final=final)
+            self.quarter_update = q
+            return real_train(self, **kw)
+
+        monkeypatch.setattr(T, "train_cf", train_cf)
     elif MUTANT == "no_time_feature":
         real_enc = T.encode_at
 
@@ -483,15 +504,24 @@ def test_eta_and_lambda_change_only_at_declared_boundaries():
     assert logs[3]["quarter"]["applied"] is False         # final measurement recorded only
     assert tr.eta == etas[3]
 
+
+
+def test_learning_check_failure_leaves_artifacts_ending_at_the_gate_episode():
+    """Forced failure at the gate episode 2: completed 2, logs [0, 1], eta not updated."""
     def stop(ep, row):
         raise cfr.LearningCheckStop("fail")
     tr2 = _trainer_real("none", cfg_kw={"episodes": 4},
-                        st_kw={"quarter_episodes": 1, "eta_first_update_episode": 2,
-                               "dual_ascent": True})
+                        st_kw={"quarter_episodes": 1, "eta_first_update_episode": 2})
     tr2.learning_gate = stop
-    with pytest.raises(cfr.LearningCheckStop):
-        tr2.train_cf(progress_every=0)
-    assert tr2.eta == 2.0                                 # no update applied
+    seen = []
+    with pytest.raises(cfr.LearningCheckStop) as info:
+        tr2.train_cf(progress_every=0, episode_callback=seen.append)
+    assert [r["episode"] for r in seen] == [0, 1]          # episode 2's log exists
+    assert seen[1]["quarter"]["kind"] == "quarter-gate-failed"
+    assert seen[1]["quarter"]["applied"] is False
+    assert info.value.row is seen[1]["quarter"]
+    assert tr2.eta == 2.0                                   # no update applied
+    assert tr2.dual_trajectory[-1]["kind"] == "quarter-gate-failed"
 
 
 def test_remaining_steps_feature_is_appended():

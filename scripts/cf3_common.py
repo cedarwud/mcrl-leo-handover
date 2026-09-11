@@ -121,3 +121,37 @@ def random_policy_factory(base: int = RANDOM_ACTION_BASE):
         fn = cfs.random_legal(np.random.default_rng(base + i))
         return lambda enc, masks, states: fn(states, masks)
     return factory
+
+
+# ---------------------------------------------------------------- manifest
+MANIFEST_FILES = (
+    "src/mcrl/algorithms/cf_ratio.py",
+    "src/mcrl/algorithms/cf_sources.py",
+    "src/mcrl/algorithms/modqn.py",
+    "scripts/run_cf3_pilot.py",
+    "scripts/cf3_common.py",
+    "scripts/cf3_launch.py",
+    "docs/cf3-pilot/V025-CONTROLLER-DECLARATION-THREE-CATFISH-PILOT-2026-09-11.md",
+    "docs/cf3-pilot/V025-CONTROLLER-AMENDMENT-1-THREE-CATFISH-PILOT-2026-09-11.md",
+    "docs/cf3-pilot/V025-CONTROLLER-AMENDMENT-2-EE-ONLY-2026-09-11.md",
+)
+
+
+def code_manifest() -> dict:
+    """Code identity for fingerprints: commit, key-file hashes, whole-src hash.
+
+    Launch and resume fail closed when this differs from the root's
+    ``RUN-MANIFEST.json`` (coordinator review item 3).
+    """
+    commit_file = REPO / "COMMIT"
+    commit = commit_file.read_text().strip() if commit_file.is_file() else "uncommitted-worktree"
+    files = {f: sha256_file(REPO / f) for f in MANIFEST_FILES}
+    h = hashlib.sha256()
+    for p in sorted((REPO / "src").rglob("*.py")):
+        h.update(str(p.relative_to(REPO)).encode())
+        h.update(sha256_file(p).encode())
+    return {"commit": commit, "files": files, "src_tree_sha256": h.hexdigest()}
+
+
+def manifest_digest(code: dict) -> str:
+    return hashlib.sha256(json.dumps(code, sort_keys=True).encode()).hexdigest()

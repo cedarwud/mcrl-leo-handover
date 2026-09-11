@@ -409,7 +409,17 @@ def pooled_rollout(
 
 # ------------------------------------------------------------------ trainer
 class LearningCheckStop(RuntimeError):
-    """Raised at the first eta update when the declared learning check fails."""
+    """Raised at the first eta update when the declared learning check fails.
+
+    ``row`` carries the episode's calibration measurement (recorded in the
+    dual trajectory with ``applied=False``); :meth:`CFRatioTrainer.train_cf`
+    appends the episode's log and runs the episode callback BEFORE
+    re-raising, so a stopped run's artifacts end exactly at the gate episode.
+    """
+
+    def __init__(self, message: str, row: dict | None = None) -> None:
+        super().__init__(message)
+        self.row = row
 
 
 class CFRatioTrainer(MODQNTrainer):
@@ -665,7 +675,14 @@ class CFRatioTrainer(MODQNTrainer):
         row["eta_candidate"] = float(m["ee"]) if eta_due else None
         if not final:
             if episode_done == st.eta_first_update_episode and self.learning_gate:
-                self.learning_gate(episode_done, row)      # may raise
+                try:
+                    self.learning_gate(episode_done, row)
+                except LearningCheckStop as stop:
+                    row.update(eta=self.eta, **{"lambda": self.lam}, applied=False,
+                               kind="quarter-gate-failed", gate_reason=str(stop))
+                    self.dual_trajectory.append(row)
+                    stop.row = row
+                    raise
             self.lam = new_lam
             if eta_due:
                 self.eta = float(m["ee"])
@@ -787,16 +804,25 @@ class CFRatioTrainer(MODQNTrainer):
                 "quarter": None,
             }
             episode_done = ep + 1
+            gate_stop = None
             if episode_done % s.quarter_episodes == 0:
-                log["quarter"] = self.quarter_update(
-                    episode_done, final=episode_done >= cfg.episodes
-                )
+                try:
+                    log["quarter"] = self.quarter_update(
+                        episode_done, final=episode_done >= cfg.episodes
+                    )
+                except LearningCheckStop as stop:
+                    log["quarter"] = stop.row
+                    gate_stop = stop
             for k, v in log.items():
                 if isinstance(v, float) and not np.isfinite(v):
                     raise FloatingPointError(f"non-finite {k} in episode {ep}")
             logs.append(log)
             if episode_callback is not None:
                 episode_callback(log)
+            if gate_stop is not None:
+                # The episode is complete and logged; only the eta update
+                # was refused.  Artifacts end exactly at the gate episode.
+                raise gate_stop
             if progress_every and episode_done % progress_every == 0:
                 print(
                     f"[ep {episode_done:5d}/{cfg.episodes}] eps={eps:.3f} "
