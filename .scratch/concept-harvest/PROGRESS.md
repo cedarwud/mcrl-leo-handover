@@ -53,5 +53,24 @@ unless a note below says a follow-up is needed.
   scratch, but k_cap=3 ON, per-head bootstrap ON (SDD-01 B1), ADR-003 physics; faithful catfish B/N 0.73,
   intervention-only active & harmful; local_snr_greedy prefill NO-PROMOTION (H/B 0.88), source only
   proven vs uniform, never vs learner. Capacity penalty (+89, 6/6) depends on k_cap (absent here).
+- ALL SIX extraction agents COMPLETE (A 62, B 47, C 35, D 65, E defects+inventory, F 35). Do not re-dispatch.
+  E key: defect (a) splits old evidence: lineage P (per-head max) = baseline, family_b retrain,
+  catfish_faithful_familyb, modqn_faithful_ablation 6-arm + phase1 (Aug D-33/34), per-objective/coordinated
+  catfish, CA-CPBR demo-guided CF net; lineage S (shared scalarised a', Double-DQN) = route-B, injection/DQfD,
+  z/concat, penalty (trainer_penalty), catfish_pack abl9k (ACRM, capacity). (b) absent in ALL old envs
+  (r3 global). (c) present in nearly all family_b trainers -> old best-ckpt picked on raw r1.
+  No old trainer distilled from a frozen main; route-C/CA-CPBR = student distilled from planner over rounds.
+  C key: COLLAPSE-ROOT-CAUSE-IS-LR; capacity penalty +89..+135 at lr 1e-3 (whole measured effect);
+  SCFZA catfish -20.4 / -9.1; ACRM +110 peak only w/o penalty; C-7 multi-step ACRM: family_b has ZERO
+  step-to-step persistence; family_b physics √load power => spreading RAISES EE there (opposite here).
+  F key: old env windows frozen per episode, 10 x 1 s steps, τ_exit median 170-264 s, 0/5000 center drops
+  => hazard lever dead THERE; here dt=30.08 s, 5-min episodes vs 6.3-min service window => present.
+- DONE: read A, C, F, E§2 fully (2026-09-11). Also found FEASFRONT jsrl.out: guide prefix gives novel
+  states R 1.4-2.2, novelty mainly block 4 loads (coverage evidence here).
+- DECIDED shortlist order: 1 obs-only specialist demo replay (experience, RETRY); 2 advantage-gated
+  margin (penalty, ADAPT); 3 CA-CPBR adapted (reward, ADAPT); 4 satellite-exit hazard (state+key, RETRY);
+  5 M2 / W-step gated on persistence probe (reward, RETRY); 6 endpoint-gap thermostat (experience, ADAPT).
+  Multi-catfish by information set: gain / gain+incumbent / loads / ephemeris / joint-fork / endpoint learner.
+- NEXT: write report (in progress if file exists; append remaining sections).
   Lead to check at synthesis: old "hazard" lever killed because family_b cells Earth-fixed + frozen
   windows (fable.md); here beams drift relative to users (FEASFRONT C1_SAT_LOCK note) => cause may be absent.

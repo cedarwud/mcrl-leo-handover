@@ -637,3 +637,46 @@ still selected at reset only (`family_b_step.py:577-582`) [I: so within a 50 s e
 window + 10 s episodes + static users + area-centre-defined features), plus the fact that under shared-Q per-user
 argmax a per-user-constant feature cannot break symmetry. None of the records tested hazard/criticality features in an
 env where footprints sweep users, where episodes span a satellite pass, or where handover carries an energy/power cost.
+
+---
+
+## Index (one line each: run status · latest verdict)
+- F-1 Claim A geometric criticality state (F1/F2/F3, B1) · cheap assays only · O-NEG-orth; "realism/STATE, NOT headroom" (06-19)
+- F-2 Claim B criticality-keyed per-objective catfish routing (B3h/PED-Strat) · built, never trained · keys degenerate (κ_HO 99.6% zero); "same wall, LOW odds"; archived
+- F-3 B2 criticality-priority replay (diagnostic) · never run · non-promotable by decree
+- F-4 Geometry-based PBRS replacing ACRM · never built · adopted on paper, "cannot break a reward-optimal collapse"
+- F-5 CDRL shell ×3 per-objective (dual agent, γ asym, ACRM, 70/30) · route-C form never run · "argmax'd away at deployment"
+- F-6 RH-Gate representation-health gate · never built · methodological backstop only
+- F-7 PED-Strat Pareto-pivotal stratification · never built · absorbed into F-2
+- F-8 DOM-Lead / ΩCat / AdmitGate / PhaseStrat / HO-Split / VoE-Critic / DivCat / IW-Inject · never built · idea bank
+- F-9 Viability-Reserve / Marginal Congestion Credit / Semi-Markov Dwell / Occupancy-Response / Interruption-Budget / Observation-Lag / Transition-Graph · never built (MCC → F-10) · idea bank; several presume moving-beam dynamics
+- F-10 DR-MODQN D_i difference reward + symmetry-breaker (faithful decode) · cheap screens only (G-B +2.57e-5, out_corr 0.95–1.0) · LOW prior; superseded 06-19; refuted as framed 06-21
+- F-11 Spread/sticky failure-mode catfish + collapse-triggered injection · never built · folded into design, then superseded
+- F-12 Supervised faithful `f` (planner imitation) · ran eval (5 seeds) · −5.33e-5, f-FLOOR-CAPPED
+- F-13 Deploy-time load-biased decode over frozen Q (Ye-bias) · ran eval · un-collapses to ≈RANDOM; hollow
+- F-14 Learned forward coordination decoder vs LP-round · ran eval · O-MIXED; LP closes 64–82%; scoped-negative
+- F-15 Sequential / capacity-auction decode (route-B fork ②) · heavy 2×2 ran · decode drives de-collapse; A2≈A1; numbers in lr=0.01 era, "待重驗"
+- F-16 Best-response planner as PBRS potential / counterfactual credit · SDD brief only · hypothesis
+- F-17 Learned state-adaptive scalarisation of Q heads · proposed · status unknown in cluster
+- F-18 Hard-EE temporal coupling regime + EVPI screen · ran (zero-learning) · EVPI 61× below floor; A-path DEAD
+- F-19 Foresight static / η_EE per-step separability · ran · no learning-EE-win on family_b (structural, scoped)
+- F-20 Handover-at-matched-QoS axis · ran (static) · sticky_planner eats it (7.84 vs 79 churn)
+- F-21 Coverage-aware decode repair / DAgger fine-tune for distilled (P) · L2a ran · min-cov stuck 0, speed 21.8×→6.2×; L2b never run
+- F-22 Catfish generic-validity kill test (DeepSea/MountainCar) · designed · no result in cluster; 5-angle very-low prior
+- F-23 Env redesign toward demand dynamics + catfish re-conceived · design · temporal variant killed (F-18), queue variant null (F-26)
+- F-24 SOFT-DISCARD Weng&Lee shared-policy exploration collapse (grouped sharing, progress-state aug) · never built · DROPPED from related work 07-01
+- F-25 Placebo / deterministic-rule / bridge controls for hazard · never run
+- F-26 Phase-C gate-before-train (C1–C4, Δ_fore) · ran 3 waves · C3 measured-null (+0.079%, CI [−0.29,+0.44]%); H1 frozen
+- F-27 A2′ faithful value-stratified replay + γ_k · ran in route-B only · A2≈A1, B2 still collapsed; decorative
+- F-28 A2h′ SSET congestion-onset event tables (+A2hn′, A2h_is′) · never trained · "catfish-on-H1 = 未測、非否證"
+- F-29 Round-2 menu (n-step control, isolation, recency, dose) · never run
+- F-30 PLR curation / load curriculum / Go-Explore onset resets / HER · never built · lit-ranked alternatives
+- F-31 Per-objective asymmetric γ_k · ran only bundled · never isolated
+- F-32 Congestion-context χ_u incl. signal-rank symmetry breaker · ran (route-B) · B1 still collapsed; ruled out as collapse cause
+- F-33 H1 "harder env gives headroom" (queue regime) · = F-23/F-26
+- F-34 "Myopic-sufficient env" diagnosis / challenger boundary map · analysis · catfish inert where value learning is not the bottleneck
+- F-35 EE-aware load-shared one-step-commit planner (zero-learning) · ran · Δ_plan +0.085 vs myopic; raw-bits scoring over-opens beams (r=−0.901)
+
+Not read in full (instrument/process only): `external-dr-briefing-pack-2026-07-02.md`, `phase-c-v13-design-G6-VERDICT`,
+`phase-c-v14-design-G6-VERDICT` (grepped), `V13/V14-CONSTRUCTION-SPEC`, `GATES-RUN-HANDOFF`, `V14-REPAIR-HANDOFF`,
+`v14-residual-diagnosis` (summarised via v1.4 amendment §B1), result JSONs. `symmetry-breaker-design-2026-06-19.md` exists but was not in scope.

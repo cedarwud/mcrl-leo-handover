@@ -21,9 +21,9 @@ scripts `923d68b0` are ONLY on branch `b0/corrected-baseline-20260911`
 | 6 | D-3 fix + commit | DONE `0acd146c` + fixup `ccbbb048` | git log grep `B0 D-3` |
 | 7 | Full regression sweep | DONE — 55 fail, IDENTICAL IDs to pre-D-1 baseline `e3f3503e` | id lists: session scratchpad `ids-*.txt` (not durable; the result is recorded here) |
 | 8 | Sync to `sat:/home/sat/mcrl-v025-b0-ws` | DONE — 348 files sha256-verified; both trees server-smoked | `sat:/home/sat/mcrl-v025-b0-ws/STAGE.sha256` |
-| 9 | Launch 500-episode pilot detached | RUNNING — B0 **relaunched** 07:50:07 UTC PID 3383079 (first attempt died ep 50, see below); UNFIXED PID 3381656 since 07:45:10; NOT done until `status.json` says complete | `sat:/home/sat/mcrl-v025-b0-ws/pilot-{b0,unfixed}-500/status.json` |
-| 10 | Harvest pilot + greedy eval | PENDING | report md |
-| 11 | Write report | PENDING | `B0-CORRECTED-BASELINE-2026-09-11.md` |
+| 9 | Launch 500-episode pilot detached | DONE — both `status: complete` (UNFIXED wall 780 s, B0 wall 785 s) | `sat:/home/sat/mcrl-v025-b0-ws/pilot-{b0,unfixed}-500/` (checkpoint-ep00100..00500.pt) |
+| 10 | Harvest pilot + greedy eval | DONE — eval log `sat:/home/sat/mcrl-v025-b0-ws/eval-ep500.log`; no python left running on sat | local copies: session scratchpad `pilot/` (logs sha256 a665e3f5.. / 5efbdc1e..) |
+| 11 | Write report | DONE | `B0-CORRECTED-BASELINE-2026-09-11.md` |
 
 ## Step 0 — defect sites, verified by reading
 
@@ -165,3 +165,37 @@ ho 0.8680 — **exact match** to the catfish-surface table. Scalar -3.734 vs doc
 NOTE: the local TLE archive fails `validate_server_setup` (archive/file_set/split
 differ from the frozen record); all pilot evals therefore run on sat, and sat's
 numbers are not expected to equal local ones.
+
+## Step 10 results (verified by running code on sat, 2026-09-11 ~08:20 UTC)
+
+- Both runs complete, all 500 logs finite, masking diagnostics: 0 no-op, 0 all-invalid-next drops.
+- **UNFIXED reproduces the frozen `e6b063ef` run's episodes 0-499**: r1/r2/r3 means (raw and
+  calibrated), scalar_reward, handovers, replay size, epsilon EXACT-equal on all 500 episodes;
+  losses differ <= 3.6e-7 relative; collapse integer fields exact, Q-derived floats <= ~1e-6
+  relative (q_margin up to 13% — a normalised near-zero difference). No argmax flip in 500 eps.
+- Greedy eval, 24 eps, seeds 42/1337/7, sat frozen archive, B0 tree for all arms:
+  RANDOM 52,420,510.10 bit/J; B0_EP500 77,365,317.43 (bits 1.808679e14 / J 2.337842e6,
+  served 0.99950, ho 0.15179); UNFIXED_EP500 79,567,895.67 (bits 2.011509e14 / J 2.528041e6,
+  served 0.99579, ho 0.16496). B0/UNFIXED EE -2.77%, -1.32 unpaired sem (not resolved).
+- sat RANDOM (52.42M) != local RANDOM (53.06M): archives differ; never compare sat numbers
+  with the catfish doc's local numbers (including its e6b063ef final 93.14M).
+
+## ALL STEPS DONE (2026-09-11). Report: `.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md`. No process left running on sat.
+
+---
+# ROUND 2 — controller ruling `V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md` (received ~08:35 UTC)
+
+Work happens in the SHARED tree `/home/u24/papers/mcrl-leo-handover` on `wip/multi-catfish-v023-20260907`
+(PENALTYARM has finished). Stage only my own paths in every commit.
+
+| # | Step | State | Output to check |
+|---|------|-------|-----------------|
+| R1 | Commit PENALTYARM's uncommitted port as its own commit | DONE `f531ff99` (8/8 of its tests pass) | git log grep `PENALTYARM` |
+| R2 | Cherry-pick B0 commits onto shared branch | DONE, no conflicts: D-2 `ee0ffa60`, D-3 `698f20d8`, fixup `6939fc78`, pilot scripts `ff01f84d` (cherry-pick -x); combined tree 121 tests green incl. PENALTYARM 8 | git log grep `B0 D-2` |
+| R3 | D-1 behind a flag, W-08 restored | DONE `57fb40b4`; bitwise placebo: flag-OFF == pre-5219995a, flag-ON == 5219995a, ON != pre (teeth) | git log grep `D-1 flag` |
+| R4 | D-2 per-step worst-served floor + outage counter, new commit | PENDING | git log grep `per-step` |
+| R5 | Confirm checkpoint-selection path feeds no claim | PENDING | note in this file |
+| R6 | Pin TLE archive by content hash; placebo RANDOM bit-for-bit on both hosts | PENDING | hashes + placebo lines in this file |
+| R7 | Remove throwaway worktree /home/u24/papers/mcrl-b0-baseline | PENDING | `git worktree list` |
+| R8 | Pilots BASELINE_EQ16 + SHARED_BOOTSTRAP, 500 ep, pinned archive, on sat | PENDING | sat status.json complete |
+| R9 | Greedy eval + report update | PENDING | report section "Round 2" |

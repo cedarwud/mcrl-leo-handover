@@ -14,13 +14,13 @@ Caps: <=2 python procs, nice 16, BLAS/OMP threads 1, RSS < 5 GB, checkpoint ever
 | # | Step | State | Output |
 |---|------|-------|--------|
 | 0 | Read PENALTYARM report / progress / declaration | DONE | (read) |
-| 1 | Part 1: sibling records search (read-only subagent) | PENDING | |
+| 1 | Part 1: sibling records search (read-only subagent) | DONE; key claims spot-checked by me | measured effect belongs to the CAPACITY penalty L_cap (`shared_q_isolation/capacity_penalty.py`), k_cap=3, M4/ABL9K/EP2K, 6 seeds; decorr/srank never measured |
 | 2 | Read action_contract.py ruling; locate beam representation in env | DONE | ruling reasons in DECLARATION §1; insertion point `step.py:822` |
 | 3 | Write declaration before any run | DONE | `DECLARATION-2026-09-11.md` |
 | 4 | Implement cap flag (env/mask layer, off by default) + bit-identity test | DONE, 7/7 pass on server | `beam_cap.py`, `test_beam_cap.py` (outside `src/`: ruling §7.1-7.2 + gate test) |
 | 5 | Stage server ws from PENALTYARM snapshot + cap patch | DONE | snapshot `c46091d` (src .py sha256 identical to penalty-arm-ws, 157 files); cap + driver commit `6f4c162`; 2-ep smoke OK then deleted |
-| 6 | Launch CAP3_OFF, CAP3_PENALTY (500 ep, detached) | RUNNING | PIDs 3386760 (CAP3_OFF), 3386761 (CAP3_PENALTY); logs `runs/<ARM>.log` |
-| 7 | Greedy eval of all four cells + rank readouts | PENDING | |
+| 6 | Launch CAP3_OFF, CAP3_PENALTY (500 ep, detached) | DONE (753 s / 764 s) | `runs/CAP3_{OFF,PENALTY}/`; training readouts `runs/training-readouts.json` |
+| 7 | Greedy eval of all four cells + rank readouts | RUNNING | main: PID 3389902 -> `runs/eval-main.{json,log}`; traj chain (ep100-400, CAP3 arms) waits for probe -> `runs/eval-traj-ep*.{json,log}` |
 | 8 | Report | PENDING | |
 
 ## Server runs
