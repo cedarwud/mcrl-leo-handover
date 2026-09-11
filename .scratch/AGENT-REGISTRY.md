@@ -128,6 +128,7 @@ at C=50 is **52.042303**; and **41.28 is a mean active-beam count, not an EE**.
 
 | name | how it runs | resume |
 |---|---|---|
+| **CF3-AGY** | agy Gemini 3.8 Flash (High), local pid 403247, cwd `.scratch/reviews/cf3-agy` | **not resumable** — if `CF3-AGY-REVIEW.md` is absent, re-run `agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 60m </dev/null` in that dir |
 | XBLIND-ASTRA | codex `gpt-6-astra` ultra, server, `run_resumable2.sh`; ws `/home/sat/mcrl-v025-xblind-astra-ws` | **auto** — the runner resumes its codex session on failure; check `chain.log` |
 | XADV-ASTRA | same; ws `/home/sat/mcrl-v025-xadv-astra-ws` | auto |
 | agy blind | `agy -p ... --model "Gemini 3.8 Flash (High)" --print-timeout 60m`, local, cwd `.scratch/reviews/agy-blind` | **not resumable** — if `BLIND-REVIEW.md` is absent, re-run the same command |
