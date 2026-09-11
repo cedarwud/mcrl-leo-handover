@@ -159,3 +159,27 @@ hold up to 3 more; limit 8 for this lane's own processes was respected (7).
     authorised hashes before launch.
   - B4 (alpha) remains deferred by the controller; learning rate, clipping and target cadence remain unproposed (no DEV
     evidence of instability: all losses finite, Q_E TD loss ~1.5-2.6e-2 at the end of every run, RSS <= 2.26 GB).
+
+## Convergence funnel (controller directive 2026-09-11 22:15 UTC)
+- **tau sweep landed and is closed.** v0.2a tau = 1 `cd424977244eedea` DEVVAL@100 112,317,765; v0.2b tau = 0.3
+  `b2c124ae12ce477f` 112,325,427; both +4.55 % / +4.56 % over tau = 3 (24/24 paired) and both -0.11 % against D3-T0 at the same
+  depth (9/24 and 10/24). **ADOPTED: tau = 1 (v0.2a) is the D2 soft-comparator configuration from here on**; tau = 3 is never
+  presented as D2's representative result again. Reason on record: tau = 3 was T0REPR's VAL choice for a clone with 28 free
+  logits, and at tau = 3 only ~0.11 nats of the target is learnable for a scalar score pinned by the TD objective.
+  No alpha sweep, no learning-rate / clipping / target-cadence sweep (directive item 1).
+- **Item 2 done: D3-T0 at DEV k = 1** (`2f92f0c496866ff4`, PID 3596787, root `runs-e0b-d3-k1`, tree-v0.2, fresh start,
+  `--stop-after 100`) finished in 194 s: DEVVAL@100 **112,551,340** bit/J, +13.34 % over the paired D0 (24/24) and +4.63 % over
+  the paired D2-T0 tau = 3 (24/24), served 0.99850, agreement with T0 0.7077, regret 0.160.
+- **Item 5 done: the frozen baseline MODQN eq-(16) on DEVVAL** (`results/DEVVAL-BASELINE-MODQN.json`, checkpoint sha256
+  `e6b063ef...c28b`, episode 8999, greedy, no training): **94,413,179** bit/J, served 0.99846, beams 66.72, H_inter 0.2212,
+  p10 8.146e7, agreement with T0 0.2787. Development champion vs the paper baseline: D3-T0 +19.8 % (k0/300) and +19.2 %
+  (k1/100); D2-T0 tau = 1 +19.0 %; D0 +11.7 % / +5.2 %. Script `scripts/dev_e0_baseline.py`, commit `fc4f5bc7`.
+- **Item 3 implemented: D3-null** (commit `05aadf1bb24a9e3a730975227fbf27ab7760deb9`, minimal additive diff on top of
+  `fc4f5bc7`): the same D3 loss / margin / lambda_E / schedule / masks / gradient path with the teacher action replaced by a
+  seeded uniform LEGAL action from the declared DEV-NULL namespace `(9_241_000, k)`; the null stores zeros where the T0 arms
+  store T0's scores, so no T0 quantity enters any loss input. Arm 7 = D3-null / equal_share. Tests: whole file **22 passed**;
+  named mutants for the new properties all RED (`mutants-d3null.log`: d3null_target_is_t0_action,
+  d3null_target_may_be_illegal, d3null_uses_train_rng, d3null_scores_carry_t0, d3null_key_dropped_from_hash,
+  plus teacher_applied_at_zero_weight on the extended zero-weight test, which now covers D3-null at lambda_E = 0).
+  Fresh-context review of the minimal diff (`fc4f5bc7..05aadf1b`) running -> `AGY-D3NULL-REVIEW.md`; the D3-null runs launch
+  only after it comes back.

@@ -52,6 +52,44 @@ ratio learner + T0 + D3 large-margin injection**, with D2-T0 (τ = 1) as the sof
 of opening new hyperparameter families. The objective is a funnel, not expansion: one primary mechanism, verified across
 development seeds and against a matched null, then frozen and taken toward S1 under the unchanged Amendment 4 and 5 regime.
 
+## 3b. Correction and verified additions (owner, 22:35 UTC; every number re-derived by the controller from the JSONs)
+
+**Correction to §1's comparator choice.** τ = 1 is **not** frozen as the representative D2 comparator. The two variants are
+practically tied (τ = 1: 112,317,765 bit/J, served 0.99767, p10 118.1 Mbit/s, agreement 0.696; τ = 0.3: 112,325,427, served
+0.99804, p10 119.1 Mbit/s, agreement 0.713) and neither beats D3, so D2 tuning stays **CLOSED**. When a strongest soft
+comparator is needed, use **D2-T0 with τ = 0.3**, under an outcome-independent tie-break stated here: *the strongest observed
+DEVVAL comparator that is not worse on the listed QoS quantities*. **No claim is made that τ = 0.3 is statistically superior to
+τ = 1**, and no new D2 run is authorised.
+
+**Two Amendment 8 items already landed (verified):**
+- **D3-T0 at DEV k = 1, 100 episodes**: 112,551,340 bit/J, served 0.99850, p10 114.5 Mbit/s, agreement 0.70775; versus the paired
+  D0 at k = 1 **+13.34 % pooled, paired +13.57 ± 0.90 %, 24/24**; versus D2-T0 (τ = 3) at k = 1 **+4.63 %, +4.62 ± 0.37 %,
+  24/24**. The development replication of the D3 effect is therefore clear on both seeds.
+- **Frozen baseline MODQN eq. (16) rolled once on DEVVAL** (`results/DEVVAL-BASELINE-MODQN.json`, checkpoint `e6b063ef…`):
+  94,413,179 bit/J, served 0.99846, p10 81.5 Mbit/s. D3-T0 k = 1 at 100 episodes is **+19.21 % over it, paired +19.26 ± 0.97 %,
+  24/24**. **DEVELOPMENT REFERENCE ONLY** — it is not formal evidence and does not replace S1.
+
+**The only causal blocker before provisional promotion is now D3-null**, kept minimal: same D3 loss, margin, `λ_E`, schedule,
+masks and gradient path; target = a seeded uniform random **legal** action from `(9_241_000, k)`; T0 may be computed for
+diagnostics only and neither its action nor its scores may enter any D3-null loss input; the config hash covers mechanism,
+teacher identity and null key; the clean tests green and **every newly named D3-null mutant red, individually**; a short
+fresh-context review of the D3-null delta only, not a reopening of the reviewed E0 harness; **committed before staging or
+launching** — never train from an uncommitted tree; then only two runs, D3-null k = 0 @100 and k = 1 @100.
+
+**Promotion and freeze, decided in advance.** When both D3-null readouts land, compare at the same 100-episode depth: D3-T0 vs
+paired D0, D3-T0 vs D3-null, served, p10 and the minimum served-user rate, with agreement and regret as diagnostics. If D3-T0
+beats D3-null in the same direction on **both** k = 0 and k = 1 without QoS collapse, it is labelled **PROVISIONAL PRIMARY
+INJECTION MECHANISM**; then the k = 2 trio (D0, D3-T0, D3-null) runs to 100, and if it preserves the direction and QoS the
+provisional algorithm **freezes immediately** as **B1 execution contract + the current ratio learner + T0 + D3 large-margin
+injection**, with **D2-T0 (τ = 0.3)** as the strongest soft comparator, and the line moves to **E1**. No further hyperparameter
+search, no oracle rescue and no run to 300 is required before that freeze. The design reopens only if k = 2 reverses the
+mechanism ordering or exposes a QoS failure.
+
+**Aggregation identity (engineering fix, before E1).** A development result's identity must include at least
+`run_root + config_hash + seed_index + checkpoint_episode`. Keying by `arm_name + seed_index + episode` silently overwrote
+distinct versions — the τ sweep demonstrated it, and the controller's first re-derivation hit exactly that collision
+(`.scratch/dev-training/controller_verify_devval.py` is root-aware).
+
 ## 4. Reading note for the paper, recorded now
 
 On DEVVAL the champion at 300 episodes (113.13 M) is above `MAX_NOMINAL_GAIN` (110.03 M) and above `A m=2dB` (111.58 M), and at
