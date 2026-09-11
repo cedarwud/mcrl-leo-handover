@@ -33,8 +33,14 @@ lane was dispatched. Verified by the controller at 20:07 UTC against the filesys
   lighting-price credit; the exact-DR credit's energy term equals the analytic lighting price, the outage charge is validated,
   cost ≈ 6.2 h per 1000-episode run with an unwired `O(U²)` path), **B2REPR** (`T-SEQ-REPRESENTABILITY-2026-09-12.md`:
   `R_repr` 0.150 / 0.129 evaluation and 0.092 / 0.051 calibration, condition 3 FAILS, B2 not entered; 99 files sha256-verified).
-  Do not restart their compute. **Live: DEVHARNESS only** (E0b wave 1: PIDs 3577210/3577211/3577212 resumed to 300,
-  3577336 D3-T0, 3577470/3577471/3577472 k = 1; readout scheduled 21:52 UTC, then wave 2's τ sweep).
+  Do not restart their compute. **DEVHARNESS `a2741063f273e5f85`: the development funnel is complete and the provisional
+  algorithm is frozen** (`.scratch/dev-training/E0-FREEZE-PROVISIONAL-ALGORITHM-2026-09-12.md`, code `05aadf1b`, aggregator
+  `27f69edf`): B1 contract + ratio learner + T0 + D3 large-margin injection, D2-T0 τ = 0.3 as the soft comparator, D3-null as the
+  matched null; D3-T0 beats the paired D0 by +9.11 / +13.34 / +9.23 % (24/24) on seeds k = 0/1/2 with no QoS collapse. **No
+  process is running anywhere.** Two decisions are the owner's: (i) declare E1's seeds and configuration; (ii) whether to open the
+  no-training candidate screen for a second teacher (rollout + representability clone + value-weighted distinctness for three or
+  four candidates, ~1 h, no training, off the critical path). Resume DEVHARNESS with: *"Read `.scratch/dev-training/PROGRESS.md`
+  and the freeze document; continue from the first incomplete step; no new experiment family without a controller instruction."*
 
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 

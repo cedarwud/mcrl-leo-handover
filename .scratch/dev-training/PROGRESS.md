@@ -183,3 +183,31 @@ hold up to 3 more; limit 8 for this lane's own processes was respected (7).
   plus teacher_applied_at_zero_weight on the extended zero-weight test, which now covers D3-null at lambda_E = 0).
   Fresh-context review of the minimal diff (`fc4f5bc7..05aadf1b`) running -> `AGY-D3NULL-REVIEW.md`; the D3-null runs launch
   only after it comes back.
+- 2026-09-11T22:24 UTC D3-null review (delta only, `fc4f5bc7..05aadf1b`): **0 INVALIDATES, 0 BIASES, PROCEED**
+  (`AGY-D3NULL-REVIEW.md`). Clean file 22/22; every named D3-null mutant red individually (`mutants-d3null.log`).
+- 2026-09-11T22:26:20 UTC launched **D3-null k = 0** (`43848246efa4`, PID 3603588) and **k = 1** (`42fea0984d11`, PID 3603589),
+  root `runs-e0b-d3null`, tree-v0.4 (commit `05aadf1b`, digest `7440236979d6`), fresh starts, `--stop-after 100`. Both finished
+  in ~197 s: EE 57,469,863 (k0, -44.24 % vs paired D0, 0/24) and 60,547,627 (k1, -39.03 %, 0/24), served 0.923 / 0.926,
+  agreement 0.124 / 0.049, regret 2.91 / 2.81.
+- **PROMOTION APPLIED (rule fixed before the numbers): D3-T0 = PROVISIONAL PRIMARY INJECTION MECHANISM** -- it beats the paired
+  D0 (+9.11 % k0, +13.34 % k1, 24/24 both) and the matched D3-null (x1.96, x1.86, 24/24 both) in the same direction on both
+  seeds with no QoS collapse (served 0.9985+, p10 40-50 % above D0, minimum served-user rate above D0's).
+- 2026-09-11T22:39:29 UTC launched the **k = 2 trio** to 100 episodes, root `runs-e0b-k2`, tree-v0.4, fresh starts,
+  `--stop-after 100`: D0 `076cd491ad83` PID 3607936, D3-T0 `a46c770653b4` PID 3607937, D3-null `d2bd70c8bdcf` PID 3607938.
+- **Item A applied**: the strongest soft comparator is **D2-T0 tau = 0.3** (`b2c124ae12ce477f`) under the outcome-independent
+  rule; tau = 1 and tau = 0.3 are tied (+0.007 %) and no superiority claim is made; the earlier "adopt tau = 1" line in the
+  report is explicitly superseded. D2 tuning stays closed.
+- **Item D applied**: `scripts/dev_e0_aggregate.py` (commit `27f69edf84eefeb8874339bc6c8c533469fa7f4b`) keys every result by
+  `(run_root, config_hash, seed_index, checkpoint_episode)`, refuses to merge two differing records with the same identity and
+  prints the identity in each row; shipped to sat as `tools/dev_e0_aggregate.py` (sha256 identical both ends) and re-emitted
+  all 20 existing results into `results/DEV-AGGREGATE.{json,md}`.
+- 2026-09-11T22:43:52 UTC **k = 2 trio landed and preserves direction and QoS**: D0 103,531,085; **D3-T0 113,082,503
+  (+9.23 % vs paired D0, 24/24, served 0.99813, p10 1.246e8, min 6.79e6, agreement 0.697, regret 0.153, +19.77 % over the
+  frozen baseline)**; D3-null 46,917,434 (-54.68 %, 0/24, served 0.929). Config hashes `076cd491ad83` / `a46c770653b4` /
+  `d2bd70c8bdcf`, root `runs-e0b-k2`.
+- **FREEZE APPLIED** (rule fixed before the numbers): `.scratch/dev-training/E0-FREEZE-PROVISIONAL-ALGORITHM-2026-09-12.md` --
+  B1 execution contract + the current ratio learner + T0 + D3 large-margin injection (m = 0.15, lambda_E = 1.0), with
+  D2-T0 tau = 0.3 as the strongest soft comparator and D3-null as the matched null; code commit `05aadf1b`. Development
+  freeze only; not formal evidence. The aggregator now holds 23 results under the collision-safe identity
+  (`results/DEV-AGGREGATE.{json,md}`).
+- No development process is running on sat after this point; no E1 run is launched (E1's design is the controller's to declare).

@@ -349,6 +349,40 @@ calibration cells plus a multi-seed closed-loop refit. Three things argue it wou
 from 12 training episodes, the torch-seed spread (0.109 / 0.063) exceeds the data increment, and the full-context diagnostic caps
 fidelity regardless.
 
+## Development freeze reached 23:0x UTC — provisional algorithm frozen (`.scratch/dev-training/E0-FREEZE-PROVISIONAL-ALGORITHM-2026-09-12.md`)
+
+Every number below re-derived by the controller from the DEVVAL JSONs, keyed by `(run_root, mechanism, seed, depth, config hash)`.
+All at the 100-episode depth, 24 DEVVAL episodes, paired per episode:
+
+| seed | D0 | D3-T0 | D3-T0 vs D0 | D3-null | D3-null vs D0 | D3-T0 served / p10 / min rate |
+|---|---:|---:|---|---:|---|---|
+| k = 0 | 103.06 M | **112.44 M** | +9.11 %, 24/24 | 57.47 M | −44.24 %, 0/24 | 0.99862 / 1.19e8 / 6.6e6 |
+| k = 1 | 99.30 M | **112.55 M** | +13.34 %, 24/24 | 60.55 M | −39.03 %, 0/24 | 0.99850 / 1.15e8 / 4.8e6 |
+| k = 2 | 103.53 M | **113.08 M** | +9.23 %, 24/24 | 46.92 M | −54.68 %, 0/24 | 0.99813 / 1.25e8 / 6.8e6 |
+
+D3-null's preflight was clean (22/22 tests green, every named D3-null mutant red individually, fresh-context review of the delta
+only: 0 INVALIDATES / 0 BIASES) and it was committed (`05aadf1b`) before staging, as required. The promotion rule fixed in
+advance fired: D3-T0 beats the paired D0 and the matched null in the same direction on both k = 0 and k = 1 with no QoS collapse,
+so it was labelled **provisional primary injection mechanism**, the k = 2 trio ran, direction and QoS held, and the provisional
+algorithm is **frozen**: **B1 execution contract + the current ratio learner + T0 + D3 large-margin injection (m = 0.15,
+λ_E = 1.0)**, with **D2-T0 (τ = 0.3)** as the strongest soft comparator and D3-null as the matched null, code `05aadf1b`.
+Against the frozen MODQN eq-(16) baseline on DEVVAL (94.41 M) D3-T0 is +19.8 / +19.2 / +19.8 % at k = 0/300, k = 1/100 and
+k = 2/100 — **development reference only, not formal evidence**. Item A applied (comparator τ = 0.3, no superiority claimed,
+D2 tuning closed) and item D applied (`dev_e0_aggregate.py`, commit `27f69edf`, keys every result by
+`run_root + config_hash + seed_index + checkpoint_episode`, refuses to merge differing records, 23 results re-emitted).
+
+**Two controller caveats to carry into S1, recorded now:**
+1. **The D3 null is a hard null, and beating it is a low bar.** An unconditional large margin toward a uniform random legal
+   action is actively destructive: served collapses to 0.923–0.929 and the minimum served-user rate falls to 0.58, 0.042 and
+   8.8 bit/s. It rules out "the margin term alone helps", which is its job under evaluation-contract rule 2, but the informative
+   contrasts are **D3-T0 vs D0 (+9 to +13 %)** and D3-T0 vs D2-T0 (+3 to +4.6 %). A referee may ask for a **plausible-but-
+   uninformative** teacher as a second null (for instance a same-family rule at a different operating point, or hold-the-incumbent)
+   — cheap to add at S1 and worth pre-empting.
+2. **Hard and soft injection behave asymmetrically with a bad teacher.** The soft null (permuted scores) cost about 2 %, the hard
+   null cost 39–55 %. So D3 amplifies whatever the teacher is: excellent when the teacher is good, destructive when it is not.
+   That is a design fact for any later privileged or imperfect teacher, and an argument for the gated margin the literature
+   review recommended if such a teacher is ever injected.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).

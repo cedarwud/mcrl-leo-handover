@@ -1,1 +1,86 @@
-I am waiting for the `test_teacher_weight_zero_reproduces_d0_bit_identically` background task to finish.
+**0 INVALIDATES, 0 BIASES: The D3-null development runs may proceed.**
+
+---
+
+### Review Summary & Metadata
+- **Repository Worktree**: `/home/u24/papers/mcrl-leo-handover-dev`
+- **Diff Reviewed**: `git -C /home/u24/papers/mcrl-leo-handover-dev diff fc4f5bc7445271c6a52073963f2a6181b2db0a03..05aadf1bb24a9e3a730975227fbf27ab7760deb9`
+- **Commit Reviewed**: [`05aadf1b`](file:///home/u24/papers/mcrl-leo-handover-dev): `DEVHARNESS: D3-null, the matched null for the large-margin injection`
+- **Governing Specification**: [`.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md`](file:///home/u24/papers/mcrl-leo-handover-dev/docs/dev-e0/V025-CONTROLLER-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md) (§2 kernel, §3 seed namespaces, §6 frozen E0 batch).
+- **Target Review Report File**: Written to [`/home/u24/papers/mcrl-leo-handover/.scratch/dev-training/AGY-D3NULL-REVIEW.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/dev-training/AGY-D3NULL-REVIEW.md).
+
+---
+
+### Findings Matrix
+
+| Severity | Count | Notes |
+|:---|:---:|:---|
+| **INVALIDATES** | **0** | No contract violations, leakage, illegal draws, generator coupling, or seed reachability found. |
+| **BIASES** | **0** | No non-uniform action distribution, T0 correlation, gradient distortion, or schedule mismatch detected. |
+| **COSMETIC** | **1** | 1 minor docstring usage example text update omitted in launcher. |
+
+#### Detailed Finding Log
+- **F-01 (COSMETIC)**: [`scripts/dev_e0_launch.py:22`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_launch.py#L22)
+  - **Subject**: Docstring usage comment specifies `SPEC = ARM:K (1:0 .. 6:0)` while arm 7 is now declared in `ARMS`.
+  - **Concrete Failure Scenario**: An operator relying only on the top docstring text might think arm 7 cannot be launched via `7:0`.
+  - **Status**: At runtime, [`dev_e0_launch.py:100`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_launch.py#L100) validates against `D.ARMS` (which includes `7: ("D3-null", "equal_share")`) and accepts `7:0` cleanly.
+  - **Verification**: Verified by reading and dry-run CLI test execution.
+
+---
+
+### Verification Against Required Properties
+
+1. **Identical D3 Loss, Margin, Weight $\lambda_E$, Schedule, Legal Mask & Gradient Path**:
+   - Both `D3-T0` and `D3-null` invoke [`cft.d3_margin_loss`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L191-L208).
+   - In [`cf_dev.py:228, 531`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L228), both arms multiply the loss by `lambda_e` ($1.0$), with fixed margin $m=0.15$.
+   - Logits for illegal actions are masked to `MASK_FILL = -1e9` before `max()`. The backward pass jointly differentiates $Q_B, Q_E, Q_H$ in a single graph.
+   - *Verified by reading and clean unit tests.*
+
+2. **Seeded Uniform Random Legal Action from DEV-NULL `(9_241_000, k)`**:
+   - Base namespace `DEV_NULL_D3_BASE = 9_241_000` is enforced in [`scripts/dev_e0_common.py:38`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_common.py#L38) and [`cf_dev.py:193-205`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L193-L205).
+   - In [`cft.random_legal_actions`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L125-L139), `valid = np.flatnonzero(mask[u])` followed by `rng.choice(valid)` without weights draws uniformly at random over the legal subset with exact probability $1 / |\text{valid}|$.
+   - Independent of T0: `random_legal_actions` does not receive T0 scores or actions.
+   - *Verified by reading and unit test [`test_d3_null_target_is_legal_independent_of_t0_and_seeded`](file:///home/u24/papers/mcrl-leo-handover-dev/tests/test_cf_dev.py#L926).*
+
+3. **T0 Action Leakage Strictly Prevented**:
+   - In [`cf_dev.py:496-504`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L496-L504), `used = np.zeros_like(scores)` zeroes out teacher scores, and `used_acts = cft.random_legal_actions(...)`.
+   - In [`cf_dev.py:531-534`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L531-L534), `_teacher_loss` reads `batch["teacher_action"]` (`used_acts`), never `batch["t0_action"]` or `batch["teacher_scores"]`.
+   - In [`cf_ratio.py:654`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_ratio.py#L654), TD targets evaluate greedy student actions over `next_masks`, ignoring teacher labels completely.
+   - *Verified by reading and mutant tests `d3null_target_is_t0_action` and `d3null_scores_carry_t0`.*
+
+4. **Stream Isolation and Deterministic Stop/Resume**:
+   - `self._null_rng` consumes only `(9_241_000, k)`. Trainer RNGs (`_train_rng`, `_env_rng`, `_mobility_rng`) remain untouched.
+   - `training_state_dict` and `load_training_state_dict` serialize and restore `self._null_rng.bit_generator.state` and `TeacherReplayBuffer` labels.
+   - Live script test stopped D3-null at episode 1, resumed to episode 3, and achieved bit-for-bit identity against an uninterrupted run across all weights, TD losses, and teacher losses (`D3-null stop/resume bit-identical PASS!`).
+   - *Verified by reading, mutant test `d3null_uses_train_rng`, and live stop/resume execution.*
+
+5. **Reduction to D0 at Teacher Weight Zero**:
+   - With $\lambda_E = 0.0$, `_teacher_loss` evaluates to $0.0 \times \mathcal{L}_{D3} = 0.0$.
+   - Tested in [`test_teacher_weight_zero_reproduces_d0_bit_identically`](file:///home/u24/papers/mcrl-leo-handover-dev/tests/test_cf_dev.py#L610) with `assert torch.equal(x, y)` across all weights.
+   - *Verified by reading and mutant test `teacher_applied_at_zero_weight`.*
+
+6. **Configuration Hash Covers Null Identity**:
+   - In [`scripts/dev_e0_common.py:150-168`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_common.py#L150-L168), `arm_config_payload` serializes `arm: 7`, `mechanism: "D3-null"`, `teacher: "random"`, and `null_key: (9_241_000, k)`.
+   - SHA-256 hash distinguishes D3-null ($k=0$) from D3-null ($k=1$) and D3-T0 ($k=0$).
+   - *Verified by reading and mutant tests `d3null_key_dropped_from_hash` and `manifest_ignores_dev_settings`.*
+
+7. **Formal Seeds Unreachable**:
+   - `assert_dev_seed` and `assert_dev_null_key` fail closed on all formal evaluation (`9_111_000`), calibration (`9_121_000`), and CONFIRM (`9_301_000`, `9_311_000`) ranges.
+   - `measure_on_calibration` and `quarter_update` raise `MCRLContractError` on development trainers.
+   - *Verified by reading and clean test suite execution.*
+
+---
+
+### Named Mutants Verification Summary
+
+| Mutant Name | Target Test | Expected Failure | Result | Status |
+|:---|:---|:---|:---|:---:|
+| `d3null_target_is_t0_action` | `test_d3_null_target_is_legal_independent_of_t0_and_seeded` | Agreement with T0 reaches 1.0 (fails `< 0.25`) | `AssertionError: the null agrees with T0 at 1.0` | **RED** |
+| `d3null_target_may_be_illegal` | `test_d3_null_target_is_legal_independent_of_t0_and_seeded` | Unmasked draw selects illegal action in tight mask | `AssertionError: an illegal null draw` | **RED** |
+| `d3null_uses_train_rng` | `test_d3_null_target_is_legal_independent_of_t0_and_seeded` | `_train_rng` state modified | `AssertionError: bit_generator.state == before_train` | **RED** |
+| `d3null_scores_carry_t0` | `test_d3_null_target_is_legal_independent_of_t0_and_seeded` | `used_scores` non-zero | `AssertionError: the null carries a T0 quantity` | **RED** |
+| `d3null_key_dropped_from_hash` | `test_d3_null_version_hash_covers_the_null_identity` | `dev_settings` lacks `null_key` | `KeyError: 'null_key'` | **RED** |
+| `manifest_ignores_dev_settings` | `test_d3_null_version_hash_covers_the_null_identity` | Config payload drops `dev_settings` | `KeyError: 'dev_settings'` | **RED** |
+| `teacher_applied_at_zero_weight`| `test_teacher_weight_zero_reproduces_d0_bit_identically` | Teacher loss applied at weight 0.0 | `AssertionError: ... at zero weight moved the weights` | **RED** |
+
+In unmutated baseline execution, all 22 tests in [`tests/test_cf_dev.py`](file:///home/u24/papers/mcrl-leo-handover-dev/tests/test_cf_dev.py) pass cleanly. Working tree remains clean with zero edits.
