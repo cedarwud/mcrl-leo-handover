@@ -94,6 +94,20 @@ now" = needed to understand or run the current MODQN-harness pilot.
 
 ---
 
+## 1b. 2026-09-11 afternoon
+
+Reports and decisions from the afternoon of 2026-09-11 that fall outside §1's `V025-CONTROLLER-…`
+naming and directory (paths below are relative to `.scratch/`; same legend as §1).
+
+| document | status | what supersedes what | needed now |
+|---|---|---|---|
+| `cf3-pilot/CF3-PILOT-2026-09-11.md` | **IN FORCE** (PILOT — direction only, 3 seeds) | Supersedes: none (the pilot's first and only result report; its numbers are registered as the `P3-` rows, `RESULTS-REGISTRY.md` §4x) | yes |
+| `validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md` | **IN FORCE** as an independent review | Verdict: "DEAD-PATH as framed"; phase 2 pending | yes |
+| `reviews/validity-agy/VALIDITY-AUDIT-AGY-BLIND-2026-09-11.md` | **HYPOTHESES ONLY** | See `CONTROLLER-CHECK-2026-09-11.md` (same dir) for its verified errors against the artefacts it claims to have checked | background |
+| `WORK-QUEUE-DECISIONS-2026-09-11.md` | **IN FORCE** | Supersedes HANDOFF §6b table | yes |
+
+---
+
 ## 2. Status of every controller document dated 2026-09-10
 
 Anchors used below: **K** = `RULING-C1VSGAIN-KILL-ALL-2026-09-11` (closes the V0.25 stage-C
