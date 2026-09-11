@@ -1,7 +1,9 @@
 # Agent registry — resume after any interruption
 
 > **New session? Read `.scratch/HANDOFF-2026-09-11.md` first.** At handoff (~11:20 UTC) the only live agent is
-> CF3PILOT (`a6a39605fae28be63`), which a new session cannot message; see HANDOFF §1 for how to take over.
+> CEILING (`a6bc6cea99e44c3fc`). **CF3PILOT has COMPLETED** (commit `01739a74`); the pilot report is produced by the
+> detached post-job on `sat` (PID 3438182) into `ws/report/`; the final `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` must be
+> written by a fresh agent per `.scratch/cf3-pilot/TAKEOVER.md` §4 — **after** the blind part of the validity audit (HANDOFF §2b).
 
 Last updated: 2026-09-11 ~09:35Z UTC (after the THIRD usage-limit reset; all four agents resumed). **Read this first after a session restart, a usage limit, or a crash.**
 
@@ -20,7 +22,7 @@ still unfinished. **CF3PILOT first** — it is the critical path; its dependency
 > `READY FOR PILOT: <sha> ; TLE archive <path> sha256 <hash>`. **Items 1-4 DONE (09:06Z). Item 5 (reruns)
 > SKIPPED by controller** — just finalise the report (incl. which figures used the unpinned archive) and stop.
 
-**2. CF3PILOT `a6a39605fae28be63`** — `.scratch/cf3-pilot/PROGRESS.md`, server `/home/sat/mcrl-v025-cf3-pilot-ws`
+**2. CF3PILOT `a6a39605fae28be63` — COMPLETED, do not resume.** — `.scratch/cf3-pilot/PROGRESS.md`, server `/home/sat/mcrl-v025-cf3-pilot-ws`
 > Resume CF3PILOT after a usage limit. **Amendment 1 (`V025-CONTROLLER-AMENDMENT-1-THREE-CATFISH-PILOT-2026-09-11.md`)
 > supersedes conflicting parts of the declaration: gamma=1, common vector replay 8/9 + 1/27 x3, eta fixed to ep 500,
 > pinned-archive source rollout before launch, C2 activation logging, isolated worktree `cf3/pilot-20260911`.**
@@ -82,7 +84,6 @@ is not comparable to pinned-archive numbers.
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
 | **CEILING** | `a6bc6cea99e44c3fc` (sonnet) | local `.scratch/ee-ceiling` | `EE-CEILING-2026-09-11.md` | centralised Dinkelbach search vs rules on pinned archive; blind to pilot; resume: "Resume CEILING; read your PROGRESS.md; do not read the pilot report." |
-| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep; **+ seeds 3-4 for A1/A2/A3**) on pinned archive; Amendment 2 (lambda=0); **HOLD full launch until launch-hardening list done** (gate off-by-one, DECISION.json race, code fingerprint + RUN-MANIFEST, process-level resume test, 5 GB cap at full buffers, launch.sh hardening; then launch **12** fresh runs (seeds 0-2; seeds 3-4 deferred: 18-way contention = ~3x slowdown) and deploy HEAD `cf3_report.py`) |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
 terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
