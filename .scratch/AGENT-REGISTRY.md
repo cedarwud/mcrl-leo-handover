@@ -22,6 +22,7 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 |---|---|---|---|---|
 | **FEASFRONT** | `a295ca3c20644fd7b` | local `.scratch/feasible-frontier` | `FEASIBLE-FRONTIER-2026-09-11.md` | hysteresis / consolidation / satellite-lock frontier; **then** the JSRL guide-horizon coverage sweep `h = 0..10` |
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | fix per-head bootstrap, outage free ride, uncalibrated logged scalar; 500-ep pilot |
+| **HARVEST** | `ad98bdcb7c81b29a0` | local `.scratch/concept-harvest` | `CONCEPT-HARVEST-2026-09-11.md` | read-only: every old-project concept → RETRY / ADAPT / DROP by whether the *cause* of its old outcome is present here |
 | **PENALTYARM** | `a846df68eb09cb7ab` | local `.scratch/penalty-arm` + `/home/sat/mcrl-v025-penalty-ws` | `PENALTY-ARM-2026-09-11.md` | **resumed** — OFF / PENALTY / NULL_PENALTY, 500 ep each |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
