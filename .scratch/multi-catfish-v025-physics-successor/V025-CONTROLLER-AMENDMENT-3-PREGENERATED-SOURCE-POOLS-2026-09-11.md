@@ -1,5 +1,22 @@
 # Amendment 3 — catfish sources as pre-generated pools, not streaming environments
 
+> **Correction, same day, after an external review (`gpt5.md`) — the text below overstates equivalence.**
+> 1. This is a **design change**, from online source streaming (a moving 50,000-row FIFO holding the last ~50
+>    source episodes) to **static offline source replay** (a fixed 100-episode pool for the whole run). Same
+>    marginal distribution (pool EE per seed matches the streaming buffers: C1 ~111M, C2 ~101M, C3 ~104M, NULL
+>    ~52M), not bit-equivalent.
+> 2. "Source rows are available from the first update instead of filling over ~50 episodes" is **wrong**: the
+>    streaming buffers already held ~200 rows by the first update. The real difference is that the pool offers
+>    its **full 100-episode support** from update one, where streaming offered only the first one or two source
+>    episodes. Early learning curves must be read with that.
+> 3. 100,000 is a **chosen pool size** giving more support than the ~50,000 draws a run makes; it is not derived
+>    from the draw count (draws may repeat rows).
+> 4. Consequence for claims: **A2 vs A3** is unchanged in kind (directed vs random static sources, all else equal).
+>    **A2 vs A1** now asks whether *static directed-data prefill* helps, not whether *online streaming catfish*
+>    helps. A faithful online RIS-catfish comparator remains a separate, later arm.
+> Provenance addition requested post-launch: pool sidecar `.json` hashes and generator-file identity bound and
+> re-verified at report time (no restart; the pools are immutable).
+
 Date: 2026-09-11. **Pre-result** (the 10:25 launch was stopped at 10:40 and is not a result; the fresh
 launch has not happened). Owner asked why the available speed-up was not being used. It should be.
 
