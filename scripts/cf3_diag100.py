@@ -42,6 +42,14 @@ def main() -> int:
         seeds = fp["seeds"]
         tr = cfr.CFRatioTrainer(factory(), TrainerConfig(**cfgd), st, env_factory=factory,
                                 train_seed=seeds[0], env_seed=seeds[1], mobility_seed=seeds[2])
+        # Runs made before Amendment 2 carry settings without ``dual_ascent``;
+        # every key they do carry must match, then the new field is filled in
+        # (read-only diagnostic; nothing is resumed or trained).
+        import dataclasses
+        stored = payload["trainer_state"]["cf"]["settings"]
+        now = dataclasses.asdict(st)
+        assert all(now[k2] == v for k2, v in stored.items()), "settings differ"
+        payload["trainer_state"]["cf"]["settings"] = now
         tr.load_training_state_dict(payload["trainer_state"])
         rng = np.random.default_rng(0)
         buf = list(tr.replay._buf)
