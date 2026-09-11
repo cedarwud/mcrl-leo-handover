@@ -1,6 +1,54 @@
 # Agent registry — resume after any interruption
 
-Last updated: 2026-09-11 ~09:40Z (after the second usage-limit reset). **Read this first after a session restart, a usage limit, or a crash.**
+Last updated: 2026-09-11 ~10:45Z (before a possible third usage limit). **Read this first after a session restart, a usage limit, or a crash.**
+
+## FIRST THING AFTER A RESTART — the four live agents and their ready-to-send resume messages
+
+Check each workspace's `PROGRESS.md` first; then send the block below **verbatim** to each agentId
+still unfinished. Order matters: **B0CORRECT first** (CF3PILOT is blocked on it).
+
+**1. B0CORRECT `a1f2ae507b9ec7674`** — `.scratch/b0-corrected/PROGRESS.md`
+> Resume B0CORRECT after a usage limit. Read your `PROGRESS.md` and continue from the last completed
+> step; do not redo completed steps; check for your detached `sat` processes before relaunching.
+> Priority order (unchanged): (1) PENALTYARM's port as its own commit, then your D-2/D-3/fixup onto
+> `wip/multi-catfish-v023-20260907`, no history rewriting; (2) D-1 behind a flag, default eq. (16),
+> W-08 assertions restored; (3) D-2 per-step worst-served floor; (4) pin one TLE archive by sha256 on
+> both hosts, RANDOM_MASKED bit-identical on both; then write the top line
+> `READY FOR PILOT: <sha> ; TLE archive <path> sha256 <hash>`; (5) only then the optional 500-ep
+> reruns. Full rulings: `V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md`.
+
+**2. CF3PILOT `a6a39605fae28be63`** — `.scratch/cf3-pilot/PROGRESS.md`, server `/home/sat/mcrl-v025-cf3-pilot-ws`
+> Resume CF3PILOT after a usage limit. Read your `PROGRESS.md` and continue from the last completed
+> step; check by cwd and command line whether any detached training/eval process of yours is still
+> running on `sat` before relaunching anything — **never relaunch a run that is still alive**, and
+> never restart a finished seed. The design is frozen in
+> `V025-CONTROLLER-DECLARATION-THREE-CATFISH-PILOT-2026-09-11.md` (+ your
+> `.scratch/cf3-pilot/DECLARATION-ADDENDUM.md`). Do not launch until `READY FOR PILOT:` exists in
+> `.scratch/b0-corrected/PROGRESS.md`. List any sub-agents you spawned in `PROGRESS.md`.
+
+**3. CFSCREEN `af73f19801f7967c8`** — `.scratch/catfish-screens/PROGRESS.md`
+> Resume CFSCREEN after a usage limit. Read your `PROGRESS.md`, continue from the last completed
+> screen, do not redo completed screens. Results are diagnostics, not gates. Report to
+> `.scratch/catfish-screens/CATFISH-SCREENS-2026-09-11.md`. List any sub-agents you spawned.
+
+**4. CURATE `a989dbbca3b5748b8`** — `.scratch/curation/PROGRESS.md`
+> Resume CURATE after a usage limit. Read your `PROGRESS.md`, continue from the last completed
+> section. Create new files only — do not move, rename, delete or edit existing files. Deliverables:
+> `.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md`, `.scratch/curation/PROVENANCE-HEADER.md`.
+> List any sub-agents you spawned.
+
+**Unregistered `fork` sub-agents** `a4644bab74d559124`, `a35d4634cf4c5439e`, `a360dd6a762afdefe`
+appeared ~10:38Z; the controller did not dispatch them. They were most likely spawned by CURATE or
+CF3PILOT — each of the four agents was asked to list its children in its own `PROGRESS.md`. **Do not
+resume a fork directly; resume its parent**, which knows what it needs. If no parent claims one,
+leave it.
+
+**Standing corrections a *fresh* replacement agent must be given** (a resumed one already has them):
+- CF3PILOT / anything evaluating: TLE archive must be the pinned one; cross-host numbers are
+  incomparable; final checkpoint only; C-H `H_inter <= 0.6016`, C-S −0.5 pp.
+- Anything citing numbers: read `.scratch/RESULTS-REGISTRY.md` (once CURATE lands); the
+  −425,009.885 bit/J beam slope is **V0.25-only**; sibling numbers are **REFERENCE-ONLY**.
+- Success gate is **beating baseline MODQN (eq. 16)**; non-learned rules are diagnostic, never a bar.
 
 ## How to resume a Claude sub-agent
 
