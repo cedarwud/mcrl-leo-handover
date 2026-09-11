@@ -139,3 +139,23 @@ hold up to 3 more; limit 8 for this lane's own processes was respected (7).
   episodes + 2 DEVVALs) ~21:20-21:35 UTC, D3-T0 (300 episodes + 3 DEVVALs) ~21:30-21:45 UTC.
 - Wave 2 (authorised, launch as slots free): B3 tau sweep on D2-T0 at k = 0 -- v0.2a tau = 1 `cd424977244eedea`, v0.2b
   tau = 0.3 `b2c124ae12ce477f`, 100 episodes each, fresh start, new versions. B4 (alpha) deferred by the controller.
+
+## Wave 1 finished (2026-09-11 ~21:50 UTC) and wave 2 launched (21:56 UTC)
+- Wave 1 results are in `E0-BATCH-1-2026-09-12.md` (DEVVAL tables for k = 0 at 100/200/300, D3-T0 at 100/200/300, k = 1 at 100,
+  paired per-episode counts, end-of-run training summaries). Headline directions, no statistical claim:
+  ordering **D2-T0 > D0 > D2-null holds at 100, 200 and 300 on k = 0** and **at 100 on k = 1** (D2-T0 > D0 24/24 paired,
+  +8.33 %); **D3-T0 sits above both at every depth** (113.1e6 bit/J at 300 = 1.028 of MAX_NOMINAL_GAIN, 0.961 of T0,
+  agreement 0.716, regret 0.146, margin loss 0.099). Non-monotonicity worth naming: D2-T0's EE peaked at 200 and dipped
+  0.34 % at 300 while its agreement kept rising; D2-null dipped at 200 and recovered at 300, never reaching D0.
+- **Wave 2 (authorised)** launched from a SEPARATE tree so v0.1 stays resumable:
+  - MCRL-Dev-v0.2a tau = 1, hash `cd424977244eedea`, PID 3594388, root `runs-e0b-tau1`, fresh start, `--stop-after 100`, DEVVAL 100.
+  - MCRL-Dev-v0.2b tau = 0.3, hash `b2c124ae12ce477f`, PID 3594430, root `runs-e0b-tau0p3`, fresh start, `--stop-after 100`, DEVVAL 100.
+  - cwd for both `/home/sat/mcrl-v025-dev-e0-ws/tree-v0.2`, commit `52d253c48476de96d286df0069bad04c62c1720f`, code digest
+    `a8fbe1d330eb`; tar sha256 `9543e05bc959d3f555d880d51d1d2d95e65461974ea76fd54a6f2d06824bdd60` identical on both ends.
+  - CODE CHANGE (additive, default-preserving): `--tau` on the driver and the launcher, threaded into `e0_dev_settings` /
+    `arm_config_payload`. With no `--tau` the payload and hash are unchanged (arm 2 k0 -> `3dd5e6f1d14922da`, verified), and
+    both authorised prospective hashes reproduce exactly. Reason: the CE analysis above plus wave 1's D3 result. Tests run on
+    the change: config-hash, launcher dry-run, seed-namespace and composite-key tests green; the two dry-runs printed the
+    authorised hashes before launch.
+  - B4 (alpha) remains deferred by the controller; learning rate, clipping and target cadence remain unproposed (no DEV
+    evidence of instability: all losses finite, Q_E TD loss ~1.5-2.6e-2 at the end of every run, RSS <= 2.26 GB).
