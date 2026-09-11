@@ -323,7 +323,11 @@ def pooled_rollout(
         enc = encode(states, 0)
         epoch = getattr(env, "epoch", None)
         import hashlib
-        t0_hash = hashlib.sha256(np.ascontiguousarray(enc).tobytes()).hexdigest()
+        # Pairing check: hash the arm-independent 112-dim MODQN block only
+        # (A1-A3 append a remaining-steps column).
+        t0_hash = hashlib.sha256(
+            np.ascontiguousarray(np.asarray(enc)[:, : 4 * 28]).tobytes()
+        ).hexdigest()
         row = {"bits": 0.0, "joules": 0.0, "served": 0, "user_steps": 0,
                "h_inter": 0, "h_intra": 0, "beams": 0.0, "steps": 0,
                "epoch": None if epoch is None else str(epoch),
