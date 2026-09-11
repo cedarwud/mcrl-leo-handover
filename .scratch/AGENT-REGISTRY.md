@@ -22,7 +22,6 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 |---|---|---|---|---|
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | **resumed** — D-1 behind a flag (default eq.16, B1 stands), D-2 per-step floor, pin TLE archive across hosts, commit PENALTYARM port separately, merge b0 branch, rerun BASELINE_EQ16 + SHARED_BOOTSTRAP pilots |
 | **HARVEST** | `ad98bdcb7c81b29a0` | local `.scratch/concept-harvest` | `CONCEPT-HARVEST-2026-09-11.md` | read-only: every old-project concept → RETRY / ADAPT / DROP by whether the *cause* of its old outcome is present here |
-
 | **CAPPENALTY** | `aec999753c170e5f3` | local `.scratch/cap-penalty` + `/home/sat/mcrl-v025-cap-penalty-ws` | `CAP-PENALTY-2026-09-11.md` | (1) find where the sibling measured the penalty's effect; (2) per-sat beam cap k=3 as off-by-default flag → does it create rank collapse, does the penalty prevent it |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
