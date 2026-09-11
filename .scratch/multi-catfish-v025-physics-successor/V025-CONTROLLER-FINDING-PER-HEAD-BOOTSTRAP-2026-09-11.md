@@ -1,5 +1,11 @@
 # Finding — each head bootstraps with its own argmax, so the scalarised sum is not a Q-function
 
+> **Correction, same day (`V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md`).** This is **not
+> a reproduction defect**. It is published MODQN eq. (16), reproduced faithfully and frozen as
+> contract **B1** (`docs/PREREG-DRAFT.md:324`) so the baseline is unambiguously the paper's
+> algorithm. The theoretical point below stands — as a finding **about published MODQN** — but the
+> baseline arm keeps eq. (16); only the successor learner uses a shared continuation action.
+
 Date: 2026-09-11. Surfaced by LFDSCREEN; **verified in place by the controller.**
 
 ## The code
