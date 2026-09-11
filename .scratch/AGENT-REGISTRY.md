@@ -9,7 +9,44 @@ the agents, never the detached `sat` jobs. Resume = `SendMessage(to=<agentId>, m
 (`ssh sat 'for p in $(pgrep -u sat python); do echo $p $(readlink /proc/$p/cwd) $(tr "\0" " " </proc/$p/cmdline|cut -c1-120); done'`);
 never let an agent relaunch a live or finished item.
 
-### STATE 20:15 UTC 2026-09-11 (04:15 Taipei) — after the daily-cost interruption; owner direction `gpt8.md` = Amendment 7
+### STATE 23:25 UTC 2026-09-11 (07:25 Taipei) — E1 live on sat; two sub-agents live. **This block supersedes every state block below it.**
+
+**Live sub-agents (2).**
+
+| name | agentId | model | workspace / PROGRESS | deliverable | state |
+|---|---|---|---|---|---|
+| **CATFISH2-DISCOVERY** | `af6175e5685e4686f` | opus | `.scratch/catfish2-discovery/PROGRESS.md`; worktree `/home/u24/papers/mcrl-leo-handover-cf2` (`catfish2/discovery-20260912` from `05aadf1b`); sat ws `/home/sat/mcrl-v025-catfish2-ws/` | `.scratch/catfish2-discovery/STAGE0-2026-09-12.md` | Steps 0–5 done; step 6 (complementarity diagnostic, 3 shards) running; steps 7–8 pending. **Was blocked on `R_min`; unblocked 23:22 UTC by Amendment 11** (`98dd3f48`), which refuses an absolute rate threshold and re-specifies C-Q′-local / C-Q′-global / C-RC′ on the project's own p10 tail convention. **Stage 1 canaries need my explicit confirmation.** No training, ever, in this lane |
+| **CURATE-2** | `a53ed673b082598a9` | opus | `.scratch/curation/PROGRESS-CURATE2.md` | new sections in `.scratch/RESULTS-REGISTRY.md` + `.scratch/curation/CURATE2-2026-09-12.md` | Q9b: registry rows for H4/LP/oracle/ceiling/T0-repr/T_SEQ/B1/E0, prefixes `H4- LP- OR- EC- T0R- TSQ- B1C- E0-`. Read-only, re-measures nothing, **E1 excluded** (controller adds those). Dispatched 23:24 UTC |
+
+Resume both with the standard block: read your PROGRESS.md, continue from the first incomplete step, never relaunch a live or
+finished computation, do not touch `/home/sat/mcrl-v025-dev-e0-ws/`.
+
+**Live on `sat` — E1, nine runs** (they survive any agent death; never relaunch them). Launched 23:07 UTC at code `05aadf1b`
+(digest `7440236979d6`), cwd `/home/sat/mcrl-v025-dev-e0-ws/tree-v0.4`, roots `/home/sat/mcrl-v025-dev-e0-ws/runs-e1-d0-d3` and
+`…/runs-e1-d2tau0p3`, 300 episodes fresh, DEVVAL at 100/200/300. All nine reached ep200 by 23:18 UTC.
+
+| arm | k=3 | k=4 | k=5 |
+|---|---|---|---|
+| D0 | `945927542022` (PID 3616542) | `673611ca6da3` (3616543) | `ddd5bab02457` (3616544) |
+| D3-T0 | `ccca3463753d` (3616545) | `ce689b57833f` (3616546) | `9bf13b57e608` (3616547) |
+| D2-T0 τ=0.3 | `87e8fce4b4d8` (3616588) | `9905fcc0a2f1` (3616589) | `bab4ac8d4656` (3616590) |
+
+**Controller's own pending action.** Background wait `bjgxorba3` fires when all nine have `devval-ep00300.json`; one-shot cron
+`566842f2` (07:52 Taipei) is the fallback. Then run
+`/tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/f508c755-8fc6-4503-9548-0225a1607848/scratchpad/e1_readout.py`
+piped to `ssh sat '/usr/bin/python3 -'` (it asserts the pinned TLE archive and the collision-safe identity
+`run_root + config_hash + seed_index + checkpoint_episode`, and applies Amendment 10 §3 verbatim). If the scratchpad is gone,
+rewrite it: nine ep-300 DEVVAL JSONs, D3-T0 and D2-T0 each paired against D0 at the same `k`, pass = ≥ 2/3 seeds same direction
+with the seed mean same direction, `Δserved ≥ −0.5 pp`, `p10 ≥ 0.5 ×` D0, `bits ≥ 0.95 ×` D0.
+
+**ep-100 divergence check, already done (not a decision point).** D3-T0 vs paired D0: +11.72 / +11.35 / +15.07 % on k=3/4/5;
+D2-T0 vs D0: +12.60 / +11.95 / +15.07 %; served 0.9963–0.9985 everywhere. No divergence, no QoS collapse, nothing changed.
+
+**Amendments written this session, both blind to E1's ep-300 result**: Amendment 11 (`98dd3f48`, the `R_min` refusal) and
+Amendment 12 (`2c8dfac6`, S1's plausible-but-uninformative second null `T0-XEP` = cross-episode T0, with `ρ_info` and its
+prospective reading rule). The E1 launch table is committed at `e74bc2ae`.
+
+### (superseded) STATE 20:15 UTC 2026-09-11 (04:15 Taipei) — after the daily-cost interruption; owner direction `gpt8.md` = Amendment 7
 
 Second interruption ~19:15 UTC: the **daily cost limit (HTTP 402, $80/day)** killed LP-ORACLE, B1-CREDIT and DEVHARNESS
 (T0REPR had already finished). Quota back at ~20:10; **all three resumed by `SendMessage`** with verified deltas, and a fourth
