@@ -307,6 +307,15 @@ MCRL-Dev-v0.1), add `D3-T0` `9a1a67c4` fresh to 300 with DEVVAL at 100/200/300, 
 D2-T0 (τ = 1 `cd424977`, τ = 0.3 `b2c124ae`), replicated at k = 1 only if a τ wins; **deferred**: the α sweep, and learning
 rate / clipping / target cadence remain unproposed. ≤ 8 development processes while the B2 lane runs.
 
+**E0b wave 1 launched 20:58 UTC**, seven processes verified alive at commit `772481c4`, code digest `ccbcb02d5b7c`, pinned TLE,
+`nice -n 10`, MemoryMax 5G: the three k = 0 arms **resumed** from episode 100 in `runs-e0a` under the unchanged manifest and
+hashes (same trajectory, DEVVAL at 200 and 300; PIDs 3577210/3577211/3577212); `D3-T0` `9a1a67c4` **fresh** to 300 in
+`runs-e0b-d3` (PID 3577336, DEVVAL 100/200/300) after `DEV_MUTANT=d3_no_margin` was re-verified RED at the launch commit; the
+**k = 1** replicate `50c9d4a0` / `67d3dc6e` / `28b99027` **fresh** to 100 in `runs-e0b-k1` (PIDs 3577470/3577471/3577472). The
+replicate keeps the frozen 300-episode configuration stopped at 100 rather than a 100-episode configuration, so ε-decay and the
+authorised hashes are unchanged. Expected: k = 1 ~21:10–21:15, k = 0 resumes ~21:20–21:35, D3-T0 ~21:30–21:45 UTC. Wave 2 (τ
+sweep) queued, B4 deferred.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).

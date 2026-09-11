@@ -112,3 +112,30 @@ Worktree `/home/u24/papers/mcrl-leo-handover-dev`, branch `dev/e0-harness-202609
   `9a1a67c498376d32`; B3 tau sweep `cd424977244eedea` / `b2c124ae12ce477f`; B4 alpha sweep `5679ddb2931a70ca` /
   `3d7743a644990ca3`; B5 k = 1 replicate `50c9d4a0e19f1931` / `67d3dc6eba2ef687` / `28b99027bda43d2e`). NOT launched: the
   coordinator confirms first.
+
+## Wave 1 of E0b — launched 2026-09-11 20:53:52-20:54:43 UTC (controller-authorised 20:55 UTC message; B4 deferred, B3 = wave 2)
+Gate re-verified immediately before arm 4 started: `DEV_MUTANT=d3_no_margin pytest -k test_d3_margin_loss_properties` -> **RED**
+(and the clean D3 + teacher-weight tests green) at commit `772481c4`. 7 development processes; the B2-representability lane may
+hold up to 3 more; limit 8 for this lane's own processes was respected (7).
+
+| arm | version / status | config hash | PID | root | boundary | DEVVAL reads |
+|---|---|---|---|---|---|---|
+| D0 k0 | MCRL-Dev-v0.1, **intentional resume** from ep 100 | `5d4f54e019a4e44f` | 3577210 | `runs-e0a` | to 300 | 200, 300 |
+| D2-T0 k0 | MCRL-Dev-v0.1, **intentional resume** from ep 100 | `3dd5e6f1d14922da` | 3577211 | `runs-e0a` | to 300 | 200, 300 |
+| D2-null k0 | MCRL-Dev-v0.1, **intentional resume** from ep 100 | `c19d2596c5a745a7` | 3577212 | `runs-e0a` | to 300 | 200, 300 |
+| D3-T0 k0 | MCRL-Dev-v0.1 arm 4, **fresh start** | `9a1a67c498376d32` | 3577336 | `runs-e0b-d3` | to 300 | 100, 200, 300 |
+| D0 k1 | MCRL-Dev-v0.1 k=1, **fresh start** | `50c9d4a0e19f1931` | 3577470 | `runs-e0b-k1` | `--stop-after 100` | 100 |
+| D2-T0 k1 | MCRL-Dev-v0.1 k=1, **fresh start** | `67d3dc6eba2ef687` | 3577471 | `runs-e0b-k1` | `--stop-after 100` | 100 |
+| D2-null k1 | MCRL-Dev-v0.1 k=1 (DEV-NULL key (9_231_000, 1)), **fresh start** | `28b99027bda43d2e` | 3577472 | `runs-e0b-k1` | `--stop-after 100` | 100 |
+
+- cwd for all seven: `/home/sat/mcrl-v025-dev-e0-ws/tree`; commit `772481c4`, code digest `ccbcb02d5b7c`; `nice -n 10`,
+  `systemd-run --user --scope -p MemoryMax=5G`, OMP/MKL/OPENBLAS/NUMEXPR = 1, `setsid nohup ... </dev/null`, pinned TLE
+  `427e6a91...8fe9`, `calibration.json` read-only from the pilot premeasure (sha256 `59952214...4562d`).
+- The three k=0 arms logged `resuming at episode 100`; their configuration hash is unchanged, so this is the SAME trajectory
+  continued (the process test showed a resumed run is bit-identical to an uninterrupted one), not a new version.
+- k = 1 uses the same frozen 300-episode configuration stopped at 100 (exactly as E0a did), which is what keeps its config
+  hashes equal to the authorised ones; a later continuation to 300 would again be an intentional resume.
+- Expected finish (7 processes contending, ~2.2-6 s/episode): k = 1 arms ~21:10-21:15 UTC, the k = 0 resumes (200 more
+  episodes + 2 DEVVALs) ~21:20-21:35 UTC, D3-T0 (300 episodes + 3 DEVVALs) ~21:30-21:45 UTC.
+- Wave 2 (authorised, launch as slots free): B3 tau sweep on D2-T0 at k = 0 -- v0.2a tau = 1 `cd424977244eedea`, v0.2b
+  tau = 0.3 `b2c124ae12ce477f`, 100 episodes each, fresh start, new versions. B4 (alpha) deferred by the controller.
