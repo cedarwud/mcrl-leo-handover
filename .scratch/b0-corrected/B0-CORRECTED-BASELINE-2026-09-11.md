@@ -1,4 +1,227 @@
-**All three fixes landed, each with a test I saw fail on the unfixed code and then pass (D-3 needed one fixup, found when the first pilot crashed at episode 50), and the relaunched 500-episode pilot ran clean — every loss finite, no blowup — but D-1 overturns frozen ruling B1 / SDD §8 and D-2's r3 floor dominates the r3 head, and both need an owner ruling before B0 is used as a control.**
+**All ruling items 1–5 have landed on `wip/multi-catfish-v023-20260907`, each with tests that failed first and then passed, and the full test suite shows no regressions. D-1 is now a flag whose default is MODQN eq. (16) (bit-identical to the pre-`5219995a` code), D-2 floors an outage at the worst served value of its own step, and the TLE archive is pinned by hash with a random-arm placebo that is bit-identical on both hosts. `READY FOR PILOT: 363845e8` is posted. The item-6 reruns were cancelled by controller instruction, but they had already finished when that instruction arrived, so their results are recorded below as smoke only.**
+
+2026-09-11. Worker: B0CORRECT. Ledger: `.scratch/b0-corrected/PROGRESS.md`. Controller ruling: `.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md`.
+
+> **Smoke only.** Every pilot number here comes from **500 of 9,000 episodes**, at ε = 0.753, on one seed set. None of it is an experimental arm or a claim, and none of it may be compared with any checkpoint's *final* performance.
+
+---
+
+# ROUND 2 — the controller ruling, items 1–6
+
+## R.0 Status at a glance
+
+| ruling item | state | commit(s) on `wip/multi-catfish-v023-20260907` |
+|---|---|---|
+| 5a. PENALTYARM's port, as its own commit | done; its 8 off-path tests pass | `f531ff99` |
+| 5b. B0 commits brought onto the shared branch | done via `cherry-pick -x`, no conflicts | D-2 v1 `ee0ffa60`, D-3 `698f20d8`, D-3 fixup `6939fc78`, pilot scripts `ff01f84d` |
+| 1. D-1 as a flag, default eq. (16), W-08 restored | done; bitwise placebo passes | `57fb40b4` |
+| 2. D-2 per-step worst-served floor | done; 4 sub-tests failed first | `c00aca3e` |
+| 3. Checkpoint selection | none; selection is unreachable (see R.3) | — |
+| 4. TLE archive pinned by hash, placebo | done; bit-identical on both hosts | `b924c8a0`; eval harness `363845e8` |
+| 5c. Throwaway worktree `/home/u24/papers/mcrl-b0-baseline` | removed after confirming it held nothing unique | — |
+| 6. 500-episode reruns | **cancelled by controller instruction; both runs and their eval had already finished when it arrived**, so the results are recorded in R.6 as smoke only (they duplicate CF3PILOT's 1000-episode eq. (16) arm) | — |
+
+**`READY FOR PILOT: 363845e8`** is written at the top of `PROGRESS.md`. Every commit listed above is an ancestor of it.
+
+**Full regression at the shared-branch head** (after `363845e8`): 55 failures, exactly the same test IDs as the pre-D-1 baseline `e3f3503e`, so round 2 introduced **zero** regressions. The pre-existing failures are all in stage-C `ee_axis_*`, the R7 control plane, v03b and G-6; my touched files contain none of G-6's forbidden tokens.
+
+## R.1 D-1 is a flag, and the default is MODQN eq. (16)
+
+- **The flag:** `TrainerConfig.td_bootstrap_mode`.
+  - `"eq16-per-head-max"` is the **default** (B1 / SDD §8, the published MODQN baseline).
+  - `"shared-continuation-argmax"` is the successor learner's target.
+  - Any other value is refused by `validate_trainer_config`.
+- **Default path.** Inside `update()`, the per-objective target block is statement-for-statement the pre-`5219995a` code, and nothing else runs on that path. The shared rule lives in `MODQNTrainer._shared_continuation_action` and is called only when the flag is on. Weights come from `cfg.objective_weights`, never a literal.
+- **Tests:**
+  - `tests/test_w08_vanilla_td_target.py` is restored byte for byte from `5219995a^`, so the three amended assertions are back and guard the default path's source.
+  - `tests/test_b0_d1_scalarised_bootstrap.py` runs the D-1 tests with the flag on, and adds default-path tests:
+    - eq. (16) is the default;
+    - on the disagreeing fixture, each head takes its own max;
+    - `_shared_continuation_action` is never called (monkeypatched to raise);
+    - an unknown mode is refused.
+- **Bitwise placebo.** Identical replay contents, 25 `update()` calls including one target sync:
+
+  | comparison | parameters and losses |
+  |---|---|
+  | current code, flag **off**, against pre-`5219995a` | **bit-identical** |
+  | current code, flag **on**, against `5219995a` | **bit-identical** |
+  | flag on against pre-`5219995a` (teeth check) | **different** |
+
+- **PENALTYARM's arms ran on `5219995a`**, so they are the shared-bootstrap variant, not the eq. (16) baseline. This is recorded in the commit message of `f531ff99` and of `57fb40b4`.
+
+## R.2 D-2: the floor is the worst served value of the same step
+
+**Rule.** An unserved user scores:
+- **r2 = −PHI2 = −1.0**;
+- **r3 = the minimum r3 over served users in that step**, which equals **−max_b U_b(t)**.
+
+**Why those two r3 expressions are the same number (verified by reading and by test).**
+- `ServiceResolution.eligible_load_by_beam` counts **served users only**, after the feasibility check.
+- So every lit beam carries at least one served user whose r3 is −U_b.
+- The floor is cheaply available where the reward is formed: the whole step's `RewardComponents` and its `served` tuple are on the `StepResult`. It is computed once per step and cached on the result object's identity.
+- A step in which **nobody** is served has no served value to floor at, so it **raises** rather than approximating one. That never happened in either pilot.
+
+**Other changes in this commit.**
+- The −num_users path is removed.
+- `EpisodeLog.outage_user_steps` records the floored user-steps, so the floor's share of the signal is now measured rather than inferred. The stdout progress line prints it as `out=`.
+
+**Tests** (`tests/test_b0_d2_outage_floor.py`, rewritten).
+- Four sub-tests failed first against the −100 trainer:
+  - the floor did not equal the per-step minimum;
+  - an outage beat a served user (−2 against −3 in the fixture);
+  - a step with nobody served did not raise;
+  - on real physics, −100 did not equal −max_b U_b.
+- 9/9 pass after the fix. They include:
+  - a real-environment check that on every outage step the floor equals −max_b U_b from the physics' own loads, and that every unserved user scores at or below every served user on both heads;
+  - a test that the episode log counts exactly the floored user-steps.
+
+**Effect, measured in the 500-episode logs.** The floor no longer dominates the r3 head.
+- Calibrated r3, episodes 400–500: **−2.58** (BASELINE_EQ16) against **−2.36** for the unfloored frozen run. That is about 9% of the head, down from about 78% under the −100 floor.
+- r3 loss is back to frozen-run scale: 0.05–0.07, against 0.048 for the frozen run and 5.7 under the −100 floor.
+- **Training-time outages: 27,331 of 500,000 user-steps (5.47%) in BASELINE_EQ16, and 27,382 (5.48%) in SHARED_BOOTSTRAP.**
+
+## R.3 Checkpoint selection: none
+
+- The best-eval path only switches on if something passes `evaluation_seed_set` to `train()`. **Nothing in `src/`, `scripts/` or `tests/` does**, so it cannot be reached.
+- The primary checkpoint is `final-episode-policy`, and `prereg_draft.py:497` already keeps selection out of the headline.
+- Scoring in the selection path was left as it is, per the ruling. **Every arm is evaluated at its final checkpoint.**
+
+## R.4 The TLE archive is pinned by content hash
+
+**Cause of the host disagreement (verified by hashing both archives):**
+
+| host | `~/demo/tle_data/starlink/tle` | files | `file_set_sha256` | status |
+|---|---|---|---|---|
+| sat | symlink to `/home/sat/mcrl-runtime/tle-frozen-20260820` | 373, from 2025-07-27 to 2026-08-20 | **`427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9`** | equals the frozen R2 prereg's `ephemeris.file_set_sha256`. The frozen run validated against it. **Pinned.** |
+| local | real directory | 392: the same 373 files, byte-identical, **plus 19 later days** (2026-08-21 to 2026-09-08) | **`e07f3e1e879dafd28863e2b0178acc3186e3eea70e319e1046b56b4329a093e4`** | not the frozen archive |
+
+- The extra days move the archive's date range. That shifts the block-alternating split and the episode-start sampler, so the same seed draws different epochs.
+- **The ruling asked for "the archive both the frozen run and the catfish-surface harness used". There is no such archive: they used different ones.** I pinned the frozen run's archive, because it is the one the prereg freezes.
+
+**The pin.**
+- `training_pipeline.resolve_tle_root()` uses `MCRL_TLE_ROOT` if it is set, otherwise the previous default. Behaviour is unchanged when the variable is unset.
+- `assert_tle_archive_pinned()` refuses any archive whose `file_set_sha256` is not the canonical prereg's value. The value is read from the prereg, not written out a second time.
+- The pilot driver and the eval harness both call it, and both record the hash.
+
+**Pinned copies** (the shared originals were never modified):
+- sat: `/home/sat/mcrl-v025-b0-ws/tle-pinned-427e6a91`
+- local: `/home/u24/mcrl-runtime/tle-pinned-427e6a91`
+
+Both contain 373 files, each sha256-checked against the frozen rows. Both give `file_set_sha256` `427e6a91…` and `sha256sum starlink_*.tle | sha256sum` = `c0f02cc784683d2fc08ae3d4542fb43c5129b74b254a17b458ddef31d8c78317`.
+
+A side effect: with the pinned root, the full `validate_server_setup` now passes locally too. It used to fail there because of the 392-file archive.
+
+**Placebo, verified: RANDOM_MASKED is bit-for-bit identical on both hosts** (N_EP = 24, seeds 42/1337/7). Every field matches exactly:
+- pooled EE **52,420,510.0956937 bit/J**, bits 181,834,363,529,850.12, joules 3,468,763.7185886074;
+- all 24 per-episode EEs;
+- served fraction 0.9358333…;
+- outages 1,540;
+- φ1 = 4,472 and φ2 = 16,395 handovers;
+- all six head means;
+- the archive hash.
+
+## R.5 A defect in the inherited eval harness driver: arms were not at matched conditions
+
+- **The defect.** The catfish-surface `pooled_ee.py` driver built **one** module-level `env` and ran every arm on it. `StepEnvironment` owns a persistent cross-episode stream, `_age_rng` (the segment warm-start ages). It is spawned once per environment object and is **not** reset by `reset()`. So only the first arm ran at age-stream positions 0–23; every later arm ran further along the stream.
+- **The fix, `363845e8`.** `_fresh_env()` builds a new environment before every run. The harness core, lines 53–143, is still byte for byte.
+- **A new check.** `run_extended()` adds the φ1/φ2 split, the outage count and the greedy head means. For every arm the driver also re-runs the verbatim `run()`, and aborts unless every shared field agrees exactly and φ1 + φ2 equals the verbatim handover count. This held for all 5 arms.
+- **Size of the effect (measured).** Re-scoring the round-1 episode-500 checkpoints with fresh environments:
+
+  | checkpoint | round 1 (shared env) | fresh env | change |
+  |---|---|---|---|
+  | UNFIXED_EP500 | 79,567,896 | 80,539,818 | +1.22% |
+  | B0_EP500 | 77,365,317 | 77,302,059 | −0.08% |
+
+  The round-1 gap (−2.77%, unpaired) becomes **−4.02% (paired t = −2.29)**. Arm order moved numbers by about 1%, which is the same order as the differences being compared.
+- **This affects the catfish-surface document's five-arm table.** It ran RANDOM, then MAX_NOMINAL_GAIN, GREEDY_SCALARIZED, GREEDY_R1R2 and TRAINED, on one environment, so only RANDOM was at positions 0–23. Its "no age-stream caveat applies" statement for the trained arm is therefore wrong. I have not re-measured that table.
+
+## R.6 Item-6 reruns: cancelled by controller instruction, recorded as smoke only
+
+Both runs and their eval had completed before the cancellation arrived, and no further server runs were started.
+
+**Setup.** Both arms used:
+- sat, the pinned archive, and a server validation that passed;
+- 500 episodes, seeds 42/1337/7, learning rate 0.001, with D-2 (per-step floor) and D-3;
+- checkpoints every 100 episodes, under `sat:/home/sat/mcrl-v025-b0-ws/r2-pilot-{BASELINE_EQ16,SHARED_BOOTSTRAP}-500/`.
+
+The only difference is the bootstrap mode: BASELINE_EQ16 has the flag off, SHARED_BOOTSTRAP has it on.
+
+**Stability: clean.** Every log value was finite in all 500 episodes of both arms, and no no-op or all-invalid-next transitions were dropped. Peak loss per head:
+
+| arm | r1 | r2 | r3 |
+|---|---|---|---|
+| BASELINE_EQ16 | 0.365 | 0.436 | 0.061 |
+| SHARED_BOOTSTRAP | 0.298 | 0.481 | 0.088 |
+
+**Checking the trajectories (verified).**
+- At episode 0 (ε = 1), BASELINE_EQ16's r1 and handover count equal the frozen run's exactly. The r2/r3 gap is exactly the floor on 62 outages.
+- BASELINE_EQ16's r1 first departs from the frozen run at episode 6, as the floor starts to change learning.
+- SHARED_BOOTSTRAP's r1 first departs from BASELINE_EQ16 at episode 11.
+
+**Training-time head means.** ε-greedy behaviour policy; calibrated by `(2029238.43, 1, 6)`; per user per episode. The reference is the frozen run's own logs over the same episodes, which have no D-2 floor, so their r2/r3 are not like-for-like.
+
+| arm | episodes | r1c | r2c | r3c | calibrated scalar | handovers per user-step | outages per user-step |
+|---|---|---|---|---|---|---|---|
+| BASELINE_EQ16 | 0–100 | 2.707 | −8.313 | −2.486 | −1.638 | 0.866 | 0.0615 |
+| BASELINE_EQ16 | 400–500 | 3.096 | −7.464 | −2.582 | −1.208 | 0.809 | 0.0494 |
+| SHARED_BOOTSTRAP | 0–100 | 2.707 | −8.318 | −2.485 | −1.639 | 0.866 | 0.0615 |
+| SHARED_BOOTSTRAP | 400–500 | 3.135 | −7.502 | −2.579 | −1.199 | 0.813 | 0.0491 |
+| frozen `e6b063ef` (no floor) | 400–500 | 3.128 | −6.993 | −2.362 | −1.006 | 0.811 | not logged |
+
+**Greedy evaluation of the episode-500 checkpoints.**
+- Method: `scripts/b0_pooled_ee_eval.py` at `363845e8`, run on sat on the pinned archive, with a fresh environment per arm. ε = 0, 24 episodes, seeds 42/1337/7, no `update()` calls.
+- Estimand: pooled EE = Σ bits / Σ joules over 24 × 10 steps, divided once. Bits and joules come from `env.last_outcome.energy`.
+- Handovers are counted from the environment's own φ classes.
+- Head means and the scalar are calibrated, and use the **per-step-floor definition for every arm**.
+
+| arm | pooled EE (bit/J) | bits (numerator) | joules (denominator) | vs RANDOM | served fraction | outage user-steps of 24,000 | handover rate | φ1 rate | φ2 rate | r1c | r2c | r3c | calibrated scalar ± sem |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| RANDOM_MASKED | 52,420,510.10 | 1.818344e14 | 3.46876e6 | 1.000 | 0.93583 | 1,540 | 0.8695 | 0.1863 | 0.6831 | 2.695 | −8.405 | −2.472 | −1.668 ± 0.012 |
+| **BASELINE_EQ16_EP500** | **85,976,978.04** | 2.068290e14 | 2.40563e6 | 1.640 | 0.99817 | 44 | 0.1845 | 0.0014 | 0.1831 | 4.168 | −1.856 | −4.487 | +0.630 ± 0.035 |
+| **SHARED_BOOTSTRAP_EP500** | **85,155,822.09** | 2.371863e14 | 2.78532e6 | 1.624 | 0.99867 | 32 | 0.1720 | 0.0005 | 0.1715 | 4.146 | −1.731 | −3.720 | +0.810 ± 0.031 |
+| round-1 B0_EP500 (−100 floor, D-1 on) | 77,302,059.46 | 1.807943e14 | 2.33880e6 | 1.475 | 0.99958 | 10 | 0.1517 | 0.0015 | 0.1502 | 3.758 | −1.514 | −4.634 | +0.498 ± 0.042 |
+| round-1 UNFIXED_EP500 (= frozen run at episode 500) | 80,539,817.53 | 1.943160e14 | 2.41267e6 | 1.536 | 0.99608 | 94 | 0.1727 | 0.0000 | 0.1727 | 3.953 | −1.766 | −4.383 | +0.570 ± 0.033 |
+
+Four fields for every row:
+- **Reference:** RANDOM_MASKED, and the pairs compared below.
+- **Information class:** deployed greedy policy on realised physics, pinned archive, one development seed set.
+- **Estimand:** ratio of sums. The ± value is per-episode sem, n = 24.
+- **Numerator and denominator:** in their own columns.
+
+Paired comparisons use the same 24 episodes and seeds with fresh environments.
+- **SHARED_BOOTSTRAP against BASELINE_EQ16:** EE **−0.96%**, paired t = −0.42, **not resolved**. SHARED draws 14.7% more bits and 15.8% more joules.
+- **BASELINE_EQ16 against round-1 UNFIXED (the frozen run at episode 500):** EE **+6.75%**, paired t = +2.96. This isolates what the per-step D-2 floor does to the eq. (16) learner by episode 500. It is **one seed, early training (ε 0.753), and not a claim.**
+- **Round-1 B0 against round-1 UNFIXED:** EE −4.02%, paired t = −2.29. This is the corrected version of round 1's −2.77% (see R.5). Its floor definition has since been superseded.
+- φ1 handovers are rare under every greedy policy (≤ 0.15% of user-steps). Almost all handovers are φ2, because the policies pick across satellites.
+
+---
+
+# Which figures were measured on the UNPINNED archive — do not compare with pinned-archive numbers
+
+The unpinned archive is local `~/demo/tle_data/starlink/tle`, `file_set_sha256` `e07f3e1e…`, 392 files. The pinned one is `427e6a91…`.
+
+| figure | archive | notes |
+|---|---|---|
+| **Every harness number in `.scratch/catfish-surface/CATFISH-ATTACHMENT-SURFACE-2026-09-11.md`**: the pooled-EE table (RANDOM 53,060,175.56; GREEDY_SCALARIZED 75,272,421.21; GREEDY_R1R2 75,817,283.47; **TRAINED `e6b063ef` 93,137,893.02**; MAX_NOMINAL_GAIN 111,553,182.85; the 1.1977× ratio and the 13.2-sem gap), the κ sweep, the five-arm panel, the n = 24 reruns, and every calibrated scalar measured by running that harness | **UNPINNED** | Run locally. Everything after the first arm is also affected by the arm-order defect (R.5). |
+| Everything derived from the catfish-surface harness, including FEASFRONT's local 93.11M / 112.46M (per the ruling) and any comparison against them | **UNPINNED** | |
+| My round-1 local harness check (RANDOM 53,060,175.56) and my round-1 local smoke runs | **UNPINNED** | |
+| The frozen run `e6b063ef` itself and its `episode-logs.json` (including the catfish document's quotes from those logs: +0.8859 over the last 100 episodes, and the plateau windows) | pinned | Trained on sat, validated against the frozen record. |
+| Round-1 sat pilots (B0, UNFIXED) and the round-1 sat eval | pinned (sat's default is the frozen archive) | The round-1 eval's B0 and UNFIXED arms carry the arm-order defect. Re-scored in R.6. |
+| Everything in round 2 | pinned (`427e6a91…`), fresh environment per arm | |
+
+---
+
+# Round-1 statements that are superseded
+
+- **"D-1 makes every head bootstrap at the shared argmax"** is superseded by R.1: D-1 is now a flag, and the default is eq. (16).
+- **"D-2 floors r3 at −num_users = −100"** is superseded by R.2 (per-step floor). The round-1 B0 pilot trained under the −100 floor.
+- **"B0 against UNFIXED at episode 500: −2.77%, −1.32 sem"** is superseded by R.5/R.6: with fresh environments it is −4.02% paired, and it describes a floor definition that no longer exists.
+- **Open questions 1–3 at the end of round 1** are answered by the ruling. Question 4, the worktree cleanup, is done. Branch `b0/corrected-baseline-20260911` and its worktree `/home/u24/papers/mcrl-leo-handover-b0` still exist. All their content is on the shared branch via cherry-pick `-x`, so they are safe to remove.
+
+---
+
+# ROUND 1 (original text, kept for the record; see the superseded list above)
+
 
 2026-09-11. Worker: B0CORRECT. Progress ledger: `.scratch/b0-corrected/PROGRESS.md`.
 

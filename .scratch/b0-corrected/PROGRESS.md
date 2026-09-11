@@ -220,8 +220,8 @@ Work happens in the SHARED tree `/home/u24/papers/mcrl-leo-handover` on `wip/mul
 | R5 | Confirm checkpoint-selection path feeds no claim | DONE: no caller in src/scripts/tests passes `evaluation_seed_set` to train(), so best-eval selection is unreachable; primary = final-episode-policy (prereg_draft.py:497) | note here |
 | R6 | Pin TLE archive; placebo | DONE: RANDOM_MASKED N_EP=24 BIT-FOR-BIT identical on local and sat (EE 52,420,510.0956937; all 24 per-episode EEs; outages 1540; phi1 4472, phi2 16395; head means) — pin `b924c8a0`, driver/eval `363845e8` | scratchpad `placebo-local.log`, `sat:…/placebo-sat.log` |
 | R7 | Remove throwaway worktree | DONE: HEAD e3f3503e, no tracked changes, no untracked files beyond caches, no stash; removed | `git worktree list` |
-| R8 | Pilots BASELINE_EQ16 + SHARED_BOOTSTRAP | DONE: both `status: complete` ~09:01 UTC, wall 784/783 s | `sat:/home/sat/mcrl-v025-b0-ws/r2-pilot-{BASELINE_EQ16,SHARED_BOOTSTRAP}-500/` |
-| R9 | Greedy eval + report update | RUNNING: eval launched ~09:03 UTC, output `sat:/home/sat/mcrl-v025-b0-ws/r2-eval-ep500.log` (5 arms, fresh env each) | eval log |
+| R8 | Pilots BASELINE_EQ16 + SHARED_BOOTSTRAP | CANCELLED by controller instruction (~09:10 UTC) — but both had ALREADY completed (~09:01 UTC, wall 784/783 s) before it arrived; recorded as smoke only | `sat:/home/sat/mcrl-v025-b0-ws/r2-pilot-{BASELINE_EQ16,SHARED_BOOTSTRAP}-500/` |
+| R9 | Greedy eval + report update | DONE: eval complete (5 arms, fresh env each, verbatim-run agreement on all 5), log `sat:/home/sat/mcrl-v025-b0-ws/r2-eval-ep500.log`; report updated | `B0-CORRECTED-BASELINE-2026-09-11.md` Round 2 |
 
 ## R6 note: harness driver defect found — shared env across arms advances `_age_rng`; fixed in `363845e8` (fresh env per run). Round-1 B0/UNFIXED ep500 numbers were NOT at matched conditions; re-evaluate them in R9.
 
@@ -237,3 +237,11 @@ nice 16, threads 1, MemoryMax=5G, checkpoints every 100. Expected finish ~09:03 
 Resume: re-run `/home/sat/mcrl-v025-b0-ws/launch_r2.sh` (idempotent).
 After both complete, R9 eval (one process): RANDOM + both r2 ep500 + round-1 B0/UNFIXED ep500
 re-evaluated with the fresh-env driver.
+
+## FINAL STATE (2026-09-11 ~09:20 UTC) — B0CORRECT stopped
+
+- All round-2 ruling items done; READY FOR PILOT line at top (`363845e8`).
+- Full regression at shared-branch head: 55 failures, set-identical by test ID to pre-D-1 baseline -> zero regressions.
+- No python process of mine running on sat (verified by process name). No new server runs will be started.
+- Report: `.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md` (Round 2 on top; unpinned-archive table; superseded round-1 statements listed).
+- Leftovers, safe to remove, NOT removed: branch `b0/corrected-baseline-20260911` + worktree `/home/u24/papers/mcrl-leo-handover-b0` (content is on the shared branch via cherry-pick -x); sat round-1 dirs `pilot-*`, `smoke-*`, `b0/`, `unfixed/` in `/home/sat/mcrl-v025-b0-ws`.
