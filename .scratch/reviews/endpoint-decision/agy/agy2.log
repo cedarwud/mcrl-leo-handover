@@ -1,0 +1,99 @@
+# Cross-Model Review: Endpoint Decision & Design Critique
+
+The full independent review has been written to [`ENDPOINT-REVIEW-AGY.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md). The first line of the document contains the formal verdict. A concise summary of the findings, answers to your five questions, and ranked objections is detailed below.
+
+---
+
+### **Verdict: PROCEED WITH CHANGES**
+**Mandatory Structural Corrections Required:**
+1. **Adopt Two-Critic Dinkelbach Q-Learning:** Replace the scalar Q-network with dual $(Q_B, Q_E)$ heads to resolve Bellman ratio-of-sums inconsistency and prevent Q-filter demonstration paralysis.
+2. **Rebuild `CF-GUARD` on Dwell Horizons & Quotas:** Discard the 142 ms interruption heuristic; base the specialist on orbital dwell time lookahead ($T_{\text{dwell}} \ge 90\text{ s}$) and control-plane signaling budgets.
+3. **Pre-Register Standards-Derived Constraints ($H_{\max}, S_{\min}$):** Derive thresholds *ex-ante* from 3GPP TS 38.133 / TS 38.331 mobility specifications, and commit to publishing both unconstrained and constrained frontiers.
+4. **Reframe Paper Claims to Applied Communications Systems:** Renounce claims of novel RL mechanisms; ground the contribution in the empirical characterization of the physical EE-versus-mobility conflict in LEO constellations.
+
+---
+
+### 1. Rule on the Endpoint Change: Legitimate, or Outcome-Selected?
+
+* **Is it legitimate?** **Yes as an operational problem correction, but NO if claimed as a pre-registered victory.** In pre-registered statistical protocols, changing an endpoint after seeing an unconstrained greedy rule (`MAX_NOMINAL_GAIN`) beat the trained learner by +19.8% to +22.2% is textbook outcome-selection. However, in real-world satellite telecommunications, unconstrained physical-layer EE is an **operational absurdity**: churning associations at 71.17% every 30.08 s (142 handovers/UE/hour) saturates satellite feeder links, congests PRACH channels, and induces severe radio link failure (RLF) risks.
+* **How constraint thresholds must be set:**
+  * **Handover Rate ($H_{\max}$):** Must be derived from **orbital geometry and 3GPP NTN mobility standards**, completely blind to the learner's empirical performance (0.2796). For LEO satellites orbiting at ~7.5 km/s with footprint pass times of 5–10 minutes, 3GPP TS 38.133 / TS 38.331 requires minimum dwell times $\ge 90 - 120$ s to prevent ping-pong. Over $\Delta t = 30.08$ s, this yields an external geometric threshold:
+    $$H_{\max} = \frac{\Delta t}{T_{\text{dwell, min}}} = \frac{30.08\text{ s}}{90\text{ s}} \approx 0.334 \implies \mathbf{H_{\max} = 0.30\text{ or }0.33}$$
+  * **Service Availability ($S_{\min}$):** Physical-layer decodability (SINR $\ge -1.44$ dB) must meet 3GPP carrier grade $\mathbf{S_{\min} \ge 99.0\%}$.
+* **What makes a choice illegitimate?**
+  1. *Sandwiching:* Arbitrarily setting $H_{\max} = 0.30$ or $0.35$ purely because $0.2796 < H_{\max} < 0.7117$ without independent derivation.
+  2. *Evaluation tuning:* Sweeping thresholds on test seeds to ensure statistical significance.
+* **Mandatory reporting:** The manuscript must present the unconstrained pooled EE table (acknowledging that greedy gain chasing beats the learner by 20% when handovers cost zero joules) alongside the constrained CMDP table showing that greedy gain chasing is operationally infeasible ($2.3\times$ above the 3GPP mobility limit).
+
+---
+
+### 2. Attack on the Proposed Design
+
+* **The Weakest Component:** **The Q-Filter / Reward Incompatibility.**
+  * In the proposed DQfD design, the supervised margin loss is gated by the Nair positive-advantage test: $\mathbf{1}_{Q(s, a_E) \ge \max_a Q(s, a) - \epsilon}$.
+  * If the Q-network is trained on the legacy calibrated scalar reward ($0.5 r_1 + 0.3 r_2 + 0.2 r_3$), Finding 8 showed that an inter-satellite handover costs $+13.71\%$ of an episode's $r_1$ to break even.
+  * `CF-EE` churns at 71.2%. Under this reward, $Q(s, a_{\text{CF-EE}}) \ll Q(s, a_{\text{stay}})$.
+  * **The Q-filter will evaluate to FALSE on nearly 100% of `CF-EE` transitions.** The supervised demonstration loss will never fire. Arm `D4` (Q-filtered DQfD) collapses identically to Arm `D0` (unassisted RL). If the Q-filter is disabled (`D3`), the margin loss violently fights the TD loss, triggering policy destabilization.
+* **The Single Decisive Measurement:**
+  > Run a forward pass of the frozen checkpoint's Q-network over a batch of 1,000 transitions from `CF-EE` and compute:
+  > $$\text{PassRate} = \frac{1}{N} \sum_{i=1}^N \mathbf{1}\left( Q(s_i, a_{\text{CF-EE}}) \ge \max_{a} Q(s_i, a) - \epsilon \right)$$
+  > If $\text{PassRate} < 5\%$, the demonstration mechanism is completely paralyzed by the reward function.
+
+---
+
+### 3. Is the Two-Specialist Structure Real, or is CF-GUARD a Relabelling of CF-EE?
+
+* **It is a cosmetic relabelling.** Finding 8 proved that 3GPP TS 38.133 interruption penalties (62 ms / 142 ms over 30.08 s) destroy at most $0.472\%$ of bits. Meanwhile, jumping to a maximum-gain beam yields a $+14.6\%$ bit increase. **The physical gain outweighs the interruption penalty by 31:1 to 72:1.** The switching condition evaluates to `TRUE` virtually everywhere `CF-EE` evaluates to `TRUE`. Unless an arbitrary hand-tuned margin $m$ is forced, `CF-GUARD` produces action sequences $>95\%$ identical to `CF-EE`.
+* **What `CF-GUARD` must be built on instead:**
+  1. *Ephemeris Lookahead / Dwell Horizon:* Suppress handovers to satellites exiting visibility within $T_{\text{dwell}} \le 90$ s.
+  2. *Control-Plane Signaling Quotas:* Enforce an aggregate RACH/PRACH handover budget per beam/satellite.
+  3. *Elevation-Dependent RLF Risk:* Price the risk of radio link failure ($P_f \cdot T_{\text{RLF}} \cdot R$) at low elevations.
+* **The Deciding Test:**
+  Compute the Jaccard index of handover events between the two specialists over 100 evaluation episodes:
+  $$J_{\text{HO}}(\text{CF-EE}, \text{CF-GUARD}) = \frac{|\mathcal{E}_{\text{HO}}^{\text{CF-EE}} \cap \mathcal{E}_{\text{HO}}^{\text{CF-GUARD}}|}{|\mathcal{E}_{\text{HO}}^{\text{CF-EE}} \cup \mathcal{E}_{\text{HO}}^{\text{CF-GUARD}}|}$$
+  If $J_{\text{HO}} > 0.85$, reject `CF-GUARD` as redundant. A valid complementary pair must achieve $J_{\text{HO}} \in [0.40, 0.65]$.
+
+---
+
+### 4. Ratio-Objective Reinforcement Learning
+
+Maximizing pooled $\text{EE} = \frac{\sum B}{\sum E}$ violates Bellman's additive principle of optimality. 
+
+#### Comparative Analysis:
+1. **Dinkelbach Policy Iteration:** Solves roots of $F(\eta) = \max_\pi [\bar{B} - \eta \bar{E}] = 0$ via outer-loop updates $\eta_{k+1} = \bar{B}(\pi_k)/\bar{E}(\pi_k)$ (*Dinkelbach 1967; Calvo-Fullana et al., IEEE TSP 2023*). Compatible with DQN, but requires stationary outer-loop steps.
+2. **Two-Critic Ratio Optimization:** Maintains dual critics $Q_B(s, a)$ and $Q_E(s, a)$ (*Zappone & Jorswieck 2015; Roijers et al. 2013*). **Highest compatibility with off-policy, discrete, action-masked DQN.**
+3. **Reward-per-Cost / SMDP:** Relative value iteration $V(s) = \max_a [B - g E + \sum P V]$ (*Howard 1960; Ross 1970*). Incompatible with standard off-policy replay under discounting.
+4. **Average-Reward Differential RL:** Tracks scalar differential value $Q(s,a) - \rho$ (*Wan, Naik & Sutton, ICML 2021*). Cannot decouple numerator and denominator sums without scalarization.
+5. **Direct Ratio Policy Gradient:** Evaluates $\nabla_\theta \text{EE} = \frac{1}{\bar{E}} [\nabla \bar{B} - \eta \nabla \bar{E}]$ (*Shen et al. 2014*). Strictly on-policy / continuous; incompatible with discrete action-masked DQN.
+6. **Constrained MDP (CMDP):** Solves Lagrangian dual via multipliers (*Altman 1999; Stooke et al., ICML 2020*).
+
+#### Compatible Off-Policy DQN Architecture: Two-Critic Dinkelbach DQN
+* **Dual Heads:** The network outputs $Q_B(s, a; \theta_B)$ (bits) and $Q_E(s, a; \theta_E)$ (joules).
+* **Coupled Target Evaluation:** To avoid maximization bias across heads, greedy action is chosen jointly:
+  $$a' = \arg\max_{a \in \mathcal{A}_{\text{valid}}(s')} \left[ Q_B(s', a; \theta_B^-) - \eta_k Q_E(s', a; \theta_E^-) \right]$$
+  $$y_B = B(s, a) + \gamma Q_B(s', a'; \theta_B^-), \quad y_E = E(s, a) + \gamma Q_E(s', a'; \theta_E^-)$$
+* **Outer Loop Update:** Every $K = 50$ episodes, update the scalar price on evaluation rollouts: $\eta_{k+1} = \frac{\sum B}{\sum E}$.
+* **Demonstrator Advantage:** Evaluated directly on the ratio price:
+  $$A_{\eta_k}(s, a_E) = \left[ Q_B(s, a_E) - \eta_k Q_E(s, a_E) \right] - \max_{a \in \mathcal{A}} \left[ Q_B(s, a) - \eta_k Q_E(s, a) \right]$$
+  This resolves the lethal contradiction in Section 2.
+
+---
+
+### 5. Novelty Assessment
+
+* **Is there a defensible algorithmic RL contribution?**
+  **No.** Pre-seeding Q-learning with demonstrations is DQfD (*Hester et al., AAAI 2018*); gating imitation via Q-value advantage is Nair Q-filtering (*Nair et al., ICRA 2018*); imperfect demonstration filtering is SIL (*Oh et al., ICML 2018*); fractional programming via Dinkelbach is classical (*Dinkelbach 1967*). Claiming algorithmic novelty for integrating these will be rejected by any ML reviewer.
+* **The Defensible Contribution in One Sentence:**
+  > *"The defensible contribution is the discovery and empirical characterization of the structural conflict between physical-layer energy efficiency and network mobility stability in LEO satellite constellations, demonstrating that standard multi-objective reward scalarization induces severe policy-metric anti-alignment, and establishing an off-policy, two-critic constrained reinforcement learning framework that leverages domain-specific orbital specialists to enforce 3GPP mobility viability."*
+
+---
+
+### Ranked Objections & Settling Evidence
+
+| Rank | Objection | Core Mechanism | Settling Evidence |
+|---|---|---|---|
+| **1** | **Q-Filter Paralyzes Demonstrators** | The legacy $r_2$ penalty (-13.7% $r_1$ break-even) ensures $Q(s, a_{\text{CF-EE}}) \ll \max_a Q(s, a)$. The Nair Q-filter evaluates to FALSE, shutting off supervised losses and collapsing D4 to D0. | Forward evaluate 1,000 `CF-EE` transitions through the frozen Q-network. Measure pass rate. If $<5\%$, the design is broken. |
+| **2** | **CF-GUARD is an Arithmetic Phantom** | TS 38.133 interruption (142 ms) loses 0.47% bits; channel gain buys +14.6%. The 72:1 ratio ensures `CF-GUARD` actions match `CF-EE` $>95\%$ of the time. | Roll out 50 episodes of `CF-EE` and interruption-based `CF-GUARD`. If action Jaccard overlap $>0.85$, `CF-GUARD` is redundant. |
+| **3** | **Bellman Violation on Ratio Estimands** | Ratios of accumulated sums cannot be optimized via additive 1-step Bellman equations without outer-loop Dinkelbach decoupling. | Prove policy ranking flips under uniform energy scaling unless parameterized as Two-Critic $(Q_B, Q_E)$. |
+
+The complete, unabridged review is accessible in [`ENDPOINT-REVIEW-AGY.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md).
