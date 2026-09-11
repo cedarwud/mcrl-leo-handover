@@ -1,3 +1,5 @@
+HANDOFF-SAFE: 2026-09-11T11:40Z (server clock) — 12 runs training detached on sat (tree f297334e); detached post-job PID 3438182 will evaluate + report into sat:/home/sat/mcrl-v025-cf3-pilot-ws/report/ (REPORT-DONE / REPORT-FAILED); takeover commands in .scratch/cf3-pilot/TAKEOVER.md
+
 # CF3PILOT — progress (three-catfish short-episode pilot)
 
 Agent: CF3PILOT. Declaration (frozen): `.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-DECLARATION-THREE-CATFISH-PILOT-2026-09-11.md` (commit c4f9ea82).
@@ -143,3 +145,28 @@ STATUS: **training launched 11:14:42 UTC — 12 runs (A0/A1/A2/A3 x seeds 0-2), 
 - Sidecar sha256 (s{k}/{name}.json): s0 C1 0ccc3452…205c, C2 948fc074…00b1, C3 c598c079…9424, NULL1 e1acf9b0…c6c8, NULL2 4fe5ab14…32a2, NULL3 3efd4762…8a07; s1 C1 696a395d…f6f0, C2 43ec4103…b081, C3 1e01038b…0512, NULL1 0ee8b887…edf5, NULL2 05a99755…6ee6, NULL3 6b54b18a…1ddf; s2 C1 81304445…b1d, C2 8769cf7c…8acc, C3 1d53770f…6a, NULL1 ba081b07…1f2c, NULL2 45f8e594…6107, NULL3 ac58cfc9…c37e (full hashes in the JSON).
 - Generator identity: pools made by tree `d04d9dbe`, training runs `f297334e`. **Byte-identical** between the two trees: `cf_ratio.py` (10411e21…), `cf_sources.py` (c4906a7d…), `cf3_pools.py` (dd2fd92a…), `state_encoding.py` (fdb4675b…), and every other `src/**/*.py` (0 files differ). `cf3_common.py` differs only by two added MANIFEST_FILES entries (Amendment 3 doc, cf3_pools.py) — no generation code.
 - Re-verification at evaluation time: `scripts/cf3_verify_pools.py` (worktree ff884b0e; copy `ws/diag/`) — hashes of every sidecar/npz vs the record and RUN-MANIFEST, and each A2/A3 run's loaded pool vs sidecar kind/head/source_index/seed_index/transitions=100000; exit 1 on any mismatch. `ws/eval.sh` runs it first and aborts on failure; `cf3_report.py` (ff884b0e, copy `ws/diag/`) refuses to run without an ok verification. Dry run now: **ok, 18 pools, 18 run bindings** (`ws/diag/POOL-VERIFY-at-launch.json`).
+
+### Episode 100 (read-only; launch-2; server 11:24 UTC) — greedy calibration pooled EE (M bit/J) | H_inter | H_intra | served | active beams
+| run | EE | H_inter | H_intra | served | beams |
+|---|---:|---:|---:|---:|---:|
+| A0 s0 / s1 / s2 | 75.72 / 75.47 / 78.39 | 0.158 / 0.159 / 0.162 | 0.006 / 0.040 / 0.036 | 0.9964 / 0.9988 / 0.9974 | 62.6 / 64.6 / 62.9 |
+| A1 s0 / s1 / s2 | 98.00 / 100.60 / 90.90 | 0.479 / 0.500 / 0.387 | 0.073 / 0.071 / 0.041 | 0.9945 / 0.9984 / 0.9948 | 56.5 / 61.2 / 58.0 |
+| A2 s0 / s1 / s2 | 93.57 / 93.75 / 99.19 | 0.591 / 0.391 / 0.549 | 0.024 / 0.046 / 0.043 | 0.9994 / 0.9932 / 0.9947 | 57.1 / 51.0 / 57.2 |
+| A3 s0 / s1 / s2 | 93.78 / 97.00 / 85.27 | 0.560 / 0.447 / 0.374 | 0.030 / 0.118 / 0.051 | 0.9995 / 0.9979 / 0.9934 | 57.3 / 58.4 / 52.2 |
+Arm means: A0 76.53, A1 96.50, A2 95.50, A3 92.02. Progress reading only (ε at ep 100 = 0.55); not the result. A1 s1 100.60 equals the aborted launch's A1 s1 ep-100 reading (same code path, deterministic).
+Timing: ~3.3 s/episode per run under 12-way contention; RSS A0/A1 ~1.9 GB, A2/A3 ~2.2 GB. **Projected finish ~12:20-12:30 UTC.**
+
+### Episode 250 (quarter; lambda fixed 0, eta held at eta_0 until 500) — greedy calibration pooled EE (M bit/J) | H_inter | H_intra | served | beams
+| run | EE | H_inter | H_intra | served | beams |
+|---|---:|---:|---:|---:|---:|
+| A0 s0 / s1 / s2 | 93.79 / 93.84 / 97.77 | 0.191 / 0.188 / 0.195 | 0.001 / 0.001 / 0.007 | 0.9973 / 0.9982 / 0.9990 | 73.3 / 67.3 / 69.6 |
+| A1 s0 / s1 / s2 | 103.41 / 99.75 / 101.43 | 0.582 / 0.521 / 0.486 | 0.057 / 0.105 / 0.085 | 0.9970 / 0.9982 / 0.9995 | 63.7 / 64.3 / 62.2 |
+| A2 s0 / s1 / s2 | 92.79 / 97.66 / 101.08 | 0.490 / 0.519 / 0.648 | 0.110 / 0.073 / 0.044 | 0.9945 / 0.9985 / 0.9988 | 58.4 / 58.4 / 64.6 |
+| A3 s0 / s1 / s2 | 99.91 / 101.96 / 102.91 | 0.608 / 0.582 / 0.532 | 0.060 / 0.066 / 0.048 | 0.9966 / 0.9968 / 0.9992 | 58.8 / 61.4 / 59.8 |
+Arm means: A0 95.13, A1 101.53, A2 97.18, A3 101.59. Progress reading only; not the result.
+
+## 11:37 UTC — agent-independent post-training job (coordinator request)
+- `sat:ws/diag/cf3_postjob.py` (worktree commit 102b2d4d; sha256 d2e47f7c…00fd), **PID 3438182**, started 11:37:15 UTC via `setsid nohup ... diag/cf3_postjob.py --ws /home/sat/mcrl-v025-cf3-pilot-ws > diag/postjob.stdout`.
+- Waits for all 12 runs terminal (complete / failed / stopped-learning-check with a failing DECISION / DEAD = status running but PID gone), up to 8 h; then evaluates every complete final checkpoint (tree `cf3_eval.py`, --repeat), re-verifies pools (`diag/cf3_verify_pools.py`) and generator identity (tree-pools-d04d9dbe vs tree), runs `diag/cf3_report.py` + `diag/cf3_render.py` (commit 102b2d4d), writes `ws/report/` + marker `REPORT-DONE` or `REPORT-FAILED`. Learning-check stop -> `LEARNING-CHECK-STOP.json` + REPORT-DONE(kind=learning-check-stop). Log `ws/report/postjob.log`.
+- State detection checked live at 11:37: 12 x running (alive).
+- Takeover guide: `.scratch/cf3-pilot/TAKEOVER.md`.
