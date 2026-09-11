@@ -127,6 +127,7 @@ at C=50 is **52.042303**; and **41.28 is a mean active-beam count, not an EE**.
 
 | name | how it runs | resume |
 |---|---|---|
+| **CF3-AGY-2** | agy Gemini 3.8 Flash (High), cwd `.scratch/reviews/cf3-agy-2` | reviews diff `e8a04ccf..f297334e` (must-fixes + Amendment 3); **gates the launch**. Not resumable — if `CF3-AGY-REVIEW-2.md` is absent, re-run `agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 60m </dev/null` in that dir |
 | **CF3-AGY** | agy Gemini 3.8 Flash (High) | **COMPLETED** — `.scratch/reviews/cf3-agy/CF3-AGY-REVIEW.md`: 0 INVALIDATES, 0 BIASES |
 | XBLIND-ASTRA | codex `gpt-6-astra` ultra, server, `run_resumable2.sh`; ws `/home/sat/mcrl-v025-xblind-astra-ws` | **auto** — the runner resumes its codex session on failure; check `chain.log` |
 | XADV-ASTRA | same; ws `/home/sat/mcrl-v025-xadv-astra-ws` | auto |
@@ -152,5 +153,5 @@ resumed twice this way and produced its most important findings on the second re
 
 ## Monitors to re-arm after a restart
 
-- codex chain completions: `tail -F /home/sat/mcrl-v023-codex-audits/parallel-20260909/chain.log | grep finished|FAIL|attempt [2-9]`
+- ~~codex chain completions~~ — **stopped 2026-09-11** (owner: no codex for now). Do not re-arm.
 - server health: `tail -F /home/sat/bigtmp/watch_health.log | grep LOAD HIGH|MEMORY LOW|^ORPHAN|ENOSPC`
