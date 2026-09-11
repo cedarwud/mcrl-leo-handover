@@ -20,7 +20,7 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-| **FEASFRONT** | `a295ca3c20644fd7b` | local `.scratch/feasible-frontier` | `FEASIBLE-FRONTIER-2026-09-11.md` | hysteresis / consolidation / satellite-lock frontier; **then** the JSRL guide-horizon coverage sweep `h = 0..10` |
+
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | fix per-head bootstrap, outage free ride, uncalibrated logged scalar; 500-ep pilot |
 | **HARVEST** | `ad98bdcb7c81b29a0` | local `.scratch/concept-harvest` | `CONCEPT-HARVEST-2026-09-11.md` | read-only: every old-project concept → RETRY / ADAPT / DROP by whether the *cause* of its old outcome is present here |
 | **CAPPENALTY** | `aec999753c170e5f3` | local `.scratch/cap-penalty` + `/home/sat/mcrl-v025-cap-penalty-ws` | `CAP-PENALTY-2026-09-11.md` | (1) find where the sibling measured the penalty's effect; (2) per-sat beam cap k=3 as off-by-default flag → does it create rank collapse, does the penalty prevent it |
@@ -32,7 +32,7 @@ terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
 
 Completed today and not to be resumed: LFDSCREEN, ENDPOINTREV-astra, C1VSGAIN,
 SPECPROFILE, CATFISHSURFACE, ZCLOSE, ZWHY, R23HISTORY, DQFDGROUND, CATFISHFACT,
-**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`).
+**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`).
 
 **Usage-limit interruption 2026-09-11 ~04:20Z.** All five running agents were terminated
 mid-task by an HTTP 429 session limit; four were resumed by `SendMessage` after the reset
