@@ -81,6 +81,7 @@ is not comparable to pinned-archive numbers.
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
+| **CEILING** | `a6bc6cea99e44c3fc` (sonnet) | local `.scratch/ee-ceiling` | `EE-CEILING-2026-09-11.md` | centralised Dinkelbach search vs rules on pinned archive; blind to pilot; resume: "Resume CEILING; read your PROGRESS.md; do not read the pilot report." |
 | **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep; **+ seeds 3-4 for A1/A2/A3**) on pinned archive; Amendment 2 (lambda=0); **HOLD full launch until launch-hardening list done** (gate off-by-one, DECISION.json race, code fingerprint + RUN-MANIFEST, process-level resume test, 5 GB cap at full buffers, launch.sh hardening; then launch **12** fresh runs (seeds 0-2; seeds 3-4 deferred: 18-way contention = ~3x slowdown) and deploy HEAD `cf3_report.py`) |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
