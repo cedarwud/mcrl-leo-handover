@@ -212,6 +212,29 @@ Report `.scratch/t0-repr/T0-REPRESENTABILITY-2026-09-12.md`. Verdict unchanged (
   0.4122 bits. So a non-privileged anchor teacher costs the student no information gap; any gap measured later for T_DR / T_SEQ
   is attributable to their privilege.
 
+## Two lanes closed out, 20:15–20:20 UTC
+
+**B1 lighting-price screen: FAIL** (`.scratch/b1-credit/B1-CREDIT-IMPLEMENTATION-2026-09-12.md`, first line; the mutant re-run's
+verdict column and the commit follow). Realised-bits variant +24.6 % / +24.9 % at η = η₀ / 1.0e8 but bits ratio 0.867 / 0.920
+against the ≥ 0.95 gate (6 evaluation episodes, 42.7–45.2 lit beams vs the rule's 61.8); observation-level variant **loses**
+7.1–7.4 % on all 24 evaluation and 24 calibration episodes (bits 0.55, p10 0.38). Engineering core green (9 tests, 13 mutants
+red, `equal_share` bit-identical to CF3). Under the **difference** credit the one-step argmax moves in 866/2000 decisions
+(43.3 %) against 3/2000 (0.15 %) for equal share, at ≈ 6.2 h per 1000-episode run (≈ 11 × CF3 A1). **Consequences:**
+Amendment 5 Part II has **no admissible credit** — the contingency cannot fire on lighting price, and exact-DR arms keep their
+formal restriction; E0a is unaffected because it runs `equal_share`; the LP *rule* family (LP-prev(1,0)) is untouched — a rule
+and a credit with the same name land on opposite sides of the gate, which is exactly why the owner required this screen.
+
+**Oracle lane closed** (`.scratch/h4-probe/ORACLE-CELLS-2026-09-11.md`, `LP-PROBE-2026-09-11.md`). Its aggregation **matches the
+controller's independent one field for field**; `BRANCH-NUMBERS-FLOOR-R1-EVAL.md` needs no correction. New facts: A-real-floor
+has **32.2 % of served user-steps under the rate floor** even with the per-move floor, because 72–96 of 100 users move each
+step — the floor moved its pooled EE by only +0.18 pp and its degeneracy is mechanistic, not a threshold artefact;
+B-real-floor is monotone by construction (0 violations) and paid 4.17 pp for the floor (+29.52 % → +25.35 %); the **B2 teacher
+calibration set is ready** (+22.551 %, 24/24, 0 violations). Verification: parity exactly 0 on all 1,200 committed steps, 122
+replays reproduced, 72,000 decisions reconstructable from the saved advantage vectors. **HELD and recorded**: A-floor
+calibration, both R2 cells (the R2 rule itself scores −3.98 % on this set) and the **reverse-order sensitivity** — so nothing yet
+separates "sequential information helps" from "this 0..99 order helps"; the B2 lane was given a cheap clone-level
+order-robustness check to close that gap.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
