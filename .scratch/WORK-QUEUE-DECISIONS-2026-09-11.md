@@ -129,6 +129,18 @@ bounded ACRM, JSRL. Layer 2 was never what failed and can be kept whole. What ch
   joint-action dump (T_JOINT labels) after its fill cells; B1 agent's follow-on = T0 representability screen (local BC probe).
 - Q9b (registry rows for H4, LP, ceiling, oracle): after the ceiling and oracle reports; sonnet after its weekly reset.
 
+## Owner decisions 17:30 UTC (Amendment 4 to Ruling 2: `…-AMENDMENT-4-OWNER-GATES-B2-BRANCH-AND-CATFISH-COUNT-2026-09-12.md`)
+
+- Learner gate `ρ ≥ 0.5 × R_repr` = **continue-eligibility for short-episode mechanism screening only**, conjunctive with
+  2/3 seed-pair direction, service + rate floor, beating the matched null teacher, and a gain beyond seed noise; never a paper
+  threshold (confirmation runs with more seeds / CI later).
+- **B2 = pre-approved conditional branch**: only if B-real − A-real ≥ +3.3 pp after the rate-floor replay, service/rate floor
+  kept, and the extra value representable from the B2 observation; entered as an explicit execution-contract change with B1
+  kept as comparator. A-real(R1) eval verified: +5.93 % but p10 0.27× the rule (herding) → authorises nothing yet.
+- Catfish count: (a) non-dominance, (b) distinctness incl. value-weighted disagreement / advantage separation from the 28-action
+  vectors, (c) causal marginal by drop-one; the 25 % / 0.2 numbers are pre-screen diagnostics; 1–4 catfish all acceptable.
+- **b0 worktree removed** 17:30 UTC; branch and archive tag kept.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
