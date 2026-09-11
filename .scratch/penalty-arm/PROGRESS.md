@@ -25,10 +25,11 @@ Python (server): `/home/sat/mcrl-leo-handover/.venv/bin/python`. **Never modify 
 | 3 | Acceptance tests (OFF bit-identity etc.) | DONE, 8/8 pass | `.scratch/penalty-arm/test_penalty_offpath.py` |
 | 4 | Sync to server, snapshot commit | DONE | `sat:/home/sat/mcrl-v025-penalty-arm-ws`, commit `5d4116e` |
 | 5a | OFF + PENALTY 500-ep pilots | DONE | `runs/OFF/`, `runs/PENALTY/` |
-| 5b | NULL_PENALTY 500-ep pilot | RUNNING (PID 3373925) | `runs/NULL_PENALTY/` |
+| 5b | NULL_PENALTY 500-ep pilot | DONE 768 s | `runs/NULL_PENALTY/` |
 | 6a | Greedy eval OFF, PENALTY, untrained floor | DONE | `runs/eval-off-penalty.{json,log}` |
-| 6b | Greedy eval NULL_PENALTY | PENDING (after 5b) | `runs/eval-null.{json,log}` |
-| 7 | Report | PENDING | `PENALTY-ARM-2026-09-11.md` |
+| 6b | Greedy eval NULL_PENALTY (+OFF repro, bit-identical) | DONE | `runs/eval-null.{json,log}` |
+| 6c | Descriptive eval of ep100-400 checkpoints | DONE | `runs/eval-traj-ep00{1,2,3,4}00.*` |
+| 7 | Report | DONE | `PENALTY-ARM-2026-09-11.md`; results copied to `results/` |
 
 Declarations fixed before any result was read: `DECLARATION-2026-09-11.md`.
 
@@ -67,7 +68,7 @@ setsid nohup nice -n 16 /home/sat/mcrl-leo-handover/.venv/bin/python \
 |---|---|---|---|
 | OFF | 3371776 | `runs/OFF.log` | DONE 790 s |
 | PENALTY | 3371777 | `runs/PENALTY.log` | DONE 799 s |
-| NULL_PENALTY | 3373925 | `runs/NULL_PENALTY.log` | RUNNING, ep 400 at resume; ETA ~2-3 min |
+| NULL_PENALTY | 3373925 | `runs/NULL_PENALTY.log` | DONE 768 s |
 
 NULL norms measured from PENALTY's 500-episode mean `penalty_grad_norm_mean`:
 `0.266806,0.357390,0.070064`.
@@ -89,3 +90,6 @@ head0 49.590→18.459, head1 43.984→14.457, head2 39.351→2.547. The term was
 - Report must carry one line: pooled EE here is under the simulator's per-beam
   power = `max` over served users accounting (non-standard; literature sums),
   and inherits whatever the parallel re-scoring finds.
+
+## COMPLETE
+All steps done 2026-09-11. No process left running on sat. Endpoint pooled EE: OFF 88,894,962.36; PENALTY 85,996,841.88; NULL 85,767,802.06 bit/J. PENALTY vs NULL +0.27% (0.13 sem), no separation; neither beats OFF; ordering flips across ep100-400 checkpoints.
