@@ -2,14 +2,15 @@
 
 Idempotent and resumable (``status.json`` complete -> exit 0; a resume file
 -> continue from its episode boundary).  Every 100 episodes: resume state,
-a PRESERVED policy checkpoint, logs, status.  At episodes 250/500/750 (and
-1000, recorded only) a greedy calibration-seed reading is appended to
-``readings.jsonl`` for every arm (A0 included, read-only, no RNG consumed).
+a PRESERVED policy checkpoint, logs, status.  At episodes 100 (read-only),
+250/500/750 (quarters) and 1000 (recorded only) a greedy calibration-seed
+reading is appended to ``readings.jsonl`` for every arm (A0 included,
+read-only, no RNG consumed).  A1-A3: lambda fixed at 0 (Amendment 2).
 
 Learning check (coordinator, pre-launch): at the first eta update (ep 500)
-each CF process waits for the three A1 readings in ``<root>/learning-check``
+each CF process waits for the A1 seed 0-2 readings in ``<root>/learning-check``
 and stops (status ``stopped-learning-check``) unless A1 beats the
-RANDOM_MASKED calibration reference on >= 2 of 3 seeds.
+RANDOM_MASKED calibration reference on >= 2 of those 3 seeds.
 
 Usage::
 
@@ -58,7 +59,7 @@ def rss_gb() -> float:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", choices=sorted(ARMS), required=True)
-    ap.add_argument("--seed-index", type=int, choices=(0, 1, 2), required=True)
+    ap.add_argument("--seed-index", type=int, choices=(0, 1, 2, 3, 4), required=True)
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--calibration", type=Path, required=True)
     ap.add_argument("--episodes", type=int, default=C.EPISODES)
@@ -72,6 +73,8 @@ def main() -> int:
 
     torch.set_num_threads(1)
     arm, k = a.arm, a.seed_index
+    if arm == "A0" and k not in C.A0_SEEDS:
+        raise SystemExit("A0 is declared with seeds 0-2 only")
     train_seed, env_seed, mob_seed = C.TRAIN_SEEDS[k]
     out = a.root / f"{arm}-{ARMS[arm]}-s{k}"
     out.mkdir(parents=True, exist_ok=True)
@@ -189,23 +192,42 @@ def main() -> int:
         m = cfr.pooled_rollout(lambda i: pol, env_factory=factory, encode=enc,
                                seeds=C.cal_seeds(n_cal))
         return {"episode": episode_done, "measured_ee": m["ee"],
-                "measured_h_inter": m["h_inter"], "measured_served": m["served"],
-                "measured_beams": m["beams"], "kind": "a0-reading"}
+                "measured_h_inter": m["h_inter"], "measured_h_intra": m["h_intra"],
+                "measured_served": m["served"], "measured_beams": m["beams"],
+                "measured_bits": m["bits"], "measured_joules": m["joules"],
+                "kind": "a0-reading"}
 
     def append_reading(row: dict) -> None:
         with open(readings_path, "a") as f:
             f.write(json.dumps({k2: row[k2] for k2 in row if k2 != "measured_ee_ep"},
                                default=str) + "\n")
 
+    progress_eps = (1,) if a.smoke else (100,)
+
+    def progress_reading(episode_done: int) -> None:
+        """Read-only calibration reading between quarters (coordinator:
+        readings at 100/250/500/750/1000).  Consumes no training RNG and
+        changes no trainer state."""
+        if cf_arm:
+            m = trainer.measure_on_calibration()
+            row = {"episode": episode_done, "measured_ee": m["ee"],
+                   "measured_h_inter": m["h_inter"], "measured_h_intra": m["h_intra"],
+                   "measured_served": m["served"], "measured_beams": m["beams"],
+                   "measured_bits": m["bits"], "measured_joules": m["joules"],
+                   "eta": trainer.eta, "lambda": trainer.lam, "kind": "progress-reading"}
+        else:
+            row = a0_reading(episode_done)
+        append_reading(row)
+
     def gate(episode_done: int, row: dict) -> None:
         gate_dir.mkdir(parents=True, exist_ok=True)
         append_reading(dict(row, gate="pending"))
-        if arm == "A1":
+        if arm == "A1" and k in C.GATE_SEEDS:
             C.write_json(gate_dir / f"A1-s{k}.json",
                          {"seed_index": k, "measured_ee": row["measured_ee"],
                           "episode": episode_done, "utc": utc()})
         deadline = time.time() + a.gate_timeout_s
-        files = [gate_dir / f"A1-s{j}.json" for j in range(3)]
+        files = [gate_dir / f"A1-s{j}.json" for j in C.GATE_SEEDS]
         while not all(f.is_file() for f in files):
             if time.time() > deadline:
                 raise cfr.LearningCheckStop("timed out waiting for the three A1 readings")
@@ -233,6 +255,8 @@ def main() -> int:
             append_reading(row["quarter"])
         if not cf_arm and episode_done % quarter == 0:
             append_reading(a0_reading(episode_done))
+        if episode_done in progress_eps:
+            progress_reading(episode_done)
         if episode_done % CHECKPOINT_EVERY == 0 or episode_done == episodes or (
             a.smoke) or episode_done == a.stop_after:
             save(episode_done)

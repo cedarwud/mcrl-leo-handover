@@ -109,6 +109,29 @@ def cf_reward_matrix(result, outcome, *, dt: float = DT_S) -> np.ndarray:
     return out
 
 
+# ------------------------------------------------------------------ envs
+def make_env_on(archive, users: int = 100):
+    """``training_pipeline.make_training_environment`` on a GIVEN archive.
+
+    Statement-for-statement the same construction; the only difference is
+    that the caller supplies the ``TleArchive`` instance, so several envs in
+    one process can share one (immutable) parse cache instead of each holding
+    its own unbounded copy.  Bit-identity is tested.
+    """
+    from ..env.ephemeris import TRAIN, BlockAlternatingSplit, EpisodeStartSampler
+    from ..env.mobility import MobilityConfig
+    from ..env.scenario import ScenarioConfig, ScenarioDriver
+    from ..env.step import StepEnvironment
+    from ..runtime.trainer_env import TrainerEnvironment
+
+    driver = ScenarioDriver(
+        archive, ScenarioConfig(mobility=MobilityConfig(num_users=users))
+    )
+    split = BlockAlternatingSplit.for_archive(archive)
+    sampler = EpisodeStartSampler.for_archive(archive, split, TRAIN)
+    return TrainerEnvironment(StepEnvironment(driver), sampler)
+
+
 # ------------------------------------------------------------------ settings
 @dataclass(frozen=True)
 class CFRatioSettings:
@@ -125,6 +148,11 @@ class CFRatioSettings:
     bits_scale: float = 1.0            # s_B, bits per user-step
     joules_scale: float = 1.0          # s_E, joules per user-step
     lambda0: float = 0.0
+    dual_ascent: bool = False
+    """Amendment 2 (EE only): lambda is FIXED at ``lambda0 = 0``; the action
+    rule is ``argmax [Q_B - eta Q_E]`` and ``Q_H`` is trained and logged but
+    out of the argmax.  ``True`` restores the declaration's dual ascent (kept
+    only so the machinery stays testable)."""
     calibration_env_seed_base: int = 9_121_000
     calibration_mobility_seed_base: int = 9_122_000
     calibration_episodes: int = 24
@@ -628,7 +656,10 @@ class CFRatioTrainer(MODQNTrainer):
             "measured_ee_ep": list(m["ee_ep"]),
             "kind": "final-diagnostic" if final else "quarter",
         }
-        new_lam = max(0.0, self.lam + st.alpha * (m["h_inter"] - st.h_cap_inter))
+        new_lam = (
+            max(0.0, self.lam + st.alpha * (m["h_inter"] - st.h_cap_inter))
+            if st.dual_ascent else self.lam
+        )
         eta_due = episode_done >= st.eta_first_update_episode
         row["lambda_candidate"] = new_lam
         row["eta_candidate"] = float(m["ee"]) if eta_due else None

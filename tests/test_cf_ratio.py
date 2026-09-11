@@ -148,6 +148,26 @@ def mutant(monkeypatch):
             return real_enc(self, states, 0)
 
         monkeypatch.setattr(T, "encode_at", enc)
+    elif MUTANT == "dual_ascent_on_by_default":
+        real_init = cfr.CFRatioSettings.__init__
+
+        def sinit(self, *a, **k):
+            k.setdefault("dual_ascent", True)
+            real_init(self, *a, **k)
+
+        monkeypatch.setattr(cfr.CFRatioSettings, "__init__", sinit)
+    elif MUTANT == "shared_env_test_split":
+        def bad(archive, users=100):
+            from mcrl.env.ephemeris import TEST, BlockAlternatingSplit, EpisodeStartSampler
+            from mcrl.env.mobility import MobilityConfig
+            from mcrl.env.scenario import ScenarioConfig, ScenarioDriver
+            from mcrl.env.step import StepEnvironment
+            from mcrl.runtime.trainer_env import TrainerEnvironment
+            d = ScenarioDriver(archive, ScenarioConfig(mobility=MobilityConfig(num_users=users)))
+            sp = BlockAlternatingSplit.for_archive(archive)
+            return TrainerEnvironment(StepEnvironment(d), EpisodeStartSampler.for_archive(archive, sp, TEST))
+
+        monkeypatch.setattr(cfr, "make_env_on", bad)
     elif MUTANT:
         raise AssertionError(f"unknown mutant {MUTANT}")
     yield
@@ -446,7 +466,8 @@ def test_resume_does_not_repeat_episodes_and_is_bit_identical():
 def test_eta_and_lambda_change_only_at_declared_boundaries():
     tr = _trainer_real("none", cfg_kw={"episodes": 4},
                        st_kw={"quarter_episodes": 1, "eta_first_update_episode": 2,
-                              "h_cap_inter": 0.0})       # cap 0 -> lambda must rise
+                              "h_cap_inter": 0.0,         # cap 0 -> lambda must rise
+                              "dual_ascent": True})       # machinery test only
     calls = []
     tr.learning_gate = lambda ep, row: calls.append(ep)
     logs = tr.train_cf(progress_every=0)
@@ -465,7 +486,8 @@ def test_eta_and_lambda_change_only_at_declared_boundaries():
     def stop(ep, row):
         raise cfr.LearningCheckStop("fail")
     tr2 = _trainer_real("none", cfg_kw={"episodes": 4},
-                        st_kw={"quarter_episodes": 1, "eta_first_update_episode": 2})
+                        st_kw={"quarter_episodes": 1, "eta_first_update_episode": 2,
+                               "dual_ascent": True})
     tr2.learning_gate = stop
     with pytest.raises(cfr.LearningCheckStop):
         tr2.train_cf(progress_every=0)
@@ -493,3 +515,43 @@ def test_b1_never_undoes_its_restriction_by_an_incumbent_hold():
     inc = 20
     allowed = cfs.r_no_new_beam(gain, load, inc, legal)
     assert cfs.pick(gain, legal, allowed, inc, 0.0) == 5
+
+
+def test_lambda_stays_exactly_zero_under_amendment_2():
+    """A1-A3 settings: lambda fixed at 0 even when the old C-H cap is violated."""
+    for kind in ("none", "cf3"):
+        tr = _trainer_real(kind, cfg_kw={"episodes": 3},
+                           st_kw={"quarter_episodes": 1, "eta_first_update_episode": 2,
+                                  "h_cap_inter": 0.0})
+        assert tr.settings.dual_ascent is False
+        logs = tr.train_cf(progress_every=0)
+        assert all(r["lambda"] == 0.0 for r in logs)
+        assert all(r["lambda"] == 0.0 for r in tr.dual_trajectory)
+        assert tr.lam == 0.0
+        assert logs[2]["eta"] != 2.0                       # eta still updates
+
+
+def test_shared_archive_env_is_bit_identical_to_make_training_environment():
+    factory = _real_env_factory(6)
+    from mcrl.env.tle import TleArchive
+    from mcrl.runtime.training_pipeline import resolve_tle_root
+
+    shared = TleArchive(resolve_tle_root())
+
+    def roll(env, seed):
+        er, mr = np.random.default_rng(seed), np.random.default_rng(seed + 1)
+        states, masks, _ = env.reset(er, mr)
+        out = [str(env.epoch)]
+        pol = cfs.random_legal(np.random.default_rng(seed + 2))
+        for _t in range(4):
+            res = env.step(pol(states, masks), er)
+            e = env.last_outcome.energy
+            out.append((e.system_throughput_bps, e.system_consumed_power_w,
+                        tuple(r.r2_handover for r in res.rewards)))
+            states, masks = res.user_states, res.action_masks
+        return out
+
+    for seed in (31, 57):
+        ref = roll(factory(), seed)
+        assert roll(cfr.make_env_on(shared, 6), seed) == ref
+        assert roll(cfr.make_env_on(shared, 6), seed) == ref   # warm shared cache

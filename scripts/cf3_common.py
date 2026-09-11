@@ -23,7 +23,9 @@ import numpy as np  # noqa: E402
 from mcrl.algorithms import cf_sources as cfs  # noqa: E402
 from mcrl.algorithms.cf_ratio import episode_seeds  # noqa: E402
 
-TRAIN_SEEDS = ((42, 1337, 7), (43, 1338, 8), (44, 1339, 9))
+TRAIN_SEEDS = ((42, 1337, 7), (43, 1338, 8), (44, 1339, 9), (45, 1340, 10), (46, 1341, 11))
+GATE_SEEDS = (0, 1, 2)          # the learning check is declared over A1 seeds 0-2
+A0_SEEDS = (0, 1, 2)
 CAL_ENV_BASE, CAL_MOB_BASE = 9_121_000, 9_122_000
 EVAL_ENV_BASE, EVAL_MOB_BASE = 9_111_000, 9_112_000
 RANDOM_ACTION_BASE = 9_131_000
@@ -42,9 +44,31 @@ def eval_seeds(n: int = N_EVAL):
     return episode_seeds(EVAL_ENV_BASE, EVAL_MOB_BASE, n)
 
 
+_SHARED_ARCHIVE = None
+
+
+def shared_archive():
+    """ONE read-only ``TleArchive`` per process.
+
+    ``TleArchive`` caches every parsed daily file without bound, per
+    instance; ``make_training_environment`` builds a new instance per env, so
+    a process holding four envs (main + three sources) plus per-episode
+    calibration envs held up to four copies of the parse cache (A2 reached
+    3.9 GB RSS by episode 100 of the diagnostic stage).  Parsed files are
+    immutable (records are tuples), so sharing one instance changes no
+    number -- ``tests/test_cf_ratio.py`` checks rollouts are bit-identical.
+    """
+    global _SHARED_ARCHIVE
+    if _SHARED_ARCHIVE is None:
+        from mcrl.env.tle import TleArchive
+        from mcrl.runtime.training_pipeline import resolve_tle_root
+        _SHARED_ARCHIVE = TleArchive(resolve_tle_root())
+    return _SHARED_ARCHIVE
+
+
 def env_factory(users: int = 100):
-    from mcrl.runtime.training_pipeline import make_training_environment
-    return lambda: make_training_environment(users=users)
+    from mcrl.algorithms.cf_ratio import make_env_on
+    return lambda: make_env_on(shared_archive(), users)
 
 
 def sha256_file(path: Path) -> str:
