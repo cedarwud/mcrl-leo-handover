@@ -187,3 +187,74 @@ So the gap is misalignment plus under-optimisation. The pilot has **10,000 updat
 | Q8 housekeeping | yes | unrelated to validity |
 
 **Sources consulted on the web this session** (abstracts only): [Sun et al. 2024, IEEE Commun. Lett. (via search)](https://arxiv.org/abs/2605.02416v1), [Competitive Experience Replay (Liu et al., ICLR 2019)](https://arxiv.org/abs/1902.00528), [Jump-Start RL (Uchendu et al., ICML 2023)](https://proceedings.mlr.press/v202/uchendu23a/uchendu23a.pdf), [Fractional DRL for Age-Minimal MEC](https://arxiv.org/html/2312.10418), [Asynchronous Fractional Multi-Agent DRL](https://arxiv.org/html/2409.16832v1), [Dynamic Experience Replay](https://arxiv.org/pdf/2003.02372), [Revisiting Fundamentals of Experience Replay (Fedus et al. 2020)](https://proceedings.mlr.press/v119/fedus20a/fedus20a.pdf). DQfD/R2D3/DDPGfD/Nair facts are relayed from `.scratch/dqfd-grounding/DQFD-FAMILY-GROUNDING-2026-09-11.md`.
+
+---
+---
+
+# K. Phase 2a — the pilot result (written after unblinding, 2026-09-11 12:55 UTC)
+
+**Verdict unchanged — DEAD-PATH as framed: the pilot confirms the physics reading (joules per beam-step are 189–191 J for all twelve runs; every EE difference is bits per lit beam), every learned arm sits 5–8 % below `A m=2dB` on the same calibration episodes, the directed-vs-random pool contrast is null (A2 − A3 = +0.78 %, t ≈ 0.8, one deciding seed pair won by 0.05 M, time-averaged learning curves identical), and the only resolved effect — A1 beats A0 by +17 % — is the objective change plus a late decline of A0, exactly the near-tautology predicted in A.2.5.**
+
+Unblinded source: `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` only (tables generated from JSON; provenance checks reported passed [R]). New condition group **[P24eval]**: as [P24cal] but on the 24 **evaluation** episodes (env `9_111_000+i` / mobility `9_112_000+i`), final checkpoint `policy-ep01000.pt`, tree `f297334e`. The learning-speed readings (episodes 100/250/500/750/1000) are on the **calibration** episodes and are therefore in [P24cal], the same set as the premeasure rules — the only place pilot arms and rules meet on one episode set. Nothing below compares [P24eval] with [P24cal].
+
+### K.1 Does the verdict or any claims-table row change?
+
+The verdict does not change. Rows of table G that move from assumed/inferred to measured:
+
+| row | before | after the pilot |
+|---|---|---|
+| 1 (EE = bits per lit beam; power per beam constant) | derived | **measured on the learned arms**: J per beam-step 189.4–191.3 for all 12 runs (6.30–6.36 W/beam) [P24eval, D]; bits per beam-step A0 1.48–1.69e10 < A1 1.84–1.92e10 < A3 1.93–1.95e10 ≈ A2 1.92–1.98e10 [D] |
+| 2 (rules dominate the learners) | measured on the 9,000-ep checkpoint | **measured on the 1000-ep learners, same episode set**: calibration@1000 A1 102.90 / A2 106.22 / A3 105.35 vs `A m=2dB` 112.20, `MAX_NOMINAL_GAIN` 110.51, `B1` 104.19, TRAINED-9000 93.90 [P24cal] — all learned arms −5.3 … −8.3 % vs the best rule, ≈ B1 |
+| 8 (static pools help a dense-reward DQN) | assumed, literature-contrary | **pools of any kind: marginal +2.6…+3.4 % at the final checkpoint** (A2 − A1 +3.39 M, Welch t 2.3, df 4; A3 − A1 +2.61 M, t 2.3) [P24eval, D]; **directed vs random: null** (A2 − A3 +0.78 M, t 0.8) [D]; **AUC/900 identical** (A1 102.89, A2 102.81, A3 103.15 [P24cal]) |
+| 11 (gate near-tautological) | inferred | **measured**: A1 > A0 on 3/3 seeds, +17.1 % [P24eval]; A1 above A0 at every reading 100–1000 on calibration (+26 %, +7 %, +10 %, +13 %, +19 %) [P24cal, D] |
+| 12 (1000 episodes shows direction vs A0, not vs rules) | inferred | **measured** as stated |
+| 13 (service floor non-binding) | measured | re-confirmed: served 0.9969–0.9998 in all 12 runs; A3's C-S CI [−0.143, −0.061] pp is statistically *below* A1 yet passes at −0.5 pp — the floor cannot discriminate anything a learner does |
+| 15 (3 seeds resolve the sizes at stake) | assumed | **measured**: between-seed SD A1 1.9 %, A2 1.6 %, A3 0.4 %, A0 6.6 % [P24eval, D]; within-run checkpoint swings 3–5 M (A1) and 4–19 M (A0) across the 250–1000 readings [P24cal, D] — differences under ~3–5 % are unreadable at n = 3, final-checkpoint-only |
+| 16 (nothing to trade on handover) | measured on rules | **measured on learners**: A1–A3 re-anchor at 0.47–0.58 inter-satellite/user-step and still sit below the rules (K.5) |
+| 5/6/7 (own-bits learner; energy credit inert; η inert) | refuted/inferred | unchanged; `λ* = 0` for all nine seeds; η moved 110.5 → 100.5–107.2 with no observable consequence [R]; the η→0 argmax-flip probe on the final checkpoints (H4) is still the cheapest confirmation |
+| 3/4 (headroom above rules; reachable per user) | assumed | unchanged — the ceiling (phase 2b) decides the first; the pilot adds evidence against the second: the learners converge to a worse copy of the max-gain rule (same beams 62–67, same churn, 8–12 % fewer bits per beam) |
+
+### K.2 Branch 1: signal or noise?
+
+Formally the declared rule fires: A2 > A1 on 2/3 same-index pairs (−0.02, +5.15, +5.04 M) and A2 > A3 on 2/3 (−0.62, +2.92, **+0.05** M), C-S non-inferior [P24eval, R]. Substantively it is noise, on four independent readings [D]:
+1. **A2 − A3 = +0.78 M (+0.77 %)**, Welch t = 0.8, smaller than every per-episode sem in the table (1.25–1.62 M) and than the between-seed SD of A1/A2 (1.7–1.9 M); one of the two "wins" is 0.05 M.
+2. **The time-averaged learning curves are identical**: AUC/900 on calibration A1 102.89, A2 102.81, A3 103.15 [P24cal]. The controller's own forecast said a catfish effect would show first in learning speed; it shows nowhere — at episode 100 A2 (95.5) and A3 (92.0) are *below* A1 (96.5).
+3. The final-checkpoint advantage of A2/A3 over A1 (+3 %) appears only at the 750/1000 readings and is the size of one within-run checkpoint swing (A1 seed 0: 107.4 → 102.7 → 104.8 across 500/750/1000).
+4. Under the declaration's own reading table, "A2 ≈ A3 > A1" is **branch 2 — extra experience, not the demonstrators** — and under the evaluation contract's rule 2, an effect that survives replacing the specialist with noise "is the perturbation, not the demonstration, and must not be called catfish".
+
+**What A3 > A1 on 3/3 seeds implies for the mechanism.** Random-legal pools (trajectories at 52 M bit/J, 88 % of whose actions the learner would never take once ε = 0.01) raised the final reading by +2.6 % (marginal). The plausible channel is coverage of poor actions: after episode 222 the on-policy replay contains almost no low-value actions, so TD has nothing grounding `Q_B` on them and the argmax can drift to over-estimated unvisited actions; 15 off-policy rows per batch pin those values down. That is a regulariser on the bits head — a known DQN dataset-coverage effect [I] — and it does not depend on the demonstrator's quality (A2 ≈ A3). It is not evidence about energy (`Q_E` cannot act), about consolidation (`B1`'s pool did not move beams: A2 66.4 vs A1 64.1), or about any of the five RIS-catfish mechanisms. If the owner wants this effect at all it is a one-line engineering note ("keep a small random off-policy prefill in replay"), and even that needs ≥ 5 seeds to resolve at the ±3 % level.
+
+### K.3 A1 vs A0: size, and what carries it
+
+- **Size.** Final checkpoint [P24eval]: A1 98.64 vs A0 84.21 M, +17.1 %, 3/3 seeds (pairs +12.0, +12.5, +18.8 M). On calibration [P24cal] the gap is +26 % at episode 100, **+7 % at 250, +10 % at 500**, +13 % at 750, +19 % at 1000.
+- **A0's trajectory**: calibration means 76.5 → 95.1 → 95.6 → 91.8 → 86.4 across 100/250/500/750/1000; seed 2 falls 92.6 → 78.5 between 750 and 1000; H_inter drifts up from 0.16 to ~0.20 [R]. A0 peaks at 250–500 and declines as ε reaches its floor (episode 222) — i.e. **as A0 becomes greedy on its own objective, its EE falls**. That is the misalignment acting, not noise: the r2/r3 terms (61 % of the r1 term's magnitude, A.2.5) are being optimised at the expense of EE. The decline is amplified by eq.(16)'s instability (per-head max with three separate networks; between-seed SD 6.6 %, within-run swing up to 19 M).
+- **Under-training?** A0 at 1000 episodes (86.4 M, calibration) is 8 % below the 9,000-episode frozen MODQN (93.90 M, same calibration set [P24cal]) — so yes, A0 at 1000 is short of its own asymptote. But A1 at 1000 (102.9 M, same set) is **+9.6 % above the 9,000-episode MODQN**. The cleanest same-episode-set statement the pilot supports is: **A1(1000 ep) 102.9 > MODQN(9,000 ep) 93.9 > A0(1000 ep) 86.4 M bit/J** — the objective change beats even the fully trained baseline, and the 1000-episode baseline adds a late decline.
+- **Decomposition.** Misalignment ≈ the +7…+10 % seen at A0's best readings and vs the 9,000-ep run; A0's late decline/instability adds the rest of the +17 % at the final checkpoint. Neither part is a learning contribution.
+- **The owner's gate.** Met, robustly in sign (every seed, every reading). The headline +17 % overstates it; the defensible number is +9–10 % (vs A0's best reading, or vs the 9,000-episode MODQN on the same episodes), and the honest label is "MODQN's r2/r3 scalarisation costs ~10 % pooled EE on this physics; removing it recovers it". A referee will ask why A0 was read at a declining final checkpoint and will want A0 at its best reading and at 9,000 episodes beside it.
+
+### K.4 Where the learned arms sit relative to the rules (same calibration episodes, [P24cal]) and the per-beam decomposition
+
+| arm (calibration @1000, seed mean) | pooled EE (M) | vs `A m=2dB` 112.20 | vs `MAX_NOMINAL_GAIN` 110.51 | vs `B1` 104.19 | vs TRAINED-9000 93.90 |
+|---|---:|---:|---:|---:|---:|
+| A0 | 86.37 | −23.0 % | −21.8 % | −17.1 % | −8.0 % |
+| A1 | 102.90 | −8.3 % | −6.9 % | −1.2 % | +9.6 % |
+| A2 | 106.22 | −5.3 % | −3.9 % | +2.0 % | +13.1 % |
+| A3 | 105.35 | −6.1 % | −4.7 % | +1.1 % | +12.2 % |
+
+Per-beam decomposition on the evaluation episodes [P24eval, D] (240 steps): J per beam-step **189.4–191.3 for all 12 runs**; bits per beam-step A0 1.478–1.689e10, A1 1.842–1.919e10, A2 1.915–1.982e10, A3 1.926–1.946e10; lit beams A0 50.5–70.2 (unstable), A1 62.2–65.6, A2 65.5–67.1, A3 62.9–64.3. For the pattern only (different episode set), the [P24cal] rules were: `A m=2dB` 2.147e10 bits/beam-step at 63.0 beams, `MAX_NOMINAL_GAIN` 2.116e10 at 63.0, `B1` 2.011e10 at 38.6, TRAINED-9000 1.762e10 at 66.6.
+
+**This matches the blind physics reading exactly**: (i) power per lit beam is policy-invariant to ±0.5 %; (ii) the learners light the same number of beams as the max-gain rule (62–67) and churn like it (K.5), i.e. they converge to an imperfect max-gain rule; (iii) their shortfall is entirely bits per lit beam — 8–12 % fewer than `A m=2dB` — of which the representability probe accounts for ~1–2 % and the own-bits/under-optimisation residue for the rest; (iv) the pools did not move the beam count (no consolidation was learned from `B1`'s pool), only the per-beam SE by ~3 %, consistent with a regularisation effect on `Q_B` (K.2); (v) A0's collapse mode is visible in the same decomposition: seed 0 lit only 50.5 beams with 1.69e10 bits/beam (packing users, halving service per user — the throughput degeneracy of A.2.2, invisible to the endpoint), seed 2 lit 68 beams at 1.48e10 (spreading onto poor beams).
+
+### K.5 Handover
+
+A1–A3 run at H_inter 0.47–0.58 per user-step (1.02–1.19 per user-minute), A0 at 0.18–0.20 (0.37–0.42/min) [P24eval, R]. This is exactly A.2.3: with handovers costing 0 J and 0 bits and `p·G^T` invariant inside a segment, the own-bits learner re-anchors whenever a higher-gain beam appears; it lands at the rules' churn (`A m=2dB` 0.55, `MAX_NOMINAL_GAIN` 0.65 on calibration [P24cal]) — and still below their EE. Every A1–A3 seed sits within 0.02–0.13 of the former C-H bound 0.6016 at λ = 0, so `λ* = 0` for all nine and the C2 head could never have acted [R]. Referee implications: the EE gain over MODQN coincides with **2.7× the inter-satellite handover rate** (≈1.1/min, at the top of the published operating points, ≈1.0/min and a 1.2/min budget [R DR-14/16]); the reviewer will demand an interruption/signalling cost model (the 0.142 s per event sensitivity is ≤ 0.5 % of bits [R erratum 25], but signalling energy is unmodelled) and will read "churn is free" as a modelling omission that inflates every EE number in the table by an unknown amount, rules included.
+
+### K.6 Recommendation to the owner（繁體中文，≤ 10 行）
+
+1. **Q5（全長訓練＋drop-one）不要跑。** A2 對 A3 只有 +0.78%（一個 seed pair 以 0.05M 決勝），AUC 三臂完全相同；drop-one 會去拆解一個還沒和「隨機池」分開的機制，而且全長訓練造不出規則之上的空間——三個學習臂在同一組校準集都低於 `A m=2dB` 5–8%。
+2. 宣告上的 branch 1 是規則形式上成立，實質是 branch 2（額外經驗，非示範）；報告要照 evaluation contract rule 2 寫成「perturbation 效應，不得稱 catfish」。
+3. 這次 pilot 真正解析出的只有一件事：**A1(1000 集) 102.9 > MODQN(9000 集) 93.9 > A0(1000 集) 86.4 M bit/J（同一校準集）**——MODQN 的 r2/r3 獎勵在這套物理上約損失 10% EE；+17% 的頭條有一半是 A0 在 250 集後自己衰退（seed 2 從 92.6 掉到 78.5）。門檻算過了，但那是對 baseline 獎勵的診斷，不是學習貢獻。
+4. 每束功率 189–191 J/beam-step 十二個 run 全部相同；學習臂點的波束數、換手率都跟 max-gain 規則一樣，只是每束少 8–12% 的位元——它們學成了一個較差的一行規則。
+5. 等天花板（phase 2b），並要求它回報每人吞吐量與 nominal-information/unilateral 拆解；≤ +3% 就收線寫規則論文；≥ +10% 且 per-user 資訊可達，才重做 credit（difference reward）與動作空間，再談訓練。
+6. 若要留一個便宜的後續：在現有 A1–A3 final checkpoints 上做 η→0 的 argmax-flip 探針（幾分鐘），把「能量頭不起作用」從推論變成量測；以及只有在 owner 想發表「隨機 off-policy prefill 讓 DQN 多 3%」這條工程附註時，才補 5 seeds 的 A1 vs A3。
+7. 論文主體：一行遲滯規則 + 規則前緣 + MODQN 獎勵錯位的診斷 + 換手成本的敏感度；把 `A m=2dB`、MNG、天花板放進主表，A0 同時給最佳讀數與 9000 集版本。

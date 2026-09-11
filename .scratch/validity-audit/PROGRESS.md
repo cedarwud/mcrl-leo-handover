@@ -38,3 +38,8 @@ Output: `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md`.
 - CFSCREEN: only ep 0 paired on old harness; BC top-1 C1 0.84, C2 0.94, C3 0.71; probe of B1 reproduces ~70% of consolidation.
 - DQFDGROUND: seeding w/o pretraining+margin = RBS/HER = DQfD's worst arms; R2D3 optimum demo ratio ~0.4%.
 
+
+## Phase 2a (12:51-12:56 UTC)
+- Unblinded ONE file: `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` (read in full). Nothing else opened.
+- Section K appended below a double separator; blind part untouched. Verdict unchanged (DEAD-PATH as framed). Key: A2-A3 +0.78% (t 0.8; one pair by 0.05M), AUC identical; A1>A0 +17% = misalignment (+7..10%) + A0 late decline; all learned arms 5-8% below A m=2dB on the calibration set; J/beam-step 189-191 for all 12 runs.
+- Awaiting phase 2b (ceiling).
