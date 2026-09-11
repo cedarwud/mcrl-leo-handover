@@ -101,3 +101,41 @@ under C), and their results may not be used to change any B1/B2/C gate.
   results; no B1/B2/C gate is changed by them.
 
 Decision: **the owner's.** Until then Part II is not in force, and ruling §5 plus Amendment 1 §6 stand as written.
+
+## Part II — owner decision (2026-09-11 ~18:00 UTC): ADOPTED as a contingency authorization, not a launch authorization
+
+Owner: "採用，但定義成 contingency authorization，不是立即啟動授權。" Conditions (a)–(f) are kept in full; the following are
+added and bind:
+
+1. **Narrower trigger.** The early-run clause fires only if **all** hold: the B1 credit's engineering gate is passed; T0
+   `R_repr ≥ 0.5` (at least one clone, both episode sets); the harness has passed the fresh-context agy review and the
+   process-level tests; the rate-floored evaluation cells have landed; **and** the formal B1/B2/C adjudication, or the
+   representability B2 needs, is still delayed by later dependencies. If the adjudication is complete before the harness is
+   ready, the clause is not used at all — the formal branch runs directly.
+2. **Credit identity.** Early runs may use only a `lighting_price` credit that has **passed no-training validation**. If the formal
+   B1 finally uses the exact difference reward, early lighting-price D0/D1–D4 results count only as an independent
+   mechanism/credit screen or ablation — **never as substitute evidence for exact-DR D0–D4, and they never waive the formal
+   exact-DR arms.** "Lighting price passed oracle-first" must be **verified by the B1 diagnostic** (its one-step credit/action
+   behaviour consistent with the declared LP lever), not inferred from the name or the analytic form.
+3. Unchanged and restated: any learner arm on the exact difference reward waits for the rate-floored A-real to pass Amendment 1
+   rule 1; early results, evaluations and reports are sealed until the B1/B2/C adjudication is written and committed (owner
+   and controller read nothing but process health / crashes); the nine arms, matched nulls, seeds, episode budget,
+   hyperparameters and evaluation protocol are frozen before launch; early results cannot add or drop an arm or move a gate;
+   the oracle keeps priority CPU and early training may not slow the rate-floored A/B cells or the B2 representability work.
+4. **Result handling: sealed early runs are not a new experiment family.** After the adjudication, if they equal the formal
+   branch's frozen configuration they are unsealed as that short screen's result; if the credit, the observation contract or any
+   other formal configuration differs, they are downgraded to diagnostic/ablation and are not merged into the formal comparison.
+
+**This decision launches no learner training by itself.** Priority stays: rate-floored A/B R1 → B1/B2 adjudication → B2
+representability (if needed); in parallel: B1 credit engineering, T0 representability, D0–D4 harness and preflight.
+
+### Controller finding recorded with the decision (verified, `.scratch/h4-probe/LP-PROBE-2026-09-11.md` evaluation grid, m = 0)
+
+The lighting price implied by the Dinkelbach price and the power model is `c* = η·P_beam / B_w ≈ 1.1e8 × 6.3 / 1.667e8 ≈ 4.2`
+bit/s/Hz (≈ 3.8 at η ≈ 1.0e8). The LP cells at that price **fail** the gates: LP-prev(4.2, 0) +1.03 % (paired +1.33 ± 0.87 %,
+15/24), bits ratio 0.62, p10 0.55 × the rule's, 38.8 lit beams; LP-prev(3, 0) +5.51 % but bits ratio 0.78. The admitted witness
+LP-prev(1, 0) (+6.66 %, bits 0.95) corresponds to a price about a quarter of `c*`. Moreover the lighting-price credit scores
+a user's **own** bits (bandwidth share `1/U_b`), while LP scores the full-beam spectral efficiency; the two rank joining a lit beam
+versus lighting a new one differently. **So LP-prev(1, 0) does not establish that the lighting-price credit passed oracle-first.**
+The credit's own one-step greedy version must be rolled out and screened (B1 diagnostic addition, sent 18:00 UTC); until it
+passes, the contingency has no admissible credit.
