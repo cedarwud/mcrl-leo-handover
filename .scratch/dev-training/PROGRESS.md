@@ -19,7 +19,7 @@ Worktree `/home/u24/papers/mcrl-leo-handover-dev`, branch `dev/e0-harness-202609
 - [x] 3c. Launcher dry-run + process-level stop/resume on sat: DEV PROCTEST PASS
 - [x] 4. agy review r1: 0 INVALIDATES, 1 BIASES (already-fixed D3 test blind spot); r2 on the launch commit running
 - [x] 5. E0a LAUNCHED 20:29:10 UTC (arms 1-3, DEV k = 0, --stop-after 100, DEVVAL 24 at 100)
-- [x] 6. Report `.scratch/dev-training/E0-BATCH-1-2026-09-12.md` written; DEVVAL tables owed when the runs finish
+- [x] 6. Report written; **E0a finished, DEVVAL@100 readout and E0b proposals appended** (awaiting confirmation before E0b)
 
 ## Files (all new; `cf_ratio.py`, `cf_credit.py`, `modqn.py` are NOT edited)
 - `src/mcrl/algorithms/cf_teacher.py` — T0 = LP-prev(c=1,m=0) scores/action from the RAW user state (verbatim the LP-probe /
@@ -100,3 +100,15 @@ Worktree `/home/u24/papers/mcrl-leo-handover-dev`, branch `dev/e0-harness-202609
 - sat PID 3570619 same with `--arm 3`, log `runs-e0a/E0-3-k0.log`, cfg `c19d2596c5a745a7`.
 - local PID 705869 agy review pass 2 (BASE 63b02dc0, HEAD 772481c4), log `agy-e0-r2.log`, output `AGY-E0-REVIEW.md`.
 - finished: local mutant runners (`mutants.log`, `mutants2.log`); sat DEVVAL references (`results/DEVVAL-REFERENCES.json`).
+- 2026-09-12T04:33+08:00 (20:33 UTC) all three E0a arms finished: `stopped-at`, 100 episodes, wall 216-217 s, RSS ~1.96 GB,
+  10 updates/episode, replay full at 50,000. No development process alive on sat.
+- 2026-09-12T04:38+08:00 agy review pass 2 on the launch commit `772481c4` finished: **0 INVALIDATES, 0 BIASES**, "the E0
+  development training launch may proceed" (`AGY-E0-REVIEW.md`; pass 1 on `f9042150` kept as `AGY-E0-REVIEW-r1-f9042150.md`).
+- 2026-09-12T04:50+08:00 DEVVAL@100 readout written into `E0-BATCH-1-2026-09-12.md`: D0 1.03059357e8, D2-T0 1.07431853e8,
+  D2-null 1.00956333e8 bit/J against the DEVVAL references T0 1.176642e8 / A m=2dB 1.115812e8 / MAX_NOMINAL_GAIN 1.100346e8 /
+  RANDOM 5.199857e7. Paired per-episode: D2-T0 > D0 23/24, D2-T0 > D2-null 24/24, D0 > D2-null 18/24. Greedy agreement with T0:
+  0.3805 / 0.5382 / 0.3760; in-run stored-teacher-action agreement with T0: 1.0 / 1.0 / 0.0386 (chance). Direction only.
+- 2026-09-12T04:52+08:00 E0b proposals appended with config hashes (B1 resume to 300 at unchanged hashes; B2 add D3-T0
+  `9a1a67c498376d32`; B3 tau sweep `cd424977244eedea` / `b2c124ae12ce477f`; B4 alpha sweep `5679ddb2931a70ca` /
+  `3d7743a644990ca3`; B5 k = 1 replicate `50c9d4a0e19f1931` / `67d3dc6eba2ef687` / `28b99027bda43d2e`). NOT launched: the
+  coordinator confirms first.

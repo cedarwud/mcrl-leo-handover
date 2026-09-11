@@ -1,0 +1,55 @@
+**0 INVALIDATES, 0 BIASES: The E0 development training launch may proceed.**
+
+The complete engineering review has been written to [`/home/u24/papers/mcrl-leo-handover/.scratch/dev-training/AGY-E0-REVIEW.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/dev-training/AGY-E0-REVIEW.md).
+
+---
+
+### Key Review Verification Summary
+
+The diff `63b02dc030180b83889387b031bd1c7dff4754f5..772481c4dbdcb69d729168d513366a4a5ecddf46` was reviewed line-by-line against Amendment 6 (§2, §3, §5, §6) and verified through direct test execution:
+
+1. **Mechanisms (`D0`, `D2-T0`, `D2-null`, `D3-T0`)**:
+   - `D0` executes the inherited `CFRatioTrainer.update()` untouched ([`cf_dev.py:521-525`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L521-L525)), bit-identical to the baseline learner.
+   - Distillation (`D2`) and large margin (`D3`) operate on the deployed scalar score $S = Q_B - \tilde{\eta} Q_E - \lambda Q_H$ on student-visited states from the replay buffer.
+   - When teacher weights are zero ($\alpha = 0$, $\lambda_E = 0$), the loss contributes 0 gradient, reproducing `D0` bit-identically across weights and metrics.
+   - `D2-null` permutes scores strictly within legal actions ([`cf_teacher.py:101-119`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L101-L119)); argmax agreement with T0 matches random chance ($1/k$). It draws solely from `(9_231_000, k)` without touching training RNGs.
+   - Commit [`772481c4`](file:///home/u24/papers/mcrl-leo-handover-dev) tightened the unit test fixture in [`tests/test_cf_dev.py:536-544`](file:///home/u24/papers/mcrl-leo-handover-dev/tests/test_cf_dev.py#L536-L544) to place the runner-up inside the margin ($0.95 + 0.15 = 1.10 > 1.0$), resolving the previous test blind spot.
+2. **Teacher T0 = LP-prev(c=1, m=0)**:
+   - Evaluated strictly from raw `s.channel_quality` and `s.beam_loads` at step collection time, never from encoded observations ([`cf_teacher.py:56-78`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L56-L78)).
+   - First-index tie-breaking and exact arithmetic match `lp_common.lp_prev_rule_factory(1.0, 0.0)` bit-for-bit on real environment states.
+3. **Seed Namespaces**:
+   - `DEV`, `DEVVAL`, and `DEV-NULL` ranges are disjoint from formal sets. Runtime guards in [`assert_dev_seed`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L136-L158) fail closed if formal evaluation (`9_111_000+i` / `9_112_000+i`), calibration (`9_121_000+i` / `9_122_000+i`), or CONFIRM (`9_311_000+i` / `9_312_000+i`) seeds are constructed.
+   - `measure_on_calibration` and `quarter_update` raise contract errors unconditionally.
+4. **Frozen E0 Configuration**:
+   - 300 episodes, linear epsilon decay $1.0 \to 0.01$ over 67 episodes, $\eta$ fixed at $\eta_0 = 110,507,234.83444457\text{ bit/J}$ (verified to $10^{-6}$), $\lambda = 0$, and `equal_share` credit for arms 1–4.
+5. **Launcher & Driver**:
+   - `RUN-MANIFEST.json` binds code tree SHA256, manifest file hashes, calibration SHA256, and per-arm configuration hashes.
+   - Real process preflight via [`scripts/dev_e0_proctest.py`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_proctest.py) executed and passed cleanly:
+     - `T1`: Stopped at episode 2 and resumed through the launcher; policy and logs are bit-identical to uninterrupted run (`resume_bit_identical: true`).
+     - `T2`: Launcher refuses configuration mismatches fail closed (`launcher_refused_changed_config: true`).
+6. **Preflight Tests & Named Mutants**:
+   - Preflight unit test suite: **20/20 passed** (`tests/test_cf_dev.py`).
+   - Named mutant coverage: **22/22 verified RED** via direct test execution.
+
+---
+
+### Findings Matrix
+
+| Severity | Count | Details |
+|:---|:---:|:---|
+| **INVALIDATES** | **0** | None |
+| **BIASES** | **0** | None (F-01 from r1 resolved in commit `772481c4`) |
+| **COSMETIC** | **4** | See below |
+
+- **Finding F-01 (COSMETIC)** — `.scratch/dev-training/run_mutants.sh:35-37` (Verified by reading & execution)  
+  *Scenario*: In the scratch script `run_mutants.sh`, the summary regex `grep -qE "[0-9]+ (failed|error)"` failed to match pytest's `-x` summary string `"stopping after 1 failures"`, causing `.scratch/dev-training/mutants.log` to print `"0 red / 22 total"`. Direct evaluation of test return codes confirmed that all 22 named mutants turn their tests strictly red (22/22 RED).
+- **Finding F-02 (COSMETIC)** — [`tests/test_cf_dev.py:555`](file:///home/u24/papers/mcrl-leo-handover-dev/tests/test_cf_dev.py#L555) (Verified by reading & execution)  
+  *Scenario*: `assert float(loss2) > 0.0` converts a grad-tracking tensor to float without `.detach()`, emitting a harmless PyTorch `UserWarning`. Adding `.detach()` silences the warning.
+- **Finding F-03 (COSMETIC)** — [`scripts/dev_e0_common.py:107-117`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_common.py#L107-L117) (Verified by reading)  
+  *Scenario*: `e0_cf_settings` expects `calib["eta0_bit_per_J"]`. Operators must provide the merged pilot `calibration.json` (as produced by `cf3_premeasure.py --merge`).
+- **Finding F-04 (COSMETIC)** — [`scripts/dev_e0_launch.py:178`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_launch.py#L178) (Verified by reading)  
+  *Scenario*: The launcher invokes `sys.executable`. Operators must invoke `dev_e0_launch.py` under the project virtualenv (`/home/u24/papers/mcrl-leo-handover/.venv/bin/python`) so child processes find `torch` and `mcrl`.
+
+### Verdict
+
+The codebase meets all engineering and specification gates in Amendment 6. **The E0 development training launch may proceed.**

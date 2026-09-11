@@ -281,6 +281,32 @@ DEVVAL reference frame, rolled once on the 24 DEVVAL episodes: T0 = LP-prev(1,0)
 Next: the DEVVAL readout at episode 100 decides E0b — whether to continue the three arms to 300, whether to add `D3-T0` (after
 its test assertion is tightened), and any development-parameter change, each as a new version with its own config hash.
 
+## E0a readout at episode 100 (20:52 UTC) — the teacher's *content* separates from its *loss term*
+
+Second agy pass on the launch commit `772481c4`: **0 INVALIDATES, 0 BIASES**. All three arms `stopped-at` 100 episodes,
+216–217 s wall, 10 updates per episode, replay full. DEVVAL (24 episodes, greedy, fresh env per episode; references on the same
+set: T0 = LP-prev(1,0) 117.66 M, `A m=2dB` 111.58 M, `MAX_NOMINAL_GAIN` 110.03 M, RANDOM 51.99 M bit/J):
+
+| arm | DEVVAL EE (M bit/J) | vs D0 | served | rate p10 | beams | agreement with T0 | T0 regret |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| D0 | 103.06 | — | 0.99842 | 7.65e7 | 64.63 | 0.381 | 0.959 |
+| **D2-T0** | **107.43** | **+4.24 %, 23/24 paired** | 0.99817 | **1.08e8** | 63.47 | **0.538** | **0.405** |
+| D2-null | 100.96 | −2.04 % | 0.99708 | 7.12e7 | 63.67 | 0.376 | 1.021 |
+
+**Reading (development, direction only, one seed, a third of the E0 ceiling — no statistical claim).** D0 learns (behaviour EE
+5.49e7 → 1.02e8, served 0.944 → 0.995, `Q_E` loss down ~8×) but sits below both one-line rules. D2-T0 leads D0 on every axis
+here and beats D2-null 24/24 paired, while **D2-null lands below D0** — identical loss shape, weight, temperature, mask and
+gradient path with permuted scores. So in this mechanism the gain is the **teacher's information**, not the extra loss term.
+That is the contrast with the CF3 pilot, where static pools made directed and random indistinguishable (+0.78 %): the change is
+labels on student-visited states with a soft target, not pool replay. Carried caveat (inferred, not measured): at τ = 3 the
+target is nearly uniform over ~26 legal actions, so only ~0.11 nats of the cross-entropy is learnable.
+
+**E0b authorised (controller, 20:55 UTC)**: wave 1 = resume the three arms to 300 on unchanged hashes (intentional resume of
+MCRL-Dev-v0.1), add `D3-T0` `9a1a67c4` fresh to 300 with DEVVAL at 100/200/300, and the **paired k = 1 replicate**
+`50c9d4a0` / `67d3dc6e` / `28b99027` to 100 (promoted because every reading so far rests on one seed); wave 2 = the τ sweep on
+D2-T0 (τ = 1 `cd424977`, τ = 0.3 `b2c124ae`), replicated at k = 1 only if a τ wins; **deferred**: the α sweep, and learning
+rate / clipping / target cadence remain unproposed. ≤ 8 development processes while the B2 lane runs.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
