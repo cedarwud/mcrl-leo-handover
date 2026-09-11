@@ -1,6 +1,6 @@
 # Agent registry — resume after any interruption
 
-Last updated: 2026-09-11 ~10:45Z (before a possible third usage limit). **Read this first after a session restart, a usage limit, or a crash.**
+Last updated: 2026-09-11 ~09:35Z UTC (after the THIRD usage-limit reset; all four agents resumed). **Read this first after a session restart, a usage limit, or a crash.**
 
 ## FIRST THING AFTER A RESTART — the four live agents and their ready-to-send resume messages
 
@@ -37,9 +37,9 @@ still unfinished. Order matters: **B0CORRECT first** (CF3PILOT is blocked on it)
 > `.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md`, `.scratch/curation/PROVENANCE-HEADER.md`.
 > List any sub-agents you spawned.
 
-**Unregistered `fork` sub-agents** `a4644bab74d559124`, `a35d4634cf4c5439e`, `a360dd6a762afdefe`
-appeared ~10:38Z; the controller did not dispatch them. They were most likely spawned by CURATE or
-CF3PILOT — each of the four agents was asked to list its children in its own `PROGRESS.md`. **Do not
+**`fork` sub-agents** `a4644bab74d559124`, `a35d4634cf4c5439e`, `a360dd6a762afdefe` were **spawned by CURATE**
+(confirmed in `.scratch/curation/PROGRESS.md`; they write `rows-A/B/C.md` to the session scratchpad).
+All three were killed by the third limit; CURATE was told to finish their parts itself, not re-fork. **Do not
 resume a fork directly; resume its parent**, which knows what it needs. If no parent claims one,
 leave it.
 
@@ -63,6 +63,13 @@ report, so the message can say exactly what is already done. Template:
 
 If a transcript cannot be resumed, dispatch a fresh agent with the original prompt **plus** the
 instruction to read `PROGRESS.md` first — the checkpoint file is what makes that possible.
+
+**Third usage-limit interruption 2026-09-11 ~09:25Z UTC.** All four live agents and CURATE's three forks
+terminated. State at resume: B0CORRECT had posted `READY FOR PILOT: 363845e8` + pinned TLE archive `427e6a91…`;
+CF3PILOT was still at step 0 (reading) with nothing on `sat`. All four resumed by `SendMessage`; B0CORRECT told to
+skip its optional reruns and finalise; CF3PILOT given the early-stop check again in case it was not delivered.
+**New standing fact:** everything built on the catfish-surface harness ran on the UNPINNED archive `e07f3e1e…` and
+is not comparable to pinned-archive numbers.
 
 ## Running — Claude sub-agents
 
