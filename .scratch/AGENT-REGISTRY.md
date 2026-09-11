@@ -38,9 +38,16 @@ lane was dispatched. Verified by the controller at 20:07 UTC against the filesys
   `27f69edf`): B1 contract + ratio learner + T0 + D3 large-margin injection, D2-T0 τ = 0.3 as the soft comparator, D3-null as the
   matched null; D3-T0 beats the paired D0 by +9.11 / +13.34 / +9.23 % (24/24) on seeds k = 0/1/2 with no QoS collapse. **No
   process is running anywhere.** Two decisions are the owner's: (i) declare E1's seeds and configuration; (ii) whether to open the
-  no-training candidate screen for a second teacher (rollout + representability clone + value-weighted distinctness for three or
-  four candidates, ~1 h, no training, off the critical path). Resume DEVHARNESS with: *"Read `.scratch/dev-training/PROGRESS.md`
-  and the freeze document; continue from the first incomplete step; no new experiment family without a controller instruction."*
+  no-training candidate screen for a second teacher — **now dispatched as CATFISH2-DISCOVERY, see below**. Resume DEVHARNESS
+  with: *"Read `.scratch/dev-training/PROGRESS.md` and the freeze document; continue from the first incomplete step; no new
+  experiment family without a controller instruction."* E1's seeds and configuration remain the owner's to declare.
+- **CATFISH2-DISCOVERY** `af6175e5685e4686f` (opus, live): Stage 0 discovery for a second source, brief
+  `.scratch/catfish2-discovery/BRIEF.md` (its §3 reading rule was committed before any counted evaluation, `bbaf5ea0`), worktree
+  `/home/u24/papers/mcrl-leo-handover-cf2` on `catfish2/discovery-20260912` from `05aadf1b`, sat ws
+  `/home/sat/mcrl-v025-catfish2-ws/`, ≤ 3 processes, DEV/DEVVAL only, **no training**. Deliverable
+  `.scratch/catfish2-discovery/STAGE0-2026-09-12.md`; Stage-1 canaries need controller confirmation. Resume: *"Read
+  `.scratch/catfish2-discovery/PROGRESS.md` and the brief; check your sat processes by cwd + cmdline; continue from the first
+  incomplete step; Stage 0 only, no training."*
 
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 
