@@ -22,6 +22,8 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 |---|---|---|---|
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
+| LFDSCREEN | `a07cab0dcf4626ed2` | local `.scratch/lfd-family-screen` | `LFD-FAMILY-SCREEN-2026-09-11.md` | screen offline/advantage-weighted/guide-policy/constrained/MORL families against the 8 hard constraints |
+| ENDPOINTREV-astra | codex `gpt-6-astra` ultra | `/home/sat/mcrl-v025-endpoint-review-ws` | `ENDPOINT-REVIEW-ASTRA.md` | cross-model review of the endpoint decision; auto-resumes via `run_resumable2.sh` |
 | C1VSGAIN | `ae6dc407144ed2d9b` | `/home/sat/mcrl-v025-c1vsgain-ws` | `C1-VS-GAIN-HEURISTIC-2026-09-11.md` | exact C1 vs 52.042303 **and** 62.502712, both at full 48 |
 | SPECPROFILE | `abea2d51b138e045a` | `/home/sat/mcrl-v025-specprofile-ws` | `SPECIALIST-QOS-PROFILE-2026-09-11.md` | **resumed** — re-score the same configurations under the declared 0.062/0.142 s handover interruption |
 | CATFISHSURFACE | `a450f049afc5a76ea` | local `.scratch/catfish-surface` | `CATFISH-ATTACHMENT-SURFACE-2026-09-11.md` | **resumed (3rd)** — pooled EE (ratio of sums) for every scripted arm |
