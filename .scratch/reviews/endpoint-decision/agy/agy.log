@@ -1,0 +1,29 @@
+The independent cross-model review has been completed and written to [`ENDPOINT-REVIEW-AGY.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md).
+
+### Headline Verdict
+**PROCEED WITH CHANGES** (Mandatory changes: (1) Pre-register 3GPP-derived constraint bounds and report unconstrained pooled EE as a mandatory negative baseline; (2) Rebuild CF-GUARD around an explicit physical hysteresis/signaling penalty, not the inert 142 ms interruption; (3) Replace scalar Bellman DQfD with a decoupled two-critic $(Q_B, Q_E)$ ratio architecture to resolve mathematical incompatibility with fractional objectives).
+
+---
+
+### Core Review Findings & Structure in the Report
+
+1. **Ruling on Endpoint Change (Legitimate vs. Outcome-Selected)**:
+   - Respecifying to a Constrained Multi-Objective RL (CMORL) formulation is **legitimate only as a declared successor problem**, because unconstrained pooled EE in this simulator induces a pathological, non-deployable operating point (71.17% handover rate per 30 s step, winning purely via zero-cost power re-anchoring).
+   - To prevent outcome-fitting, thresholds must be **externally sourced from 3GPP NTN orbital geometry** (e.g., 450 s LEO pass visibility yielding an operational limit $H_{\max} \le 0.40$ handovers/step and $S_{\min} \ge 99.0\%$ PHY availability from 3GPP TS 38.133), completely decoupled from the checkpoint's logged 0.2796 figure. The unconstrained metric must remain published as a negative baseline.
+
+2. **Attack on the Proposed Design & Decisive Falsification**:
+   - The weakest link is the **Ratio-Objective Bellman Failure**: scalar DQfD optimizing $r_t = 0.5 r_1 + 0.3 r_2 + 0.2 r_3$ uses linear Bellman expectations that actively conflict with the fractional pooled ratio $\bar{B}/\bar{E}$, where $r_3$ penalizes beam concentration and $r_2$ prices a zero-joule event.
+   - **Decisive measurement**: Track the Q-filter acceptance gate fraction $\Phi_{\text{gate}}(e)$ and policy-demonstrator action overlap $J(e)$ across training. If $\Phi_{\text{gate}}(e) \to 0$ and $J(e)$ decays as TD updates take over, DQfD will unlearn the demonstrations and regress to the suboptimal MODQN plateau.
+
+3. **Two-Specialist Redundancy (`CF-EE` vs. `CF-GUARD`)**:
+   - Sourced 142 ms interruption destroys only $0.472\%$ of a step's bits and costs 0 J (Finding 8). Because link margins vary by 3–10 dB, Dinkelbach selection on this penalty will flip $< 2\%$ of decisions.
+   - `CF-GUARD` must be rebuilt on an explicit **3GPP measurement hysteresis threshold ($\Delta_{\text{SINR}} \ge 3\text{ dB}$)** or an **occupancy-aware RF chain extinction guard ($338\text{ mW}$)**. Pre-test that action divergence $D(\text{CF-EE}, \text{CF-GUARD}) \ge 0.20$ before running any training.
+
+4. **Ratio-Objective RL Formulation**:
+   - Demonstrates why Dinkelbach policy iteration with an inner-loop scalar DQN destabilizes replay buffers and why direct ratio policy gradients are incompatible with off-policy discrete DQN.
+   - Specifies the **Decoupled Two-Critic ($Q_B, Q_E$) Architecture**: replay buffers store raw transitions $(s, a, B, E, s', \mathcal{M})$, critics update via stationary Double-DQN Bellman targets, and outer-loop Dinkelbach parameter $\eta_k = \sum B / \sum E$ governs greedy action selection and linear demonstrator advantage evaluation $A_{\text{demo}}(s, a_D; \eta_k) = [Q_B - \eta_k Q_E](a_D) - \max_{a \neq a_D} [Q_B - \eta_k Q_E](a)$.
+
+5. **Defensible Novelty Statement**:
+   - Identifies that algorithmic novelty in demonstration RL is non-defensible. The defensible contribution is an **empirical, diagnostic, and systems-architectural finding**: revealing that standard multi-objective rewards actively degrade satellite EE by penalizing handovers and rewarding beam spreading, and establishing the decoupled, ratio-consistent demonstration architecture necessary to prevent RL from collapsing below simple physical heuristics under operational constraints.
+
+The complete analysis, ranked objections, formal literature citations ([Dinkelbach 1967](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md#L170), [Zappone & Jorswieck 2015](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md#L171), [Geibel 2001](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md#L172), [Calvo-Fullana et al. 2023](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md#L173), [Hester et al. 2018](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md#L174), [Nair et al. 2018](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md#L175)), and audit ledger are detailed in [`ENDPOINT-REVIEW-AGY.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/reviews/endpoint-decision/agy/ENDPOINT-REVIEW-AGY.md).
