@@ -5,7 +5,7 @@ Last updated: 2026-09-11 ~09:35Z UTC (after the THIRD usage-limit reset; all fou
 ## FIRST THING AFTER A RESTART — the four live agents and their ready-to-send resume messages
 
 Check each workspace's `PROGRESS.md` first; then send the block below **verbatim** to each agentId
-still unfinished. Order matters: **B0CORRECT first** (CF3PILOT is blocked on it).
+still unfinished. **CF3PILOT first** — it is the critical path; its dependency (`READY FOR PILOT: 363845e8`) is already met.
 
 **1. B0CORRECT `a1f2ae507b9ec7674`** — `.scratch/b0-corrected/PROGRESS.md`
 > Resume B0CORRECT after a usage limit. Read your `PROGRESS.md` and continue from the last completed
@@ -14,8 +14,8 @@ still unfinished. Order matters: **B0CORRECT first** (CF3PILOT is blocked on it)
 > `wip/multi-catfish-v023-20260907`, no history rewriting; (2) D-1 behind a flag, default eq. (16),
 > W-08 assertions restored; (3) D-2 per-step worst-served floor; (4) pin one TLE archive by sha256 on
 > both hosts, RANDOM_MASKED bit-identical on both; then write the top line
-> `READY FOR PILOT: <sha> ; TLE archive <path> sha256 <hash>`; (5) only then the optional 500-ep
-> reruns. Full rulings: `V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md`.
+> `READY FOR PILOT: <sha> ; TLE archive <path> sha256 <hash>`. **Items 1-4 DONE (09:06Z). Item 5 (reruns)
+> SKIPPED by controller** — just finalise the report (incl. which figures used the unpinned archive) and stop.
 
 **2. CF3PILOT `a6a39605fae28be63`** — `.scratch/cf3-pilot/PROGRESS.md`, server `/home/sat/mcrl-v025-cf3-pilot-ws`
 > Resume CF3PILOT after a usage limit. Read your `PROGRESS.md` and continue from the last completed
@@ -75,8 +75,8 @@ is not comparable to pinned-archive numbers.
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-| **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | **resumed** — D-1 behind a flag (default eq.16, B1 stands), D-2 per-step floor, pin TLE archive across hosts, commit PENALTYARM port separately, merge b0 branch, rerun BASELINE_EQ16 + SHARED_BOOTSTRAP pilots |
-| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep); **waits for `READY FOR PILOT:` in B0CORRECT's PROGRESS** |
+| **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | items 1-4 **DONE** (`READY FOR PILOT: 363845e8`, TLE pinned `427e6a91…`); finalising report, reruns skipped |
+| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep) on `363845e8` + pinned archive; early-stop check at ep 500 declared |
 | **CURATE** | `a989dbbca3b5748b8` | local `.scratch/curation` | `.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md` | read-mostly: provenance registry of every citable number, cross-condition comparisons in in-force docs, in-force reading list. Creates new files only |
 | **CFSCREEN** | `af73f19801f7967c8` | local `.scratch/catfish-screens` | `CATFISH-SCREENS-2026-09-11.md` | zero-training: representability (BC probe), action/state distinctness of C1/C2/C3 sources, margin scale |
 
