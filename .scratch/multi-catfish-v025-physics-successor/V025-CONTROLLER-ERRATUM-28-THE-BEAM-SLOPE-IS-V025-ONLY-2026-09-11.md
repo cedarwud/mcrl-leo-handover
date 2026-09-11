@@ -26,6 +26,22 @@ predicts 93.6 against 93.1 measured for the trained checkpoint.
 activation-gated and load-unweighted (lighting a beam costs every co-channel user SINR). Their net
 sign on the MODQN harness is **not measured**.
 
+### Correction to section 1, same day (CAPPENALTY, measured)
+
+"A beam cap is not expected to raise EE at first order on the MODQN harness" is **half right**.
+CAPPENALTY measured a per-satellite cap of 3 on this harness (96 evaluation episodes, one training
+seed): **joules per beam-step flat within 0.7%** — the power half holds — but **interference per
+served user falls 7-9x, so spectral efficiency and bits per beam rise 17-28%**. Pooled EE rises
+**1.162x** (103,295,432.52 vs 88,894,962.36 bit/J), with **only 58% of user-steps served and
+delivered bits at 0.48x**. The OFF weights alone, dropped into the capped environment, gain +27.5%.
+
+So on the MODQN harness **fewer lit beams raise pooled EE through the interference term in the
+numerator**, not through power. Consistent with FEASFRONT's `B1_NO_NEW_BEAM` (37.9 beams, served
+0.9978, 103.47M vs the learner's 93.11M). **The interference channel of erratum 25 is now measured,
+not just argued.** And it carries a warning the whole design must keep: **pooled EE without a service
+floor rewards darkening beams and dropping users** — which is exactly what the declared C-S service
+guard exists to block. Every EE figure is reported with served fraction beside it.
+
 ## 2. The ÷U reading was wrong for every cited sibling number
 
 I told the owner the sibling's reported EE might be system EE ÷ U, making the true gap "hundreds of

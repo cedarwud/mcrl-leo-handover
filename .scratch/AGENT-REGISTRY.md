@@ -22,7 +22,6 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 |---|---|---|---|---|
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | **resumed** — D-1 behind a flag (default eq.16, B1 stands), D-2 per-step floor, pin TLE archive across hosts, commit PENALTYARM port separately, merge b0 branch, rerun BASELINE_EQ16 + SHARED_BOOTSTRAP pilots |
 | **CFSCREEN** | `af73f19801f7967c8` | local `.scratch/catfish-screens` | `CATFISH-SCREENS-2026-09-11.md` | zero-training: representability (BC probe), action/state distinctness of C1/C2/C3 sources, margin scale |
-| **CAPPENALTY** | `aec999753c170e5f3` | local `.scratch/cap-penalty` + `/home/sat/mcrl-v025-cap-penalty-ws` | `CAP-PENALTY-2026-09-11.md` | (1) find where the sibling measured the penalty's effect; (2) per-sat beam cap k=3 as off-by-default flag → does it create rank collapse, does the penalty prevent it |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
 terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
@@ -31,7 +30,7 @@ terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
 
 Completed today and not to be resumed: LFDSCREEN, ENDPOINTREV-astra, C1VSGAIN,
 SPECPROFILE, CATFISHSURFACE, ZCLOSE, ZWHY, R23HISTORY, DQFDGROUND, CATFISHFACT,
-**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`), **EEGAP** `a774b381a016fc9c4` (`.scratch/ee-magnitude/EE-MAGNITUDE-RECONCILIATION-2026-09-11.md`), **HARVEST** `ad98bdcb7c81b29a0` (`.scratch/concept-harvest/CONCEPT-HARVEST-2026-09-11.md`).
+**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`), **EEGAP** `a774b381a016fc9c4` (`.scratch/ee-magnitude/EE-MAGNITUDE-RECONCILIATION-2026-09-11.md`), **HARVEST** `ad98bdcb7c81b29a0` (`.scratch/concept-harvest/CONCEPT-HARVEST-2026-09-11.md`), **CAPPENALTY** `aec999753c170e5f3` (`.scratch/cap-penalty/CAP-PENALTY-2026-09-11.md`).
 
 **Usage-limit interruption 2026-09-11 ~04:20Z.** All five running agents were terminated
 mid-task by an HTTP 429 session limit; four were resumed by `SendMessage` after the reset
