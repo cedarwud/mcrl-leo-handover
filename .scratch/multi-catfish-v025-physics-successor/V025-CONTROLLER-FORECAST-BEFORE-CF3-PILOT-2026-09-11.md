@@ -54,3 +54,19 @@ risk of more time is the opposite one: repeated redesign until something appears
 Learning-speed readings: calibration-seed greedy pooled EE of every arm at episodes 100, 250, 500, 750, 1000,
 and the area under that curve, reported beside the declared final-checkpoint reading. The declared reading is
 unchanged.
+
+## Addendum ~10:40Z — first progress reading, and a corrected timetable
+
+An owner-supplied external review (`gpt4.md`) read the server workspace. Recorded facts (to be confirmed in
+CF3PILOT's report): pinned-archive source premeasure — C1 112.196, C2 100.988, C3 104.190, trained 93.903,
+random 51.866 Mbit/J, all sources within the former C-H and C-S; episode-100 greedy, seed 0 —
+**A1 95.21 > A2 84.55 > A3 82.39 Mbit/J**. This is a progress reading and changes nothing: no new stop rule,
+no design change. It is consistent with the forecast above (A2 not ahead of A1; any catfish effect, if one
+exists, not visible early). `lambda = 0` and the `Q_H` term's share = 0 at episode 100, as expected.
+C3 energy-contrast diagnostic: 35.8% of C3 moves change system energy by exactly 0; 59.5% within ±1% —
+equal-share credit is weak, so a later null for C3 would not show that consolidation fails.
+
+Launch-control defects found (off-by-one on the gate failure path, `DECISION.json` race, code missing from
+the resume fingerprint, no process-level resume test, 5 GB cap margin at full buffers, launcher PID reuse)
+are assigned to CF3PILOT before launch. **Timetable corrected**: A2/A3 run ~6.6 s/episode, so the full
+pilot takes ~2-4 h after launch, not the ~1.7 h I told the owner.
