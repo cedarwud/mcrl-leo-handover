@@ -1,0 +1,71 @@
+Notice: The user has updated their instructions for this conversation. You MUST review them before continuing.
+Here is the user's latest instruction:
+You are a fresh-context engineering reviewer from a different model family. Read the ACTUAL code yourself; do not rely on any summary. Do not edit anything. Be fast and concrete: this review gates a short development training launch (not a formal experiment).
+
+Repository worktree: /home/u24/papers/mcrl-leo-handover-dev. Review ONLY this diff: `git -C /home/u24/papers/mcrl-leo-handover-dev diff 63b02dc030180b83889387b031bd1c7dff4754f5..f90421502b87311ddf633a52ca54625c91cf530c`.
+
+What the diff is supposed to add (the minimum E0 training surface of `/home/u24/papers/mcrl-leo-handover/.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md` §5–§6 — read §2, §3, §5, §6):
+1. Mechanisms D0 (no teacher), D2-T0 (soft distillation toward softmax(T0 scores / tau) on the deployed scalar score, on student-visited states), D2-null (same, with T0's score vector randomly permuted among legal actions per state, seeded from the DEV-NULL namespace), D3-T0 (DQfD large margin on the deployed scalar score toward T0's action).
+2. Teacher T0 = LP-prev(c=1, m=0): score(a) = log2(1 + raw nominal SINR of candidate a) − 1·[beam a carried no users in the previous step], masked argmax, first index on ties; computed from the raw user state at collection time and stored with each transition.
+3. Development seeds only: DEV training triples (9_201_000+k, 9_202_000+k, 9_203_000+k), DEVVAL per-episode reseeded evaluation (env 9_211_000+i, mobility 9_212_000+i), DEV-NULL generators. The formal evaluation (9_111_000+i / 9_112_000+i), calibration (9_121_000+i / 9_122_000+i) and CONFIRM (9_311_000+i / 9_312_000+i) episodes must not be touched anywhere in development code paths.
+4. Frozen E0 config: 300 episodes, epsilon 1.0→0.01 over 67 episodes, eta fixed at eta_0 (no eta updates), lambda 0, credit equal_share for arms 1–4 (lighting_price only for the optional diagnostic arms 5–6), all other hyperparameters as the CF3 ratio learner.
+5. Launcher: manifest with code digest and config hash, idempotent, fail-closed on mismatch, liveness by PID + cmdline + cwd, dry-run.
+
+Look for: anything that would make an E0 run silently wrong or uninterpretable — a teacher loss that is not actually applied (or applied with the wrong sign/mask, or to illegal actions); a null teacher that still leaks T0's action (e.g. permutation that keeps the argmax, or permutes across the mask); teacher weight = 0 not reducing exactly to D0; T0 labels that differ from the verified rule (e.g. computed from the log1p-encoded observation instead of the raw state, or with a different tie-break); any use of formal evaluation/calibration/CONFIRM seeds; seed or config not recorded in the manifest; resume that can mix configs or code versions; failures swallowed; tests that pass without testing the property (check that named mutants really turn them red).
+
+Output: findings with severity (INVALIDATES / BIASES / COSMETIC), concrete failure scenario, file:line; verified-by-reading vs inferred. First line: one bold sentence with the count of INVALIDATES and BIASES and whether the E0 launch may proceed. Write to /home/u24/papers/mcrl-leo-handover/.scratch/dev-training/AGY-E0-REVIEW.md.
+The background task "sleep 10" is running. I will wait for it to finish.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+The background wait task is running. I will wait for it to complete.
+**0 INVALIDATES, 1 BIASES: The E0 development training launch may proceed (arms 1–3 unconditionally; arm 4 after tightening one unit-test assertion).**
+
+The comprehensive engineering review has been written to [`AGY-E0-REVIEW.md`](file:///home/u24/papers/mcrl-leo-handover/.scratch/dev-training/AGY-E0-REVIEW.md).
+
+---
+
+### Key Review Findings
+
+| ID | Severity | Subject / Location | Concrete Failure Scenario | Status |
+|---|---|---|---|---|
+| **F-01** | **BIASES** | Preflight unit test blind spot for D3 margin enforcement ([`tests/test_cf_dev.py:543-554`](file:///home/u24/papers/mcrl-leo-handover-dev/tests/test_cf_dev.py#L543-L554)) | `test_d3_margin_loss_properties` passes under mutant `DEV_MUTANT=d3_no_margin` (`20 passed`). In the test's hand-crafted vectors, the teacher action is ahead by $0.50 > 0.15$ (margin already satisfied; loss is 0 with or without margin) or the candidate is ahead by $1.1 > 1.0$ (loss is strictly positive and gradients have the same signs with or without margin). The test never checks the margin-sensitive region ($S(s, a) \le S(s, a_T) < S(s, a) + m$). *Note: Production code [`cft.d3_margin_loss`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L170-L188) in `cf_teacher.py` is unaffected and correctly adds the margin.* | Verified by reading & execution |
+| **F-02** | **COSMETIC** | `run_mutants.sh` regex failure (`.scratch/dev-training/run_mutants.sh:36`) | `pytest -x` outputs `stopping after 1 failures` on failure. The regex `[0-9]+ (failed|error)` in `tail -3` fails to match, causing `run_mutants.sh` to report `0 red / 22 total`, masking both the 21 truly red mutants and the 1 green mutant (F-01). | Verified by reading & execution |
+| **F-03** | **COSMETIC** | Calibration schema crash on legacy artifacts ([`scripts/dev_e0_common.py:111`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_common.py#L111)) | [`e0_cf_settings`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_common.py#L99-L118) expects `calib["eta0_bit_per_J"]`. Passing older calibration capture receipts (such as v07) causes an unhandled `KeyError` rather than a descriptive CLI error. | Verified by reading & execution |
+
+---
+
+### Audit Summary against Amendment 6 Requirements
+
+1. **Mechanisms (D0, D2-T0, D2-null, D3-T0)**:
+   - **D0**: Calls [`super().update()`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L525) directly; verified bit-identical to the baseline ratio learner [`CFRatioTrainer`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_ratio.py#L435).
+   - **D2-T0**: Soft distillation on student-visited states over legal actions; student scalar score [`student_scores`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L139) matches greedy deployment score $Q_B - \tilde{\eta} Q_E$ ($\lambda = 0$); target distribution [`soft_targets`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L121) normalizes over legal actions with $\tau = 3.0$ and sets illegal slots to 0.0; illegal logits masked to $-10^9$ avoiding $\text{NaN}$.
+   - **D2-null**: [`permute_scores_among_legal`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L101) permutes legal slots only, using composite generator `(9_231_000, k)` from the `DEV-NULL` namespace. Independent of training/env RNGs; empirical agreement with T0 matches chance rate ($p \approx 1/|\mathcal{A}_{\text{legal}}|$).
+   - **D3-T0**: Large margin DQfD loss [`cft.d3_margin_loss`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L170) correctly implements $\max_{a \in \mathcal{A}_{\text{legal}}} [S(s, a) + m \cdot \mathbf{1}(a \ne a_T)] - S(s, a_T)$ with $m = 0.15, \lambda_E = 1.0$.
+   - **Zero-weight reduction**: Setting $\alpha = 0$ or $\lambda_E = 0$ produces bit-identical weights and episode logs to D0.
+2. **Teacher T0 = LP-prev(c=1, m=0)**:
+   - Evaluated in [`cft.t0_scores`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_teacher.py#L56) from raw `UserState` (`channel_quality` nominal SINR, `beam_loads`).
+   - Argmax over legal action mask with first-index tie-breaking (`ok[np.argmax(score[ok])]`).
+   - Verified bit-identical to `lp_common.lp_prev_rule_factory(1.0, 0.0)` on real environment transitions.
+   - Transitions store collection-time labels in [`TeacherReplayBuffer`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L224).
+3. **Seed Namespaces & Formal Set Isolation**:
+   - Training uses DEV triples `9_201_000+k`, `9_202_000+k`, `9_203_000+k`. Evaluation uses DEVVAL `9_211_000+i`, `9_212_000+i`, RANDOM `9_221_000+i`. Permutations use DEV-NULL `(9_231_000, k)`.
+   - Formal evaluation (`9_111_000+i / 9_112_000+i`), calibration (`9_121_000+i / 9_122_000+i`), and CONFIRM (`9_301_000+k / 9_311_000+i`) are strictly blacklisted.
+   - Runtime seed assertions ([`assert_dev_seed`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L136)) and method guards ([`measure_on_calibration`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L461), [`quarter_update`](file:///home/u24/papers/mcrl-leo-handover-dev/src/mcrl/algorithms/cf_dev.py#L466)) fail closed.
+4. **Frozen E0 Configuration**:
+   - Budget: 300 episodes; $\epsilon$-decay: linear 1.0 $\to$ 0.01 over 67 episodes; $\eta$ fixed at $\eta_0 = 110,507,234.83444457\text{ bit/J}$; $\lambda = 0$; `equal_share` credit for arms 1–4.
+5. **Launcher, Process Hygiene & Resume**:
+   - Deterministic manifest ([`RUN-MANIFEST.json`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_launch.py)) with whole-`src` SHA256 digest and per-arm configuration hashes.
+   - Process liveness ([`is_live`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_launch.py#L47)) verifies PID, command line parameters, and repo working directory.
+   - Process test ([`scripts/dev_e0_proctest.py`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_proctest.py)) verified live: uninterrupted vs stopped-at-2 and resumed runs produce bit-identical policies, identical metrics, identical DEV-NULL RNG states, and fail closed on configuration changes.
+   - DEVVAL reference script ([`scripts/dev_e0_refs.py`](file:///home/u24/papers/mcrl-leo-handover-dev/scripts/dev_e0_refs.py)) successfully rolled out and verified `agreeT0 = 1.0000` for T0.
+
+---
+
+### Recommendation
+
+The first development training batch **E0a** (Arms 1–3: `D0`, `D2-T0`, `D2-null` on DEV triple $k=0$ stopped at episode 100) is **unconditionally clear to launch**. Before launching Arm 4 (`D3-T0`), add a unit test assertion covering the margin-sensitive range ($S(s, a) \le S(s, a_T) < S(s, a) + m$) to ensure `DEV_MUTANT=d3_no_margin` turns red.

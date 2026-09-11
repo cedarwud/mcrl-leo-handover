@@ -1,0 +1,42 @@
+#!/bin/bash
+# DEVHARNESS preflight: every named mutant must turn ITS test red.
+cd /home/u24/papers/mcrl-leo-handover-dev || exit 1
+export MCRL_TLE_ROOT=/home/u24/mcrl-runtime/tle-pinned-427e6a91
+export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
+export PYTHONPATH=/home/u24/papers/mcrl-leo-handover-dev/src
+PY=/home/u24/papers/mcrl-leo-handover/.venv/bin/python
+declare -a PAIRS=(
+ "t0_from_encoded_observation|test_t0_labels_reproduce_the_verified_rule"
+ "t0_tie_break_last|test_t0_labels_reproduce_the_verified_rule"
+ "t0_no_prev_step_penalty|test_t0_labels_reproduce_the_verified_rule"
+ "t0_argmax_ignores_mask|test_t0_labels_reproduce_the_verified_rule"
+ "d2_sign_flipped|test_d2_loss_shape_sign_mask_and_target"
+ "d2_ignores_mask|test_d2_loss_shape_sign_mask_and_target"
+ "d2_target_not_normalised|test_d2_loss_shape_sign_mask_and_target"
+ "d2_only_qb|test_d2_gradient_reaches_the_deployed_score_heads"
+ "d3_margin_on_teacher_action|test_d3_margin_loss_properties"
+ "d3_max_over_illegal|test_d3_margin_loss_properties"
+ "d3_no_margin|test_d3_margin_loss_properties"
+ "null_permutes_across_the_mask|test_d2_null_preserves_dimensions_mask_and_schedule"
+ "null_keeps_the_argmax|test_d2_null_carries_no_t0_action_information"
+ "null_uses_train_rng|test_d2_null_uses_only_its_own_generator_and_ignores_the_t0_action"
+ "teacher_applied_at_zero_weight|test_teacher_weight_zero_reproduces_d0_bit_identically"
+ "dev_loop_freezes_the_time_feature|test_d0_development_run_reproduces_the_pilot_a1_learner"
+ "replay_labels_misaligned|test_replay_sampling_matches_the_pilot_buffer_and_labels_follow_rows"
+ "resume_drops_teacher_labels|test_resume_keeps_the_labels_and_is_bit_identical"
+ "devval_consumes_train_rng|test_devval_does_not_consume_training_rng_and_is_deterministic"
+ "devval_uses_formal_evaluation_seeds|test_no_development_path_produces_a_formal_seed"
+ "dev_trainer_reads_calibration|test_formal_sets_are_refused_by_the_development_trainer"
+ "manifest_ignores_dev_settings|test_config_hash_is_deterministic_and_covers_the_whole_configuration"
+)
+red=0; green=0
+for pair in "${PAIRS[@]}"; do
+  m="${pair%%|*}"; t="${pair##*|}"
+  out=$(DEV_MUTANT="$m" $PY -m pytest tests/test_cf_dev.py -q -x -k "$t" 2>&1 | tail -3)
+  if echo "$out" | grep -qE "[0-9]+ (failed|error)"; then
+    echo "RED    $m -> $t"; red=$((red+1))
+  else
+    echo "GREEN(BAD) $m -> $t :: $out"; green=$((green+1))
+  fi
+done
+echo "MUTANTS: $red red / $((red+green)) total; $green did NOT turn their test red"

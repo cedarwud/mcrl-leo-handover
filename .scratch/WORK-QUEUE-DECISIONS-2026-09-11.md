@@ -252,6 +252,35 @@ calibration, both R2 cells (the R2 rule itself scores −3.98 % on this set) and
 separates "sequential information helps" from "this 0..99 order helps"; the B2 lane was given a cheap clone-level
 order-robustness check to close that gap.
 
+## E0a LAUNCHED 20:29:10 UTC — first optimizer steps of the development line
+
+`MCRL-Dev-v0.1` at dev commit `772481c4` (minimum E0 surface `f9042150` + two test-harness files; `cf_ratio.py`, `cf_credit.py`
+and `modqn.py` untouched), sat `/home/sat/mcrl-v025-dev-e0-ws/tree`, root `runs-e0a`, DEV triple k = 0
+(9,201,000 / 9,202,000 / 9,203,000), `--stop-after 100` on the frozen 300-episode configuration, full 24-episode DEVVAL at 100.
+
+| arm | PID | config hash |
+|---|---|---|
+| D0 / equal_share | 3570617 | `5d4f54e019a4e44f` |
+| D2-T0 / equal_share | 3570618 | `3dd5e6f1d14922da` |
+| D2-null / equal_share, `default_rng((9_231_000, 0))` | 3570619 | `c19d2596c5a745a7` |
+
+Preflight: `tests/test_cf_dev.py` **20 passed**, **22/22 named mutants red**; a real gap was caught on the way (the `d3_no_margin`
+mutant stayed green because the fixture's best legal alternative sat outside the margin, so the margin term never bound — the
+fixture now binds it). Process level on sat: stop at episode 2, resume, policy bit-identical, DEV-NULL generator state identical,
+a second launch while live started nothing, the launcher fail-closed on a changed config. Review: agy fresh context, fixed
+prompt, **0 INVALIDATES / 1 BIASES**, "may proceed (arms 1–3 unconditionally; arm 4 after tightening one unit-test assertion)" —
+the BIASES item was the D3 fixture, fixed before the launch commit; a second pass on `772481c4` is running.
+
+**Proof of life at episode 25** (not a result): TD losses (B, E, H) ≈ 2.3e-1 / 3.1e-2 / 9.4e-2 in all three arms; teacher loss
+3.168 for D2-T0 and 3.269 for D2-null, exactly 0 for D0; greedy agreement with T0 0.277 (D0) / **0.457 (D2-T0)** / 0.281
+(D2-null) — the injection channel moves the student toward the teacher and the matched null does not.
+
+DEVVAL reference frame, rolled once on the 24 DEVVAL episodes: T0 = LP-prev(1,0) **117.66 M**, `A m=2dB` 111.58 M,
+`MAX_NOMINAL_GAIN` 110.03 M, RANDOM 51.99 M bit/J; T0's stored labels reproduce at 100.00 %, the null at 3.76 % (chance).
+
+Next: the DEVVAL readout at episode 100 decides E0b — whether to continue the three arms to 300, whether to add `D3-T0` (after
+its test assertion is tightened), and any development-parameter change, each as a new version with its own config hash.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
