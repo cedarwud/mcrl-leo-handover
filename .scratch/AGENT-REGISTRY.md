@@ -1,6 +1,62 @@
 # Agent registry — resume after any interruption
 
-## RESUME-NOW — 2026-09-11 afternoon session (controller = Fable 5.1). Read this block first after any limit / crash.
+## RESUME-NOW — updated 2026-09-11 18:05 UTC (2026-09-12 02:05 Taipei). Controller = Opus 5, effort xhigh. READ THIS FIRST after any limit / crash.
+
+Quota facts today: the daily cost cap (HTTP 402, $80/day), the per-model session limit (429 "session limit", ~5 h rolling; opus
+reset last at 00:10 Taipei) and the sonnet **weekly** limit (resets 04:00 Taipei = 20:00 UTC) have each killed agents. A limit kills
+the agents, never the detached `sat` jobs. Resume = `SendMessage(to=<agentId>, message=<block below> + "It is now <UTC>. Delta:
+<from a read-only check>")`. Before sending: read that agent's PROGRESS.md; check its `sat` processes by cwd + cmdline
+(`ssh sat 'for p in $(pgrep -u sat python); do echo $p $(readlink /proc/$p/cwd) $(tr "\0" " " </proc/$p/cmdline|cut -c1-120); done'`);
+never let an agent relaunch a live or finished item.
+
+### Live Claude sub-agents (4, all opus)
+
+| name | agentId | workspace / PROGRESS | deliverable | state at 18:05 UTC | detached processes |
+|---|---|---|---|---|---|
+| **LP-ORACLE** (critical path) | `a931738d2046dbe76` | `.scratch/h4-probe/PROGRESS.md` (§T2-*); task `.scratch/h4-probe/LP-AND-ORACLE-TASK.md`; sat ws `/home/sat/mcrl-v025-h4-probe-ws/` | `.scratch/h4-probe/ORACLE-CELLS-2026-09-11.md` (LP report DONE: `LP-PROBE-2026-09-11.md`) | v4 oracle shards running: rate-floored A-real/B-real R1 **evaluation** first (A-floor done, B-floor in progress), then **B-real-floor R1 calibration, A-real-floor R1 calibration**, then R2 eval / reverse / unfloored cal (downstream). All v4 items carry 28-action advantage vectors. Unfloored A/B R1 eval done (controller-verified, provisional) | sat PIDs **3529259–3529262** (`scripts/oracle_cells.py --shard K --nshards 4 --results-dir …/results-oracle`, cwd `…/h4-probe-ws/tree`); relaunch = the same 4 commands once none is alive (idempotent) |
+| **B1-CREDIT → HARNESS** | `ae9d69e8a6fa8791b` | `.scratch/b1-credit/PROGRESS.md`; worktree `/home/u24/papers/mcrl-leo-handover-b1` (branch `b1/difference-reward-20260912`, credit code **not yet committed**) | (1) `.scratch/b1-credit/B1-CREDIT-IMPLEMENTATION-2026-09-12.md` with first line incl. "lighting-price credit oracle-first: PASS/FAIL"; (2) then `.scratch/b1-credit/D-LADDER-HARNESS-2026-09-12.md` | credit module + wiring + 8 tests written; diag ep0/ep1 finished; mutant runner done; **now: the lighting-price greedy-rule screen** (controller addition 18:00 UTC), then report + commit, then the D0–D4 harness (Amendment 5 §I.5). **No optimizer step ever** | local only, ≤ 2 procs; none alive at 18:00 |
+| **T0REPR** | `a7953d10497ac8773` | `.scratch/t0-repr/PROGRESS.md`; sat ws `/home/sat/mcrl-v025-t0-repr-ws/` (≤ 3 procs) | `.scratch/t0-repr/T0-REPRESENTABILITY-2026-09-12.md` (`R_repr` one-hot + soft, both sets) | placebo + collection done; soft-clone τ fits running; a declared 400-epoch sensitivity follows the 100-epoch clones (verdict read on the 100-epoch clones) | sat PIDs **3544260, 3544261** (`scripts/t0_clone.py --kind soft --taus …`, cwd the ws) |
+| **CEILING2** (downstream) | `aeff029c95c8d0633` | `.scratch/ee-ceiling/PROGRESS.md`; sat ws `/home/sat/mcrl-v025-ceiling-ws/` (cap 4 procs) | `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md` (not yet written) | all cells done incl. bits/joules halves, initB1/initrand basins, **T_JOINT rate-floor action-dump re-run** (`results/tjoint-ratefloor-npz/`, `tjoint-ratefloor-parity.json`); remaining: the report | none alive at 18:00 |
+
+Resume messages (send verbatim + time + delta):
+- **LP-ORACLE** → *"Resume the oracle-cell task after an API limit. Read your `.scratch/h4-probe/PROGRESS.md` (§T2-13/14 and the controller
+  notes) and `.scratch/h4-probe/LP-AND-ORACLE-TASK.md`. Check the v4 `oracle_cells.py` shards on sat by cwd + cmdline; if none is alive
+  and items remain, relaunch the same four commands (the queue is idempotent). Priority order unchanged: rate-floored A/B R1 evaluation →
+  B-real-floor R1 calibration → A-real-floor R1 calibration → R2 / reverse / unfloored calibration. Then write
+  `ORACLE-CELLS-2026-09-11.md` applying Amendment 1 rules 1–4 to the floored cells and stating Amendment 4 §2's B2 conditions. ≤ 4 processes."*
+- **B1-CREDIT → HARNESS** → *"Resume after an API limit. Read your `.scratch/b1-credit/PROGRESS.md` and continue from the first incomplete step:
+  the lighting-price greedy-rule oracle-first screen (controller addition 18:00 UTC; Amendment 5 'Controller finding'), then the B1 report and
+  commit, then the D0–D4 harness (Amendment 5 §I.5). Hard boundary unchanged: no optimizer step, no training; local ≤ 2 processes."*
+- **T0REPR** → *"Resume the T0 representability screen after an API limit. Read your `.scratch/t0-repr/PROGRESS.md`; check your sat processes in
+  `/home/sat/mcrl-v025-t0-repr-ws/` by cwd + cmdline; never refit a clone whose output exists; continue from the first incomplete step; the
+  declared 100-epoch clones decide admission, the 400-epoch fits are a sensitivity. ≤ 3 processes."*
+- **CEILING2** → *"Resume after an API limit. Read your `.scratch/ee-ceiling/PROGRESS.md`; all cells are done; write
+  `EE-CEILING-2026-09-11.md` with parity first, the standard wording of Amendment 3 §1 (lower bounds; rate-floored +23.9 % as the defensible
+  headline; the base search's p10 tail), the sweep-depth numbers and the T_JOINT dump parity. Blindness to the pilot outputs unchanged."*
+
+### Completed agents (do not resume unless a follow-up is needed)
+VALIDITY-FABLE `ab15c86158b2b327e` (fable; blind report + phase 2a done in `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md`;
+**phase 2b still owed**: when the ceiling report and the oracle report exist, `SendMessage` it both paths plus Amendments 3–5 and ask whether the
+verdict changes — it is resumable) · REPORTWRITER `af80cc36ea6c8b4ae` (sonnet; `24cb8615`) · Q9A-CURATE `a29cef00400322355` (sonnet; `1c2d0ba3`) ·
+B0AUDIT `a75e535219ff956d2` (sonnet; `7a7c47ab`) · H4PROBE `a721c0c4171804491` (sonnet; **weekly limit until 20:00 UTC**; its LP/oracle work was
+taken over by LP-ORACLE) · AGY-VALIDITY and AGY-CHECK-2 (agy, done; not resumable).
+
+### Controller state to restore
+- In force: Ruling 2 + Amendments 1–5 (`.scratch/multi-catfish-v025-physics-successor/V025-CONTROLLER-*-2026-09-1[12].md`); decisions log
+  `.scratch/WORK-QUEUE-DECISIONS-2026-09-11.md`; external checks `.scratch/reviews/external-gpt/DR19-GPT6-CONTROLLER-CHECK-2026-09-12.md`.
+- **No learner training is authorised.** Amendment 5 Part II is a delay-triggered contingency only (five-condition trigger; lighting-price credit
+  only if its own greedy rule passes the B1 screen; sealed results).
+- Next controller actions, in order: (1) when the floored A/B R1 evaluation cells land — aggregate independently (as in
+  `.scratch/h4-probe/CONTROLLER-INDEPENDENT-AGGREGATE-2026-09-12.md`) and read Amendment 1 rules 1–4 and Amendment 4 §2 condition 1;
+  (2) if condition 1 holds, B2 condition 3 needs the T_SEQ clone on the floored calibration cells; (3) on B1's report — check the PASS/FAIL line
+  and the tests; then the harness report → **agy diff review before any launch**; (4) on T0's report — `R_repr` admission; (5) phase 2b to
+  VALIDITY-FABLE; (6) Q9b curation (H4, LP, ceiling, oracle rows) with sonnet after 20:00 UTC.
+- Monitors: none armed (agents notify on completion).
+
+
+### (history) previous RESUME-NOW block, 2026-09-11 afternoon — superseded by the block above
+
+#### RESUME-NOW (old) — 2026-09-11 afternoon session (controller = Fable 5.1). Read this block first after any limit / crash.
 
 Three Claude agents are live, all resumable with `SendMessage(to=<agentId>, message=<block below>)`. **Before sending**: read that
 agent's `PROGRESS.md`, put the delta into the message (what is already done, what is live on `sat` by cwd + cmdline), and never
