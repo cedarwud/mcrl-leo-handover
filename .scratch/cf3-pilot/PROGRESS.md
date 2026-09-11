@@ -179,3 +179,7 @@ Arm means: A0 95.13, A1 101.53, A2 97.18, A3 101.59. Progress reading only; not 
 | A2 s0 / s1 / s2 | 102.79 / 104.60 / 106.27 | 0.519 / 0.603 / 0.569 | 0.038 / 0.033 / 0.013 | 0.9977 / 0.9992 / 0.9987 | 63.2 / 62.3 / 64.2 |
 | A3 s0 / s1 / s2 | 106.87 / 103.75 / 106.36 | 0.549 / 0.534 / 0.544 | 0.002 / 0.022 / 0.020 | 0.9981 / 0.9984 / 0.9963 | 63.4 / 62.1 / 60.2 |
 Arm means: A0 95.56, A1 104.81, A2 104.55, A3 105.66. Progress reading only; not the result.
+
+## CF3PILOT agent ending (coordinator instruction, ~12:05 UTC server)
+- Training continues detached (12 runs, tree f297334e); the detached post-job (PID 3438182) owns evaluation, pool/generator re-verification, the declared reading and the markers in `sat:ws/report/`. Nothing else of mine runs except those processes.
+- Not done by this agent: step 9 (evaluation) and step 10 (`CF3-PILOT-2026-09-11.md`) — left to the post-job + a fresh agent per `TAKEOVER.md` §4. The ep-750 progress readings were not posted (agent stopped before they were collected).
