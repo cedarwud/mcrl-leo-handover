@@ -96,6 +96,69 @@ and call the demonstration line reopened.
 **The decision is the owner's, and it is a modelling decision about whether a handover
 costs anything in this physics — not a decision about whether the demonstrator wins.**
 
+## Addendum — the churn cost cannot be charged in either physics as they stand
+
+SPECPROFILE was sent to re-score under the declared handover interruption, to test whether
+the 62.502712 → 17.257910 trade-off was an artefact of not charging churn. **It stopped as
+instructed, because the measurement does not exist.**
+
+- The interruption is a **matrix treatment code**, `PhysicsSetting.interruption in
+  {"off","on"}` (`matrix.py:24,34-35`), set by treatment letter (`matrix.py:79-90`). Ten
+  of 31 declared settings are `"on"`. **The entire V0.25 development panel record is
+  interruption-off**: all 12 anchors sit in cell `a-r0`, and so do BEAMCOUNT, CLEANPATH,
+  CEILING2 and COORDVALUE.
+- **The mandated dense path structurally cannot express it.**
+  `batch.evaluate_ar_tdm_catalogue` has **no interruption parameter** at all (verified by
+  `inspect.signature`) and never receives the event ledger; `evaluate_many` goes dense
+  **only when the label is exactly `a-r0`** (`probe:798`) and otherwise falls back to
+  scalar. Every interruption-on label is a different label. **In this engine, "dense
+  batch" and "interruption on" are mutually exclusive — no code path has both.**
+- Which constant applies: `same_satellite_beam_change` → 0.062 s, otherwise → 0.142 s
+  (`integration.py:78-89`); initial entry and re-entry are skipped. Incidental defect
+  found: `cell_rekey` maps to `same_satellite_beam_change` (`probe:743-758`), so a re-key
+  is priced 0 in `Phi` yet opens a 0.062 s blackout. Not triggered on this panel. Both
+  constants remain `VERIFY_SOURCE` / UNVERIFIABLE_HERE.
+
+**None of the three pre-declared readings was reached.** No constant substituted, no
+treatment approximated, no re-scoring, no winner re-selected. Every previously reported
+figure stands unchanged, all `a-r0`, interruption off.
+
+**Two things the declared code does lock:**
+
+1. **Interruption moves the numerator only.** Joules accumulate outside the per-user loop
+   (`integration.py:129`) and the blackout term is never deducted from them; only `bits`
+   and `useful` carry `- removed_*` (`:151-152`). **Consistent with R23HISTORY's
+   zero-joule finding, and it means churn can only ever cost bits, never energy.**
+2. **Scale of the declared window** — derived arithmetic on frozen receipts, **not a
+   measurement, not an upper bound, and explicitly not sufficient to claim the ranking is
+   unchanged**: 0.062 s / 0.142 s are **0.2061% / 0.4721%** of the 30.08 s interval.
+   Over 36,096 user-seconds: incumbent 0%, budgeted arms ~0.1374%, base 0.1397%,
+   `RSS_MAX` 0.3625%, search winner 0.3880%, declared rule 0.3929%. **Largest cross-arm
+   difference 0.2506 pp.** Unverified premise: this equates a bit fraction to a time
+   fraction, which holds only if a user's rate over the first 0.142 s equals their 30.08 s
+   average; a front-loaded profile makes the loss larger and is not bounded here.
+
+**Two ways to make it measurable, both owner decisions, neither costed:**
+**(a)** add a per-user blackout parameter to `evaluate_ar_tdm_catalogue`, separate dense
+`useful_time_s` from `decoding_time_s`, and widen the label gate — preserves the evaluator
+rule and every parity target, but touches the engine, so it needs a versioned successor.
+**(b)** run scalar `a-r0` and scalar `a-rH` over the same 12 anchors and 7 configurations
+and report the **scalar-to-scalar difference**, differencing out the discontinuity
+mechanism — no engine change, exact, but needs an explicit exemption from the mandatory
+evaluator rule and the non-batch path is far more expensive. **SPECPROFILE recommends (b).**
+
+### What this does to the MODQN finding above
+
+In the MODQN physics there is **no interruption term at all**, and handover consumes zero
+joules. **So churn there is genuinely free**, and the 19.8% pooled-EE gap cannot be
+explained by an unaccounted cost of `MAX_NOMINAL_GAIN`'s 0.7117 handover rate — within
+that physics, there is nothing for it to cost.
+
+That is what makes this a **physics-completeness** question rather than a reward-tuning
+one: the V0.25 successor engine models a handover cost as **lost bits in the numerator**;
+the MODQN engine models it as **a preference term in the reward**. Only the first is
+physically grounded, and it is the one MODQN does not have.
+
 ## Two defects that must be fixed regardless of which way that decision goes
 
 Both from R23HISTORY, both independent of the objective question:
