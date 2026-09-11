@@ -33,12 +33,21 @@ and *"carry no EE."*
 exist in either direction.**
 
 **3. `62.502712` is not a declared rule's score.** It is the `CAP_050` **search winner** —
-nine declared rules plus local search plus nested smaller-cap winners — selected on
-**boundary-0** EE, which the same report warns overstates the full-48 endpoint
-(`RSS_MAX`: boundary-0 71.84 → full-48 41.62). The best *declared rule* at C=50 is
-**52.042303**. The label `GAIN_IN_SET` appears nowhere in the beamcount workspace; it is a
-name applied afterwards to a search output
+nine declared rules plus local search plus nested smaller-cap winners. The best *declared
+rule* at C=50 is **52.042303**. The label `GAIN_IN_SET` appears nowhere in the beamcount
+workspace; it is a name applied afterwards to a search output
 (`/home/sat/mcrl-v025-specprofile-ws/PROGRESS.md:47`).
+
+> **Correction to this item, 2026-09-11, from SPECPROFILE's parity check.** I wrote that
+> 62.502712 was "selected on boundary-0 EE, which overstates the full-48 endpoint",
+> implying the figure itself is inflated. **It is not: 62.502712 reproduces exactly at the
+> full-48 endpoint**, to six decimals, as do 52.042303, 41.621560 and 11.027760. Only the
+> **selection** was boundary-0, not the reported score. The overstatement warning is still
+> real but applies elsewhere — a matched-budget free polish raises boundary-0 EE while
+> *lowering* the full-48 endpoint (62.502712 → 59.516177), which is the effect quantified.
+> I over-corrected: in fixing a cross-quantity error I introduced a second wrong claim
+> about the same number. The search-winner-vs-declared-rule distinction stands and is the
+> part that matters.
 
 **4. The two physics do not share an action space.** MODQN's action is `a = 7l + j`, 4
 satellite slots x 7 **user-relative** cell slots (`action_contract.py:14-16, 40, 43, 68`),
