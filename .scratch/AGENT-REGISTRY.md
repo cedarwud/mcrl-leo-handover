@@ -208,7 +208,8 @@ BEAMCOUNT `ab265b1f2c82f21d9` (`/home/sat/mcrl-v025-beamcount-ws/BEAM-COUNT-CAP-
 CATFISHFACT `a47a739890d0f71c2` (`.scratch/catfish-facts/CATFISH-MECHANISM-FACTS-2026-09-11.md`) ·
 DQFDGROUND `a607d537e44ffdffb` (`.scratch/dqfd-grounding/DQFD-FAMILY-GROUNDING-2026-09-11.md`) ·
 R23HISTORY `a18c130ee37778407` (`.scratch/reward-history/R2-R3-CHANGE-HISTORY-2026-09-11.md`) ·
-ZWHY `a052c52941f6c5fb4` (`.scratch/zscore-transfer/ZSCORE-TRANSFER-2026-09-11.md`).
+ZWHY `a052c52941f6c5fb4` (`.scratch/zscore-transfer/ZSCORE-TRANSFER-2026-09-11.md`) ·
+REPORTWRITER `f508c755-8fc6-4503-9548-0225a1607848` (`.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md`).
 
 A completed agent is still resumable by `SendMessage` to its agentId — CATFISHSURFACE was
 resumed twice this way and produced its most important findings on the second resume.
