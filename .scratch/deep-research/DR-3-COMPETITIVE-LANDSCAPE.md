@@ -1,82 +1,96 @@
-# DR-3 — What does the field actually report, what would a referee expect, and is there a contribution left?
+# DR-3 — Survey: reported results, baselines and demonstration-guided RL in satellite resource allocation
 
-*Paste `00-EVIDENCE-LEDGER.md` above this.*
+*Optional context: `00-EVIDENCE-LEDGER.md` describes one project. It is background only —
+every factual claim in your report must come from the literature.*
 
-This project has never checked itself against the field. Its declared win gate is an
-internal one (its own MODQN baseline), which is legitimate for a controlled ablation but
-tells us nothing about whether the numbers, the baselines or the claim would survive
-review.
+## Research question
 
-## 1. What do published LEO/NTN beam-handover and resource-allocation papers report?
+Establish what the LEO/NTN beam-handover and resource-allocation literature actually
+**reports** — metrics, magnitudes, baselines, and how multi-objective rewards are handled —
+and whether **demonstration-guided reinforcement learning** has been applied in this domain.
 
-- **Energy efficiency values**: what magnitudes appear, in what units, and how is EE
-  defined in each — a ratio of sums, a mean of per-user ratios, bits/Joule, bits/Hz/Joule?
-  **Is the ratio-of-sums vs mean-of-ratios distinction respected in that literature, or
-  routinely elided?** This matters because two definitions here differ by only 0.06% on
-  one panel but are conceptually different estimands.
-- **Baselines**: what do those papers compare against? How often is the comparator a
-  trivial rule (max-SINR / max-RSRP / nearest-satellite / greedy), and **how often does the
-  trivial rule win**? A referee will ask why a learned policy is needed if `MAX_NOMINAL_GAIN`
-  beats it by 19.8% on the declared metric — find out whether that embarrassment is common
-  in the field or unusual.
-- **Handover rates and service metrics**: what is reported, and at what operating points?
-- **Multi-objective handling**: is fixed linear scalarisation (`w1*r1 + w2*r2 + w3*r3`) the
-  norm? Does anyone report that their scalarisation is **anti-aligned** with their own
-  declared endpoint? Is there published criticism of fixed scalarisation for
-  energy-efficiency objectives specifically?
+## Scope
 
-## 2. Demonstration-guided RL in wireless / satellite resource allocation
+Reinforcement learning for beam management, beam hopping, user-to-beam or user-to-satellite
+association, and handover in LEO / NTN satellite systems. Include adjacent wireless
+resource-allocation work where the objective is energy efficiency. Include the
+demonstration-guided RL literature only where it is applied to wireless or satellite
+systems.
 
-- Has anyone applied **DQfD or its family** (offline RL, advantage-weighted regression,
-  guide-policy bootstrapping, constrained RL) to wireless resource allocation, beam
-  management or handover? What was the demonstrator, and what did it buy?
-- Specifically: any case where the **demonstrator is an optimisation solver or a heuristic
-  rule** rather than a human or a prior policy. What is that called in this literature, and
-  what are the reported gains?
-- Any case where the demonstrator is **expert on one objective and violates a constraint** —
-  which is this project's exact situation.
+**Source bar**: peer-reviewed journals and conferences, and arXiv preprints with citations.
+Every numeric claim carries a paper and its table or figure. **Recency**: 2018-present,
+with earlier work included where it defines a standard baseline.
 
-## 3. The "catfish" line
+## Deliverable
 
-- The source is an RIS/CDRL paper describing a training-time experience-stimulation
-  mechanism under the name "catfish" (solver-seeded replay memory, EE-threshold buffer
-  separation, asymmetric discounts, periodic 70/30 batch intervention, a competitive
-  reward `r^C = r + eta(r^CF − r^M)`). **Does this line have any independent replication,
-  citation or follow-up at all** — by other groups, in other domains, or in later work by
-  the same authors?
-- Its competitive-reward term cites "SASR / Shen et al."; that citation could not be
-  matched to any paper. **Find out what it refers to, or establish that it does not
-  resolve.**
-- Is "catfish effect" used as a mechanism name anywhere else in the RL literature, and does
-  it mean the same thing?
+### A. Reported results table
 
-## 4. Novelty — answer honestly, including "no"
+One row per paper, columns: **venue and year** · **system and constellation assumptions** ·
+**objective optimised** · **EE definition used** (bits/J, bits/Hz/J, ratio of sums, mean of
+per-user ratios, or unstated) · **reported EE magnitude** · **baselines compared against** ·
+**whether any trivial rule baseline outperformed the learned method** · **handover rate and
+service metrics reported, if any**.
 
-Multiple heterogeneous demonstrators, Q-filtering of imitation losses, imperfect-
-demonstration filtering, demonstration-guided multi-objective RL, and constrained MORL are
-**all published**. Given that:
+Aim for breadth — twenty or more papers if the field supports it — so the distribution of
+reported magnitudes and baseline practice is visible.
 
-- **Is there a defensible contribution here?** State it in one sentence if there is.
-- If the honest answer is that the contribution is **the integration and the measurement**
-  rather than any new mechanism, say so, and say what a paper of that shape needs to carry
-  to be publishable — how many baselines, what ablations, what statistical treatment, what
-  venue.
-- A second candidate contribution is the **negative result itself**: that a trivial rule
-  beats a trained multi-objective policy by 19.8-22.2% on the declared energy-efficiency
-  endpoint because the training scalarisation prices a handover that costs zero joules.
-  **Is a result of that shape publishable in this field, and where?** Find precedents for
-  negative or diagnostic results in wireless RL.
+### B. Baseline practice
 
-## 5. What would a referee kill this on?
+- How often is the comparator a **trivial rule** (max-SINR / max-RSRP / nearest-satellite /
+  greedy / random), and how often is a non-learned baseline reported as **winning** on the
+  paper's own primary metric?
+- Which baselines does this field treat as **mandatory**? Is there a de facto standard set?
+- Is it common for papers to report the non-learned comparator at all, or is the comparison
+  usually learned-versus-learned?
 
-List the objections a reviewer of a good venue would raise, ranked, given everything in
-the ledger — the simulator's zero-joule handover, the 30 s decision interval, the
-`max`-over-users beam power, the single-simulator evaluation, the seed counts, the fact
-that two of three reward heads have premises that fail inside the model. **For each, say
-whether it is fatal, fixable, or answerable in text.**
+### C. Multi-objective handling
 
-## Output
+- Is **fixed linear scalarisation** of several reward terms the norm in this literature?
+  Collect the weight vectors that are actually used and how they are chosen (tuned,
+  declared, cited, unexplained).
+- Is there published **criticism** of fixed scalarisation for energy-efficiency objectives
+  specifically — e.g. showing that no single weighting orders configurations correctly, or
+  that a scalarisation can be anti-aligned with its own declared endpoint? Cite it.
+- Is **constrained** RL (maximise one objective subject to bounds on others) used in this
+  domain, and how are the bounds chosen?
 
-Cite everything. Be concrete about numbers so the project can see where it sits in the
-distribution. Where the field's practice is weaker than this project's own standards, say
-that too — it is relevant to how the results should be framed.
+### D. Demonstration-guided RL in wireless and satellite systems
+
+- Has DQfD, offline RL, advantage-weighted regression, guide-policy bootstrapping, or
+  constrained RL from demonstrations been applied to wireless resource allocation, beam
+  management or handover? For each case: **what was the demonstrator** (human, prior
+  policy, optimisation solver, heuristic rule), **what was reported as the gain**, and
+  **what baseline it was measured against**.
+- Specifically collect cases where the demonstrator is an **optimisation solver or a
+  heuristic rule** rather than a human or a prior learned policy. What is this called in
+  this literature?
+- Collect any case where the demonstrator is **expert on one objective while violating a
+  constraint or performing badly on another**, in any domain. What is the reported
+  treatment?
+
+### E. The "catfish" line
+
+An RIS/CDRL paper describes a training-time mechanism called "catfish": an external solver
+seeds a catfish replay memory, experiences are separated by an energy-efficiency threshold,
+two agents carry different discount factors, batches are mixed periodically ~70/30, and a
+competitive reward `r^C = r + eta(r^CF − r^M)` is applied.
+
+- Does this line have **any independent replication, citation, or follow-up** — by other
+  groups, in other domains, or in later work by the same authors? Report the citation
+  count and who cites it.
+- The competitive-reward term cites "SASR / Shen et al." Establish **what that citation
+  refers to**, or report that it does not resolve to any paper.
+- Is "catfish effect" used as a mechanism name elsewhere in the reinforcement-learning
+  literature, and does it denote the same thing?
+
+### F. Negative and diagnostic results
+
+Collect precedents in wireless or satellite RL for papers whose primary contribution is a
+**negative or diagnostic** result — for example, that a learned method fails to beat a
+simple baseline, or that a commonly used reward formulation is misspecified. Note the venue
+and how the result was framed.
+
+## Format
+
+Tables by section, then the reference list. Where the field's reporting practice is
+inconsistent, describe the inconsistency rather than averaging over it.

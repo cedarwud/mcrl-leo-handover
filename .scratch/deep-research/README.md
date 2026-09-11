@@ -1,11 +1,30 @@
 # Deep Research package — 2026-09-11
 
-## How to use
+## Two prompt shapes, two passes
 
-Each `DR-*.md` is self-contained **except** that `00-EVIDENCE-LEDGER.md` must be pasted
-above it. Ledger + one DR prompt = one Deep Research run. **Run them separately** — they
-ask different questions of different literatures and a combined prompt will return a
-shallower answer on all three.
+**A Deep Research prompt and a chat prompt are not the same thing**, and the first draft of
+this package wrongly folded them together.
+
+- **Deep Research** runs autonomously for tens of minutes across many sources. It wants a
+  **research question, scope boundaries, a source-quality bar, a recency window, and an
+  output schema**. It does not adjudicate: asking it to "attack this design" or "say what a
+  referee would kill it on" returns the tone of judgement without the judgement, wrapped
+  around whatever it happened to find.
+- **Chat with a strong reasoning model** is where the judgement belongs — but it is only
+  worth asking once the evidence is on the table.
+
+So the package runs in two passes:
+
+**Pass 1 — `DR-*.md`**: pure surveys. Ledger + one DR prompt = one Deep Research run.
+**Run them separately**; they interrogate three different literatures and a combined prompt
+returns a shallower answer on all three.
+
+**Pass 2 — `10-FOLLOWUP-REASONING-PROMPTS.md`**: `ASK-1/2/3`, each consuming the DR report
+that precedes it. Ledger + DR report + ASK prompt, in normal chat, strong reasoning model.
+These carry the decisions: what to build, whether the physics survives review, what can
+honestly be claimed.
+
+The ledger is pasted above **both** passes.
 
 | | question | why it cannot be answered here |
 |---|---|---|

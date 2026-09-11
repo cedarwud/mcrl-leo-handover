@@ -1,89 +1,82 @@
-# DR-1 — How do you actually maximise a ratio of sums with an off-policy discrete RL agent?
+# DR-1 — Survey: optimising a ratio of expected accumulations in reinforcement learning
 
-*Paste `00-EVIDENCE-LEDGER.md` above this.*
+*Optional context: `00-EVIDENCE-LEDGER.md` describes the application. It is background only
+— every factual claim in your report must come from the literature, not from it.*
 
-This is the architecture decision for the project and it is currently unsupported by any
-citation trail. Two independent reviewers both recommended a two-critic formulation; both
-asserted it rather than sourced it. **Settle it from the literature.**
+## Research question
 
-## The question
+For a Markov decision process in which two non-negative quantities accumulate per
+transition — `B(s,a)` and `E(s,a) > 0` — survey the methods that optimise
 
-A policy `pi` acts for a finite horizon `T` in a discrete, action-masked MDP. Two
-non-negative quantities accrue per transition: `B(s,a)` (decoded bits) and `E(s,a) > 0`
-(joules). The objective is
+    rho(pi) = E_pi[ sum_t B_t ] / E_pi[ sum_t E_t ]
 
-    rho(pi) = ( E_pi[ sum_t B_t ] ) / ( E_pi[ sum_t E_t ] )
+a **ratio of expectations** (not an expectation of ratios, not a discounted sum), and
+establish which of them have been instantiated for **off-policy, replay-based,
+value-based** learning over a **discrete, action-masked** action space.
 
-a **ratio of expectations**, not an expectation of ratios, and not a discounted sum.
-`E[B/E] != E[B]/E[E]`, and the Bellman optimality equation is linear in expectation, so
-standard TD learning on any fixed scalar reward optimises the wrong functional.
+## Scope
 
-**What is the correct formulation, and which one survives contact with an off-policy,
-replay-based, action-masked, discrete-action deep Q-learner?**
+**In scope**: fractional programming applied to MDPs (Dinkelbach-type outer iteration);
+semi-Markov / reward-per-cost / ratio-average formulations; average-reward and differential
+value methods; two-critic or decomposed-return architectures that learn numerator and
+denominator separately; direct ratio policy gradients; constrained-MDP formulations used as
+an alternative to the ratio; and energy-efficiency maximisation in the wireless
+communications literature, where this objective is standard.
 
-## Formulations to compare — and I want the failure modes, not the sales pitch
+**Out of scope**: multi-objective RL by scalarisation weights, Pareto-front methods,
+and reward shaping, except where a paper explicitly relates them to the ratio objective.
 
-For each: the objective it actually optimises, the convergence result and its assumptions,
-what breaks under function approximation, what breaks under **off-policy replay**, and
-whether a published **discrete, value-based** instantiation exists.
+**Recency**: no lower bound — the foundational results are from the 1960s-90s (Dinkelbach,
+Howard, Puterman, Mahadevan) and must be included. Prioritise post-2015 work for deep and
+off-policy instantiations.
 
-1. **Dinkelbach / fractional programming** (Dinkelbach 1967; Zappone & Jorswieck's
-   energy-efficiency line). Solves `max_pi [ B(pi) − eta_k E(pi) ]` with
-   `eta_{k+1} = B(pi_k)/E(pi_k)`. **The specific concern**: `eta_k` moving between outer
-   iterations changes the scalar reward `r_t = B_t − eta_k E_t`, which **invalidates every
-   target already in the replay buffer**. Is there published work on Dinkelbach with a
-   *replay-based* inner solver? How is buffer staleness handled — relabelling, discarding,
-   storing raw `(B, E)` and recomputing, a two-timescale argument?
-2. **Semi-Markov / reward-per-cost / ratio-average MDPs** (Howard 1960; Puterman ch. 11;
-   the SMDP literature). Treating `E_t` as a transition "duration" gives
-   `h(s) = max_a [ B(s,a) − rho* E(s,a) + sum P h(s') ]`. What are the conditions
-   (unichain? recurrence?) and do they plausibly hold for a 10-step episodic task? Is
-   there a deep off-policy instantiation?
-3. **Average-reward / differential RL** (Mahadevan 1996; Wan, Naik & Sutton 2021 and
-   successors; differential Q-learning). Does the differential-value machinery extend to a
-   *ratio* of two accumulations rather than a single average?
-4. **Two-critic ratio optimisation**: learn `Q_B` and `Q_E` separately on raw `(B, E)`,
-   select `argmax_a [ Q_B(s,a) − eta_k Q_E(s,a) ]`, update `eta` from realised sums.
-   **Is this published?** Under what name, with what guarantee, and what is the bias when
-   both critics carry function-approximation error — does the error in the ratio compound?
-   If it is folklore rather than published, say so plainly.
-5. **Direct ratio policy gradient / fractional policy optimisation** — anything that
-   differentiates the ratio directly. Variance? On-policy only?
-6. **Constrained MDPs** (Altman; Lagrangian methods; CPO/RCPO and value-based variants) as
-   an *alternative* framing: maximise bits subject to an energy budget, rather than
-   maximise the ratio. **When is the constrained problem equivalent to the ratio problem,
-   and when does it give a different optimal policy?** This matters because the project is
-   separately considering a constrained endpoint.
-7. Anything in the **wireless / energy-efficiency RL** literature specifically: EE
-   maximisation is a standard objective there, so what do those papers actually do? Do
-   they optimise the ratio properly, or do they scalarise with a fixed multiplier and not
-   say so?
+**Source bar**: peer-reviewed venues and arXiv preprints with citations. Textbook chapters
+acceptable for the classical results. Exclude blog posts, tutorials and course notes except
+to locate a primary source. Give an arXiv id, DOI, or venue+year for every entry.
 
-## Three things I specifically need decided
+## Deliverable
 
-- **A. Per-transition credit.** Under the winning formulation, what is the training signal
-  for a single transition? A ratio is a global property of a trajectory; TD needs a local
-  target. How does each formulation bridge that, and does any of them do it without an
-  on-policy correction?
-- **B. Demonstrator advantage.** If a demonstration `(s, a_D)` comes from an external
-  specialist, how is "is this action better?" computed **under a ratio objective**? A
-  scalar Q-margin `Q(s,a_D) > max_a Q(s,a)` is ill-defined when the objective is a ratio.
-  Give the correct advantage definition. This gates whether an advantage-filtered
-  imitation loss (Q-filter, CRR-style weighting) can be used at all.
-- **C. Horizon and pooling.** The endpoint pools over the **whole evaluation**, not per
-  episode. Does that change the formulation (an episodic ratio vs a pooled-across-episodes
-  ratio)? Is the pooled-across-episodes ratio even a well-posed RL objective, or does it
-  only make sense as an *evaluation* statistic while training optimises something else
-  that is consistent with it? **If the honest answer is that no RL formulation directly
-  optimises the pooled-across-episodes ratio, say so** — the project needs to know whether
-  its endpoint is trainable or only measurable.
+### A. Comparison matrix
 
-## Output
+One row per formulation, with these columns:
 
-A recommendation with a citation for every load-bearing claim, an explicit statement of
-what is **not** covered by published work, and — if the answer is "the correct thing is
-known but has no published deep off-policy discrete instantiation" — say that, because it
-changes what the thesis can claim to have contributed.
+1. **Formulation** and its canonical citation.
+2. **Objective actually optimised** — stated as a formula.
+3. **Convergence result and its assumptions** (unichain? recurrence? exact inner
+   optimisation? tabular?).
+4. **Behaviour under function approximation** — what is known, what is only conjectured.
+5. **Behaviour under off-policy replay** — specifically, whether targets stored in a replay
+   buffer remain valid when the formulation's parameters (e.g. a Dinkelbach `eta`) change
+   between iterations, and what published work says about handling that staleness
+   (relabelling, discarding, storing raw quantities and recomputing, two-timescale
+   arguments).
+6. **Discrete + value-based instantiation**: does a published one exist? Cite it, or record
+   "none found".
+7. **Per-transition training signal**: how a global trajectory-level ratio is converted into
+   a local TD target, and whether that requires an on-policy correction.
 
-Do not restate the ledger. Do not recommend on elegance; recommend on what survives
-off-policy replay with function approximation in a masked discrete action space.
+### B. Three focused sub-questions
+
+1. **Advantage under a ratio objective.** Given a state `s` and a candidate action `a_D`
+   proposed by an external policy, how is "is `a_D` better?" defined when the objective is
+   a ratio? A scalar Q-margin is ill-defined here. Report every definition the literature
+   uses, with citations, and note which are used to gate an imitation or regression loss.
+2. **Pooled-across-episodes ratios.** Distinguish (i) an episodic ratio averaged over
+   episodes, (ii) a ratio of sums pooled across all episodes, and (iii) a long-run
+   average-reward ratio. Report which of these the literature treats as a *trainable*
+   objective and which appear only as *evaluation* statistics, with citations for each.
+3. **Ratio vs constrained formulations.** Under what conditions is
+   `max B/E` equivalent to `max B s.t. E <= c`, and when do they yield different optimal
+   policies? Cite the equivalence results and their conditions.
+
+### C. Evidence gaps
+
+A short list of claims that the literature does **not** support — in particular, name any
+formulation that is widely recommended in practice but that you could not find a primary
+source for. Record "no source found" explicitly rather than omitting the row.
+
+## Format
+
+Matrix first, then the three sub-questions, then the gaps. Inline citations throughout; a
+reference list at the end. Where two sources disagree, present both and say what the
+disagreement turns on.
