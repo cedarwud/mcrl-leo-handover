@@ -74,6 +74,10 @@ Pinned archive, sat, 24 evaluation episodes, final checkpoints, inference-time �
 - **Ruling 2 written 14:40 UTC** (`V025-CONTROLLER-RULING-CEILING-PARITY-B-CHAIN-AND-CATFISH-COUNT-2026-09-11.md`): parity first; thresholds unchanged; B-chain B1 (difference reward) → B2 (sequential visibility) with a pass condition of ≥ 50 % of the nominal gap (owner to confirm the 50 %) and no automatic advance; C only by owner decision; operational catfish-count definition (three criteria, owner to confirm); no learner training until parity + pooled + nominal + rate-floor + compound are reported.
 - Ceiling variants run in parallel (cap raised to 10 at 14:10 UTC; nominal / rate-floor / compound / free started alongside the base search).
 
+## Oracle-first screen adopted (14:55 UTC; `V025-CONTROLLER-AMENDMENT-1-ORACLE-FIRST-SCREEN-2026-09-11.md`)
+
+Standing rule from now on: no mechanism trains before its ideal version has been rolled out with the counterfactual evaluator and has beaten `A m=2dB` under declared rules. Table = information axis (simultaneous / sequential-visible / joint) × credit axis (own bits / equal share / difference reward / exact joint), **each cell at realised and nominal information**. Cells: A-real, A-nom (= LP-prev best, running), B-real, B-nom (= LP-seq best + the ceiling's nominal variant, running), corner (= ceiling search, running). Decision rules 1–5 declared (A-real ≤ rule + 3.3 % → drop difference reward untrained; B-real ≥ A-real + 3.3 % → sequential visibility; only corner → owner decides on C; the nominal cell of the chosen path must itself clear +4.5 % or the next screen is an observation redesign). Training then asks "does the learner catch its own oracle" (≥ 50 % of the nominal cell's gain; owner's number) with matched random controls. A-real/B-real queued on the H4/LP harness behind the LP report (~20–30 min per cell).
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
