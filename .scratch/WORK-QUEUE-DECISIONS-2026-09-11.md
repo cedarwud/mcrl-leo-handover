@@ -141,6 +141,15 @@ bounded ACRM, JSRL. Layer 2 was never what failed and can be kept whole. What ch
   vectors, (c) causal marginal by drop-one; the 25 % / 0.2 numbers are pre-screen diagnostics; 1–4 catfish all acceptable.
 - **b0 worktree removed** 17:30 UTC; branch and archive tag kept.
 
+## Critical path shortened (17:45 UTC; `…-AMENDMENT-5-CRITICAL-PATH-AND-EARLY-D0-T0-PROPOSAL-2026-09-12.md`)
+
+Part I adopted (owner's eight instructions; no Amendment 4 gate relaxed): B-real(R1) independently aggregated and provisional
+(+29.5 %, p10 1.14×; B − A +23.6 points unfloored); oracle CPU on the floored R1 cells, then floored R1 calibration (clone data
+for B2 condition 3); one oracle pass stores everything later uses; T0 representability lane now (T0REPR); D0–D4 harness built by
+the B1 agent without training; first stage = D0 + D1..D4 with T0 and a matched null each (9 arms × 3 seeds); D2 primary, D3
+required comparator, D4 gating test, D1 lineage baseline; downstream list fixed. Part II (early branch-invariant D0/T0 runs)
+**not adopted** — pros/cons and a conditional recommendation written for the owner.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
