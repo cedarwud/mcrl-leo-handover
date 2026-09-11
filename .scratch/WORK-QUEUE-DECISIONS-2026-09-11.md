@@ -78,6 +78,39 @@ Pinned archive, sat, 24 evaluation episodes, final checkpoints, inference-time �
 
 Standing rule from now on: no mechanism trains before its ideal version has been rolled out with the counterfactual evaluator and has beaten `A m=2dB` under declared rules. Table = information axis (simultaneous / sequential-visible / joint) × credit axis (own bits / equal share / difference reward / exact joint), **each cell at realised and nominal information**. Cells: A-real, A-nom (= LP-prev best, running), B-real, B-nom (= LP-seq best + the ceiling's nominal variant, running), corner (= ceiling search, running). Decision rules 1–5 declared (A-real ≤ rule + 3.3 % → drop difference reward untrained; B-real ≥ A-real + 3.3 % → sequential visibility; only corner → owner decides on C; the nominal cell of the chosen path must itself clear +4.5 % or the next screen is an observation redesign). Training then asks "does the learner catch its own oracle" (≥ 50 % of the nominal cell's gain; owner's number) with matched random controls. A-real/B-real queued on the H4/LP harness behind the LP report (~20–30 min per cell).
 
+## Parallel track while waiting (2026-09-12 00:30 Taipei = 16:30 UTC; none of it trains — Ruling 2 §5 respected)
+
+1. **B1-CREDIT** (opus, engineering lane): difference-reward credit + analytic lighting-price approximation for the ratio
+   learner, in a new worktree `b1/difference-reward-20260912` from `102b2d4d`; fail-then-pass tests with named mutants;
+   no-training diagnostic (argmax-change fraction under the new credit vs 0/240 under equal share); cost benchmark. Puts B1
+   on the starting line the moment A-real passes; shelved if it fails.
+2. **Save what the next screen needs**: the oracle-cell agent saves (observation, oracle action) pairs per cell; the ceiling
+   agent reports whether each variant saved per-step joint actions (for replay). The representability screen (clone the
+   teacher from the learner's own observation) then runs without re-running any oracle.
+3. **Deep Research addendum** for the owner (`.scratch/external-package/validity-2026-09-11/PROMPT-CHATGPT-DEEPRESEARCH-ADDENDUM-PRIVILEGED-TEACHERS.md`):
+   privileged-teacher distillation, the imitation gap, DQfD with a privileged teacher, centralised-expert → decentralised
+   policies in wireless, difference rewards in resource allocation, the catfish literature, how many teachers.
+4. Deferred to conserve opus quota: paper evidence tables (sonnet after its weekly reset 04:00 Taipei).
+
+## Design note — how the catfish line survives (not a declaration; contingent on the ceiling and the oracle cells)
+
+Three layers, fixed in this order: **(0) what the student can learn** — credit and observation (equal share cannot see the
+lever; the difference reward can); **(1) what a catfish teaches** — its source (the pilot's rule sources carried nothing
+beyond random data); **(2) how it is injected** — static replay (pilot), DQfD margin, faithful RIS competitive replay /
+bounded ACRM, JSRL. Layer 2 was never what failed and can be kept whole. What changes is layers 0 and 1:
+- The injection mechanisms stay: **DQfD-style margin** becomes the natural channel for distilling a **privileged teacher**
+  (an oracle cell or the centralised search) into the per-user student; faithful RIS catfish stays as the lineage comparator.
+  A DQfD margin toward a rule source has the rule as its oracle, so it cannot beat the rule (CFSCREEN: the `A m=2dB` clone
+  loses 1.3 %); toward a teacher above the rule it has a real job, bounded by the representability screen.
+- The pilot's three sources collapse under the measured-count definition (Ruling 2 §4): `A m=12dB`'s states lie inside
+  `A m=2dB`'s (fails distinctness); `B1_NO_NEW_BEAM` is dominated on (EE, served, per-user rate). One rule source remains —
+  the reference itself.
+- New candidate catfish, each admitted only by the oracle-first screen, the representability screen and the three count
+  criteria: LP(c, m) lighting-price cells above the rule; the simultaneous difference-reward oracle (A-real); the sequential
+  oracle (B-real, privileged "sees earlier users"); the centralised search (privileged joint teacher); the rate-floor
+  search (service-respecting teacher). The count is whatever survives — possibly more than three, possibly fewer.
+- In scenario A none of these exists on this physics, and the fallback of Amendment 2 §4 applies.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
