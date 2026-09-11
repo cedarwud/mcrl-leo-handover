@@ -536,11 +536,12 @@ def test_d3_margin_loss_properties():
     mask[0, [1, 4, 9]] = True
     a_t = torch.tensor([4])
     scores[0, 4] = 1.0
-    scores[0, 1] = 0.5
+    scores[0, 1] = 0.95                          # inside the margin: loss must be > 0
     scores[0, 9] = 0.2
     scores[0, 27] = 99.0                         # illegal: must not enter the max
     loss = float(cft.d3_margin_loss(scores, mask, a_t, 0.15))
-    assert loss == pytest.approx(max(0.5 + 0.15, 0.2 + 0.15, 1.0) - 1.0, rel=1e-6)
+    assert loss == pytest.approx(max(0.95 + 0.15, 0.2 + 0.15, 1.0) - 1.0, rel=1e-6)
+    assert loss == pytest.approx(0.1, rel=1e-5)  # the margin itself is load-bearing
     assert loss >= 0.0
     # satisfied margin -> exactly zero
     scores[0, 4] = 1.0

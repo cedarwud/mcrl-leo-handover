@@ -99,8 +99,11 @@ def main() -> int:
                      "next_episode": r2["next_episode"],
                      "second_launch_saw_live": live_seen}
 
-    # ---- T2 fail-closed on a configuration change
-    stdout = launch("--root", p2, *common, "--episodes", "4", "3:0", expect_fail=True)
+    # ---- T2 fail-closed on a configuration change.  (--smoke pins the budget, so
+    # the mismatch is made by dropping it: a different budget AND a different mode
+    # against the same manifest.)
+    stdout = launch("--root", p2, "--calibration", a.calibration.resolve(),
+                    "--episodes", "4", "--dry-run", "3:0", expect_fail=True)
     assert "RUN-MANIFEST" in stdout
     results["T2"] = {"launcher_refused_changed_config": True}
 
