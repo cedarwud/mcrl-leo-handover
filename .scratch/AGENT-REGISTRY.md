@@ -20,15 +20,21 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 
 | name | agentId | workspace | report (first line = verdict) |
 |---|---|---|---|
-| SOLO | `aad297dbf1b91554c` | `/home/sat/mcrl-v025-solo-ws` | `SOLO-ROUTES-2026-09-11.md` |
-| TRIOBJ | `aac6285bfb87e962d` | `/home/sat/mcrl-v025-triobj-ws` | `TRI-OBJECTIVE-FEASIBILITY-2026-09-11.md` |
 | MULTISTEP | `aa086e16457bc9f4c` | `/home/sat/mcrl-v025-multistep-ws` | `MULTISTEP-ENDPOINT-2026-09-11.md` |
 | C3REACH | `a93a81aafe6ff06f7` | `/home/sat/mcrl-v025-c3reach-ws` | `C3-REACH-2026-09-11.md` |
 | OOSPANEL | `a4a1ff602a3b13275` | `/home/sat/mcrl-v025-oospanel-ws` | `OOS-PANELS-2026-09-11.md` |
-| SEEDPAR | `a795bc9610ed76c65` | `/home/sat/mcrl-v025-seedpar-ws` | `SEEDPAR-2026-09-11.md` |
 | BEAMCOUNT | `ab265b1f2c82f21d9` | `/home/sat/mcrl-v025-beamcount-ws` | `BEAM-COUNT-CAP-2026-09-10.md` |
 | HCELL | `a3b6026f8954242c5` | `/home/sat/mcrl-v025-hcell-ws` | `H-CELL-EFFECT-2026-09-11.md` |
 | C1VSGAIN | `ae6dc407144ed2d9b` | `/home/sat/mcrl-v025-c1vsgain-ws` | `C1-VS-GAIN-HEURISTIC-2026-09-11.md` |
+
+## Paused / stopped (2026-09-11 ~01:16Z, owner instruction on cost)
+
+- **SEEDPAR** agent `a795bc9610ed76c65` STOPPED; its 8 training processes + sequential PID 3131678 are
+  **SIGSTOPped** (state T). Resume the processes with `kill -CONT`, resume the agent with SendMessage;
+  its `/home/sat/mcrl-v025-seedpar-ws/PROGRESS.md` and `scripts/helper_chain.sh` hold the plan.
+- **EXACTTRAIN2** and **Q1V3TRAIN** (codex): trainings and drivers SIGSTOPped.
+- Resume/kill rule: `V025-CONTROLLER-DECLARATION-TRAINING-PAUSE-2026-09-11.md`, decided by C1VSGAIN.
+- **SOLO** `aad297dbf1b91554c`, **TRIOBJ** `aac6285bfb87e962d` STOPPED as obsolete (not to resume).
 
 ## Running — other model families
 
