@@ -1,0 +1,84 @@
+{
+  "code": {
+    "scripts": {
+      "bc_probe.py": "cb80c4d7bd949ed01c62856cf612ee155b169557faa56386b2f6eee4914e310f",
+      "bc_rollout.py": "838c84bf39bf920728fd8e9f8a640c1ab2036cc97474fb3dedfb338876a0d4be",
+      "lp_common.py": "fc8d4f0bfe490852eb632feacc69bb36b95d7b870864adc3e8654b49877a4a27",
+      "lp_grid.py": "b3a011f53553bd23fdb998e1962eef90aeb68a421b8d588a839cfd0b339becc5",
+      "t0_aggregate.py": "8e9bd98b07d9a1e684d4a2a59a06698db235580b991c1bd28f68f4111c2bc1ba",
+      "t0_clone.py": "04e8e4bda9f912a1353426403d0812de35a50c81505aff8022380d5662534c4e",
+      "t0_closed.py": "020ec384553341ee7c01d39ac447a472752623761b5cc9480778b94c6c8ed77f",
+      "t0_collect.py": "6f2067adfb42bc95663492e319354a361590001901539cc458a8a3fad4c2266e",
+      "t0_common.py": "35c42ae6582e72e7fbd13c768f6df4db63c82c944ab6acc49e6539e7d88f8176",
+      "t0_entropy.py": "bd9466cda6442e2e6d31c97b54b5e296af59b7ead01970a7bae8d214b0054092",
+      "t0_placebo.py": "e5f26602c51ba6fad1cf850849492ba7c9eea2312a4eb86cfeb9bd9ee0194e72",
+      "t0_select_tau.py": "1735e275ba39d428e3285e8afe105af4e03862b60854175df8092fd2e8b9c192"
+    },
+    "tree_commit": "102b2d4d"
+  },
+  "grid": [
+    {
+      "best_epoch": 96,
+      "model_sha256": "4cfb7efdc13faee3184a53f8b7d4dbe65562e7da00185e47dd099d7bf7c764c7",
+      "name": "SOFT-tau0.01",
+      "tau": 0.01,
+      "val_ce_bits": 0.3980944384216204,
+      "val_regret_mean": 0.017706209939409776,
+      "val_top1": 0.89695,
+      "val_top3": 0.9933333333333333
+    },
+    {
+      "best_epoch": 93,
+      "model_sha256": "bdedbce1474c8c488e15f10d786a6140536b5f927d4f68e3792952b8d08bb7e3",
+      "name": "SOFT-tau0.03",
+      "tau": 0.03,
+      "val_ce_bits": 0.3635267150174078,
+      "val_regret_mean": 0.015245487898415337,
+      "val_top1": 0.9046333333333333,
+      "val_top3": 0.9952
+    },
+    {
+      "best_epoch": 93,
+      "model_sha256": "0064acebd82b2d1f11a0d22732aef7265ff89e495b5e14124241076fbb1e180c",
+      "name": "SOFT-tau0.1",
+      "tau": 0.1,
+      "val_ce_bits": 0.32284256879219914,
+      "val_regret_mean": 0.01024978535840361,
+      "val_top1": 0.9187833333333333,
+      "val_top3": 0.99685
+    },
+    {
+      "best_epoch": 98,
+      "model_sha256": "59fed5f78ef816de1642c8fa10b38d9799b054c1cb8ee8f372b85f6ab247e382",
+      "name": "SOFT-tau0.3",
+      "tau": 0.3,
+      "val_ce_bits": 0.5701847945074812,
+      "val_regret_mean": 0.006252497876770493,
+      "val_top1": 0.9374666666666667,
+      "val_top3": 0.9985333333333334
+    },
+    {
+      "best_epoch": 96,
+      "model_sha256": "3d349ed518b06d4136bff252f7db51aa3205012619d6d3d68eeb830ba2103b95",
+      "name": "SOFT-tau1",
+      "tau": 1.0,
+      "val_ce_bits": 1.7417140358849088,
+      "val_regret_mean": 0.006671183394935065,
+      "val_top1": 0.9293333333333333,
+      "val_top3": 0.9983833333333333
+    },
+    {
+      "best_epoch": 93,
+      "model_sha256": "e7487196fc5f39f659988160eb64bf9a2a9880c2a955cc7ed6d658b82aa9b4f2",
+      "name": "SOFT-tau3",
+      "tau": 3.0,
+      "val_ce_bits": 3.289680345435687,
+      "val_regret_mean": 0.004100528026207996,
+      "val_top1": 0.9457666666666666,
+      "val_top3": 0.9990666666666667
+    }
+  ],
+  "rule": "min VAL mean T0-score regret; tie -> max VAL top-1 -> smaller tau",
+  "selected_name": "SOFT-tau3",
+  "selected_tau": 3.0
+}
