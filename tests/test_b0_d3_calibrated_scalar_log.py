@@ -127,6 +127,37 @@ def test_all_three_calibrated_head_means_are_in_the_log_record():
             assert record[name] == pytest.approx(float(calibrated[index]), rel=1e-12)
 
 
+def test_the_stdout_progress_line_prints_the_calibrated_headline_and_three_heads(
+    capsys,
+):
+    """The progress line IS the curve a watcher reads in flight.
+
+    Added after the first B0 pilot died at episode 50 with
+    ``NameError: name 'scalar' is not defined``: D-3 removed the variable and
+    the other tests never enabled progress printing, so this path was dark.
+    """
+    script = np.ones((STEPS, 2, NUM_BEAMS), dtype=bool)
+    env = ScriptedEnv(script, num_beams=NUM_BEAMS, steps_per_episode=STEPS)
+    config = TrainerConfig(
+        batch_size=10_000,
+        episodes=2,
+        epsilon_start=0.0,
+        epsilon_end=0.0,
+        epsilon_decay_episodes=1,
+    )
+    logs = MODQNTrainer(env, config).train(progress_every=1)
+    out = capsys.readouterr().out
+    lines = [line for line in out.splitlines() if line.startswith("[ep ")]
+    assert len(lines) == 2
+    for line, log in zip(lines, logs):
+        assert f"scalar_cal={log.scalar_reward_calibrated:.4f}" in line
+        assert f"r1c={log.r1_mean_calibrated:.4f}" in line
+        assert f"r2c={log.r2_mean_calibrated:.4f}" in line
+        assert f"r3c={log.r3_mean_calibrated:.4f}" in line
+        # the old uncalibrated number must not be labelled as the headline
+        assert " scalar=" not in line
+
+
 def test_the_serialised_record_carries_both_scalars_and_both_scalings():
     """B17 Q2 needs ωⱼ/cⱼ, which needs both scalings present in one row."""
     logs, _ = _logs()

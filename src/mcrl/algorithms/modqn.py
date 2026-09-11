@@ -1577,15 +1577,20 @@ class MODQNTrainer:
                             )
 
             if progress_every > 0 and (ep + 1) % progress_every == 0:
+                # B0 D-3: the in-flight curve prints the CALIBRATED headline
+                # and all three calibrated heads.  It used to print the
+                # uncalibrated scalar (numerically 0.5*r1) as ``scalar=``.
                 print(
                     f"[ep {ep+1:5d}/{cfg.episodes}] "
                     f"eps={eps:.3f} "
-                    f"scalar={scalar:.4e} "
-                    f"r1={avg_reward[0]:.4e} "
-                    f"r2={avg_reward[1]:.4f} "
-                    f"r3={avg_reward[2]:.4e} "
+                    f"scalar_cal={scalar_calibrated:.4f} "
+                    f"r1c={calibrated[0]:.4f} "
+                    f"r2c={calibrated[1]:.4f} "
+                    f"r3c={calibrated[2]:.4f} "
+                    f"r1_raw={avg_reward[0]:.4e} "
                     f"ho={ep_handovers} "
-                    f"buf={len(self.replay)}"
+                    f"buf={len(self.replay)}",
+                    flush=True,
                 )
 
         return logs
