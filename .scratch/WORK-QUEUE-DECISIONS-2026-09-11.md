@@ -31,6 +31,20 @@ Owner note 12:45 UTC: agy may be used for cross-model help (`--model "Gemini 3.7
 - **Dispatched 13:15 UTC: H4PROBE** (sonnet, measurement only, own sat workspace, ≤ 3 processes): η→0 / 2η argmax-flip fractions and closed-loop EE on the 9 final checkpoints, plus an explicit own-bits greedy rule and the two reference rules on both episode sets, placebo-tied to the pilot's eval JSON. Pure diagnostic under the standing autonomy; no design change.
 - Dispatched at ~13:05: Fable phase 2a (pilot result) by SendMessage; CEILING2 brief amendment (per-user throughput reporting; conditional variants: rate floor, nominal-information, compound beam-emptying moves, multi-init — only if the base search exceeds +3 %); agy adversarial check of the Fable audit (`.scratch/reviews/validity-agy-2/`); Q9a curation (sonnet).
 
+## agy adversarial check of the Fable audit (13:20 UTC; `.scratch/reviews/validity-agy-2/AGY-CHECK-OF-FABLE-AUDIT-2026-09-11.md`) — controller adjudication
+
+Verdict: 8/14 checks CONFIRMED, 6 WRONG-or-caveat, **DEAD-PATH SURVIVES WITH CORRECTIONS**. Re-derived by the controller (not counted):
+- Accepted corrections: (a) "beam count cancels" is first-order only — mean SE per beam depends on the lighting pattern (the Fable audit's own marginal-EE arithmetic shows it); (b) I/N ≈ 5.9 is a CAPPENALTY figure from the pre-pin archive with retrained OFF weights — magnitude does not transfer to the pinned physics, the lever's existence does; (c) the 104/240 = 43 % figure is own-bits argmax vs the user's **unilateral** system-objective argmax (others fixed), not a joint argmax; (d) the arXiv link `2605.02416` for Sun et al. 2024 is wrong (2026 identifier); the project's thesis reference list (`.scratch/chinese-word-v023-lcsrs-20260905-r2/REFERENCES.md:137`, VERIFIED-LOCAL) gives the MODQN baseline as Sun et al., IEEE Commun. Lett. 28(12), 2024, DOI `10.1109/LCOMM.2024.3470890` — confirmed by the controller by grep; (e) "static pools = DQfD's worst arms" is overdrawn: R2D3/DDPGfD are themselves margin-free replay mixing (with n-step, PER and a ~1/256 ratio) — the fair statement is "R2D3-style mixing without n-step/PER at 30× the swept ratio, in a dense-reward problem"; (f) the ±3 % / ±10 % ceiling thresholds were judgement, not derivation.
+- Not accepted as material: "throughput ≠ service" is a wording point (the audit's claim that pooled EE is blind to halved per-user rates stands); "Dinkelbach could act through continuation value" is possible in principle and is exactly what the H4 probe measures on the trained checkpoints.
+- None of the corrections touches the load-bearing chain: joules per beam-step policy-invariant → EE = bits per lit beam → rules dominate every learned arm on the same episodes → energy term inert (0/240) → replay effect non-specific (A2 ≈ A3).
+
+**Phase 2b reading rule for the ceiling, declared now (before any ceiling number is known to the controller), adopting the check's MDE-based proposal:**
+- Paired per-episode comparison on the 24 evaluation episodes against `A m=2dB` (107,000,984 bit/J on that set, per the ceiling agent's reference run).
+- **Dead for any learner**: constrained (service-floor) centralised search ≤ +3.3 % (≈ representability loss 1.3 % + 1.96 × paired sem).
+- **Alive for a per-user learner only if** the nominal-information unilateral point exceeds the rule by ≥ 4.5 % (MDE at 5 seeds with seed SD ≈ 2.5 %, plus representability) with served ≥ 0.995 and bits ratio ≥ 0.95 vs the rule.
+- Gains present only in the realised-information joint search → coordination/observability problem: a redesign of the decision contract (centralised or CTDE), not a fix of this learner.
+- Between the two thresholds: report as "room too small to resolve with the seeds we can afford"; no training is launched on it.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
