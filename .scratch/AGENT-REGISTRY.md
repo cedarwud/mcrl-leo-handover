@@ -78,7 +78,8 @@ is not comparable to pinned-archive numbers.
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep) on `363845e8` + pinned archive; early-stop check at ep 500 declared |
+| **CF3REVIEW** | `af8d412c9162118a5` | local `.scratch/cf3-review` | `CF3-CODE-REVIEW-2026-09-11.md` | read-only code review of worktree `cf3/pilot-20260911` vs declaration + Amendments 1-2; resume: "Resume CF3REVIEW; read your PROGRESS.md; read-only; finish the report." |
+| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep; **+ seeds 3-4 for A1/A2/A3**) on pinned archive; Amendment 2 (lambda=0); relaunch is idempotent via `ws/launch.sh` |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
 terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
