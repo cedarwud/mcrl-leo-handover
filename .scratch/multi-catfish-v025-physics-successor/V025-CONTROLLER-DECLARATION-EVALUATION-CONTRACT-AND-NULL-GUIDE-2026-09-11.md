@@ -92,6 +92,45 @@ is not a catfish**, however much it raises EE. It may still be reported — as w
   PROCEED WITH CHANGES, **both conditioned on it being a new prospective study rather than
   a retroactive rescue**. That is a thesis-framing decision and it is the owner's.
 
+## Amendment, same day — rule 3 was stricter than the source paper and is withdrawn
+
+The owner: *"只要在敘事上是合理的就好，因為 ris 的 catfish 的很多機制其實也是一樣，
+沒有真的那麼嚴格 … 如果要求這麼多的話，那可能真的會找不到可以用的演算法"*, and asked
+whether JSRL and the sibling's penalty can both be narrated as catfish.
+
+**They can, and rule 3's four-condition test is withdrawn as a naming gate.** It set a
+higher bar than the source paper meets, which is self-defeating: the RIS catfish's own five
+mechanisms include two with no published counterpart at all.
+
+**JSRL is not a stretch — it is catfish mechanism M3.** The RIS catfish has a *periodic
+intervention* mode in which the catfish agent intervenes in the main agent's training.
+JSRL's guide prefix is that intervention, applied to the action sequence instead of the
+batch composition, and specified far more precisely. Framing it as a narrative risk was the
+controller's error.
+
+**The penalty is also narratable, and more tightly than the controller first said.**
+`srank` / row-decorrelation penalties prevent the value representation collapsing into
+redundant rows. The catfish metaphor is, literally, *preventing a population from becoming
+homogeneous and complacent without a predator*. "Prevent representation collapse" and
+"prevent homogenisation" are the same sentence, not an analogy stretched to fit — a closer
+mapping than "a second agent with a different discount factor". It is also **the one
+sibling mechanism with a measured positive effect**. Dispatched as an arm (PENALTYARM).
+
+## What is still held, and why it is not strictness
+
+**Rule 1 (evaluation contract) stands**, on two grounds that are not about purity:
+- **JSRL itself requires `h -> 0` by the end of training.** Evaluating at `h > 0` is not
+  the published method.
+- If a rule executes a fraction of the actions at evaluation, that fraction of the reported
+  EE is the rule's, not the learner's. Any referee asks this first.
+
+**Rule 2 (`NULL_GUIDE` / `NULL_PENALTY`) is re-framed, not withdrawn.** It was wrongly
+presented as a purity gate. It is a **which-knob diagnostic**: if the null control matches
+the real arm, the effect is the perturbation, and the fastest route to more EE is then to
+optimise the perturbation directly rather than to keep searching for a better demonstrator.
+It blocks nothing, runs in parallel, costs one arm (1.32 h), and saves an entire dead
+branch. Reported either way, and a perturbation effect is a usable result, not a failure.
+
 ## Gates still outstanding, each cheap, any one fatal
 
 - **FEASFRONT** — is the trained policy even on the Pareto frontier of simple rules with
