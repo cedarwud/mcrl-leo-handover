@@ -1,6 +1,13 @@
 # Agent registry — resume after any interruption
 
-> **New session? Read `.scratch/HANDOFF-2026-09-11.md` first.** At handoff (~11:20 UTC) the only live agent is
+> **Session of 2026-09-11 ~12:20 UTC (controller = Fable 5.1). Live agents now — decisions in `.scratch/WORK-QUEUE-DECISIONS-2026-09-11.md`:**
+> - **VALIDITY-FABLE** `ab15c86158b2b327e` (model fable, fresh context) — blind validity audit per `.scratch/validity-audit/PROMPT-BLIND.md`; writes `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md` + `PROGRESS.md`. **Phase 2 pending:** after the blind report exists, `SendMessage` it the pilot report path + the ceiling report path and ask whether the verdict changes. Resume: "Read your `.scratch/validity-audit/PROGRESS.md`, continue from the last completed section; blindness rules unchanged."
+> - **CEILING2** `aeff029c95c8d0633` (model opus) — EE ceiling measurement per `.scratch/ee-ceiling/PROMPT.md`; sat workspace `/home/sat/mcrl-v025-ceiling-ws/`; writes `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md` + `PROGRESS.md`. Resume: "Read your `PROGRESS.md`; check your detached sat processes by cwd+cmdline before relaunching; continue from the first incomplete step."
+> - **REPORTWRITER** `af80cc36ea6c8b4ae` (model sonnet) — TAKEOVER §4: copies `sat:ws/report/` back and writes `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md`; its final message carries no numbers. Dispatched ~12:27 UTC after `REPORT-DONE` appeared (~12:25).
+> - **AGY-VALIDITY** — agy Gemini 3.8 Flash (High), detached, pid in `.scratch/reviews/validity-agy/agy.pid` (475390), cwd `.scratch/reviews/validity-agy`, prompt `PROMPT.md` (= the Fable brief with output paths swapped), log `agy.log`; writes `VALIDITY-AUDIT-AGY-BLIND-2026-09-11.md`. Not resumable: if the report is absent after the process exits, re-run `agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 120m </dev/null` in that dir.
+> - Controller rule in force: **do not open** `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md`, `.scratch/cf3-pilot/report/` or `sat:ws/report/` until both blind audits are written.
+>
+> **Previous handoff block (~11:20 UTC):** Read `.scratch/HANDOFF-2026-09-11.md` first. At handoff (~11:20 UTC) the only live agent is
 > **no agent**. CEILING (`a6bc6cea99e44c3fc`) was stopped ~12:10 UTC before writing anything (re-dispatch per HANDOFF §6b Q1 if still wanted). **CF3PILOT has COMPLETED** (commit `01739a74`); the pilot report is produced by the
 > detached post-job on `sat` (PID 3438182) into `ws/report/`; the final `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` must be
 > written by a fresh agent per `.scratch/cf3-pilot/TAKEOVER.md` §4 — **after** the blind part of the validity audit (HANDOFF §2b).
