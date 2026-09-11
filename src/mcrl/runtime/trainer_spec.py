@@ -275,6 +275,10 @@ class EpisodeLog:
     r2_mean_calibrated: float = 0.0
     r3_mean_calibrated: float = 0.0
 
+    outage_user_steps: int = 0
+    """B0 D-2: user-steps this episode on which the user was NOT served, i.e.
+    the user-steps whose r2/r3 were floored.  0 in logs predating D-2."""
+
     @property
     def scalar_reward(self) -> float:
         """Deprecated alias for the UNCALIBRATED scalar.

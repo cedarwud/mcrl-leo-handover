@@ -32,7 +32,7 @@ is made after seeing the data and leaks).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Mapping
+from typing import Mapping, Sequence
 
 import numpy as np
 
@@ -52,15 +52,12 @@ from ..errors import MCRLContractError
 #
 # **No penalty magnitude is invented here.**  The deferred discounted
 # re-entry penalty this module's docstring describes, and the threshold it
-# marks "S, PROPOSED -- Not yet frozen", remain undeclared, and nothing in
-# the repository declares one.  What is used instead is a quantity the
-# objective already fixes: **the worst value each bounded head can take for
-# a SERVED user**.  Scoring an outage there makes service never worse than
-# outage -- which is exactly the inversion and no more -- without choosing
-# any number the objective does not already contain.
-#
-# It is a LOOSE bound on r3, deliberately: the tightest honest value would
-# need W-13 to freeze one, and it has not.
+# marks "S, PROPOSED -- Not yet frozen", remain undeclared.  Instead an
+# outage scores the WORST VALUE A SERVED USER ACTUALLY RECEIVES IN THE SAME
+# STEP (controller ruling 2026-09-11): r2 = -PHI2, r3 = -max_b U_b(t).  That
+# removes the inversion -- service can never score worse than outage -- and
+# nothing more.  The first version floored r3 at -num_users; that loose bound
+# made ~5-6% of training steps carry ~80% of the r3 signal and was replaced.
 
 OUTAGE_R2_FLOOR: float = -PHI2
 """``r2`` for an unserved user: the worst ``r2`` a served user can take.
@@ -72,30 +69,42 @@ chosen.
 """
 
 
-def outage_r3_floor(num_users: int) -> float:
-    """``r3`` for an unserved user: the worst ``r3`` a served user can take.
+def per_step_outage_floor(
+    rewards: Sequence[object],
+    served: Sequence[bool],
+) -> tuple[float, float]:
+    """``(r2_floor, r3_floor)`` for every unserved user of ONE step.
 
-    ``r3 = -U_{b_u}`` in whole users (B13/PATCH P-13), and the eligible load
-    of one beam cannot exceed the population, so a served ``r3`` lies in
-    ``[-num_users, -1]`` and ``-num_users`` is its minimum.  ``num_users``
-    is a declared configuration value, not an invented magnitude.
+    ``r3_floor`` is the worst ``r3`` any SERVED user receives in the same
+    step.  ``ServiceResolution.eligible_load_by_beam`` counts served users
+    only, so every lit beam carries a served user scoring ``−U_b`` and this
+    minimum is exactly ``−max_b U_b(t)``.  ``r2_floor`` is ``−PHI2``.
+
+    Raises when nobody is served: there is then no served value to floor
+    at, and the controller ruling says to stop rather than approximate.
     """
-    return -float(int(num_users))
+    served_r3 = [
+        float(reward.r3_load_balance)  # type: ignore[attr-defined]
+        for reward, is_served in zip(rewards, served)
+        if bool(is_served)
+    ]
+    if not served_r3:
+        raise MCRLContractError(
+            "B0 D-2: a step with no served user has no per-step served r3 to "
+            "floor an outage at; refusing to approximate one"
+        )
+    return OUTAGE_R2_FLOOR, min(served_r3)
 
 
 def apply_outage_floor(
     reward_vector: np.ndarray | tuple[float, float, float],
     *,
-    num_users: int,
+    r3_floor: float,
 ) -> np.ndarray:
     """Return the reward vector an **unserved** user scores.
 
-    ``r1`` is passed through: it is already ``~0`` for an unserved user and
-    it is not a bounded head, so flooring it would be an objective change
-    rather than a defect fix.  ``r2`` and ``r3`` are replaced by the worst
-    value each can take for a served user.
-
-    Call this only for users the environment reports as unserved.
+    ``r1`` is passed through (already ~0 unserved; not a bounded head).
+    ``r2`` becomes ``−PHI2``; ``r3`` becomes ``r3_floor``.
     """
     rewards = np.asarray(reward_vector, dtype=np.float64)
     if rewards.shape != (3,):
@@ -105,7 +114,7 @@ def apply_outage_floor(
         )
     floored = rewards.copy()
     floored[1] = OUTAGE_R2_FLOOR
-    floored[2] = outage_r3_floor(num_users)
+    floored[2] = float(r3_floor)
     return floored
 
 

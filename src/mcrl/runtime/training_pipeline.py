@@ -546,6 +546,7 @@ def _episode_log_from_dict(row: Mapping[str, Any]) -> EpisodeLog:
         r1_mean_calibrated=float(row.get("r1_mean_calibrated", 0.0)),
         r2_mean_calibrated=float(row.get("r2_mean_calibrated", 0.0)),
         r3_mean_calibrated=float(row.get("r3_mean_calibrated", 0.0)),
+        outage_user_steps=int(row.get("outage_user_steps", 0)),
     )
 
 

@@ -62,7 +62,7 @@ from ..runtime.objective_math import (
     apply_reward_calibration,
     scalarize_objectives,
 )
-from ..runtime.outage_gate import apply_outage_floor
+from ..runtime.outage_gate import apply_outage_floor, per_step_outage_floor
 from ..runtime.trainer_config_validation import TD_BOOTSTRAP_SHARED
 from ..runtime.collapse_metrics import compute_collapse_metrics
 from ..runtime.collapse_penalty import (
@@ -170,6 +170,8 @@ class MODQNTrainer:
         self._no_op_transitions_skipped: int = 0
         self._all_invalid_next_transitions_skipped: int = 0
         self._decision_steps_seen: int = 0
+        # B0 D-2: (StepResult, (r2_floor, r3_floor)) for the step last floored.
+        self._outage_floor_cache: tuple[object, tuple[float, float]] | None = None
         self._runtime_real_emission_collector = runtime_real_emission_collector
         self._runtime_real_emission_hook_enabled()
 
@@ -778,7 +780,6 @@ class MODQNTrainer:
         uid: int,
         *,
         is_eval: bool = False,
-        num_users: int | None = None,
     ) -> np.ndarray:
         """Return the three-objective reward vector for one user.
 
@@ -801,11 +802,13 @@ class MODQNTrainer:
         value on ``r2``.  Those steps are not no-ops — a user that chose a
         valid action and was then denied service by per-link power
         infeasibility or contention enters replay carrying that free ride —
-        so the inversion is live.  ``runtime.outage_gate.apply_outage_floor``
-        replaces the two bounded heads with **the worst value each can take
-        for a served user**, which removes the inversion without inventing a
-        penalty magnitude the repository does not declare.  ``r1`` is left
-        alone.  ``num_users`` defaults to this trainer's population.
+        so the inversion is live.  Per the controller ruling of 2026-09-11 an
+        unserved user scores ``r2 = −PHI2`` and ``r3 = the worst r3 any
+        served user receives IN THE SAME STEP`` (``= −max_b U_b(t)``;
+        ``runtime.outage_gate.per_step_outage_floor``).  No magnitude is
+        invented, and the floor can never exceed the load actually present.
+        A step with nobody served raises rather than approximating.  ``r1``
+        is left alone.  Applies to every TD-bootstrap mode.
         """
         del is_eval  # both paths take the same reward; kept for the signature
         rw = result.rewards[uid]
@@ -823,10 +826,15 @@ class MODQNTrainer:
         # apart from an outage by the reward vector alone.
         served = getattr(result, "served", None)
         if served is not None and not bool(served[uid]):
-            vector = apply_outage_floor(
-                vector,
-                num_users=self.num_users if num_users is None else int(num_users),
-            )
+            # One floor per step, computed once and reused for every user of
+            # that step (the cache holds the result object itself, so a new
+            # step can never read a stale floor).
+            cached = self._outage_floor_cache
+            if cached is None or cached[0] is not result:
+                cached = (result, per_step_outage_floor(result.rewards, served))
+                self._outage_floor_cache = cached
+            _r2_floor, r3_floor = cached[1]
+            vector = apply_outage_floor(vector, r3_floor=r3_floor)
         return vector
 
     def _evaluate_one_seed(
@@ -1363,6 +1371,7 @@ class MODQNTrainer:
 
             ep_reward = np.zeros(3, dtype=np.float64)
             ep_handovers = 0
+            ep_outages = 0
             ep_losses = np.zeros(3, dtype=np.float64)
             update_count = 0
             collapse_first = collapse_last = None
@@ -1454,6 +1463,11 @@ class MODQNTrainer:
                     ep_reward += reward_vec
                     if rw.r2_handover < 0:
                         ep_handovers += 1
+                    # B0 D-2: count the user-steps the outage floor applied to,
+                    # so the floor's share of r2/r3 is measured, not inferred.
+                    step_served = getattr(result, "served", None)
+                    if step_served is not None and not bool(step_served[uid]):
+                        ep_outages += 1
 
                     # PATCH P-03 (L-3, SDD §4A.5a(2)-(3)).  A transition may
                     # enter replay only if it is a real decision with a
@@ -1543,6 +1557,7 @@ class MODQNTrainer:
                 scalar_reward_calibrated=float(scalar_calibrated),
                 scalar_reward_uncalibrated_deprecated=float(scalar_uncalibrated),
                 total_handovers=ep_handovers,
+                outage_user_steps=ep_outages,
                 replay_size=len(self.replay),
                 losses=(float(avg_losses[0]), float(avg_losses[1]), float(avg_losses[2])),
                 collapse_first=collapse_first,
@@ -1600,6 +1615,7 @@ class MODQNTrainer:
                     f"r3c={calibrated[2]:.4f} "
                     f"r1_raw={avg_reward[0]:.4e} "
                     f"ho={ep_handovers} "
+                    f"out={ep_outages} "
                     f"buf={len(self.replay)}",
                     flush=True,
                 )
