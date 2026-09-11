@@ -185,14 +185,24 @@ class DevSettings:
             raise MCRLContractError(f"mechanism must be one of {cft.MECHANISMS}")
         if self.teacher not in cft.TEACHERS:
             raise MCRLContractError(f"teacher must be one of {cft.TEACHERS}")
-        if (self.mechanism == "D0") != (self.teacher == "none"):
-            raise MCRLContractError("D0 is the only mechanism without a teacher")
-        if self.mechanism == "D2-null" and self.null_key is None:
-            raise MCRLContractError("D2-null needs its DEV-NULL key (9_231_000, k)")
-        if self.mechanism != "D2-null" and self.null_key is not None:
-            raise MCRLContractError("only D2-null may carry a DEV-NULL key")
-        if self.null_key is not None:
-            assert_dev_null_key(self.null_key, "DEV-NULL D2 key")
+        expected_teacher = {"D0": "none", "D3-null": "random"}.get(self.mechanism, "T0")
+        if self.teacher != expected_teacher:
+            raise MCRLContractError(
+                f"mechanism {self.mechanism!r} requires teacher {expected_teacher!r}"
+            )
+        null_base = {"D2-null": 9_231_000, "D3-null": 9_241_000}.get(self.mechanism)
+        if null_base is None and self.null_key is not None:
+            raise MCRLContractError("only the matched nulls may carry a DEV-NULL key")
+        if null_base is not None:
+            if self.null_key is None:
+                raise MCRLContractError(
+                    f"{self.mechanism} needs its DEV-NULL key ({null_base}, k)"
+                )
+            base, _index = assert_dev_null_key(self.null_key, f"DEV-NULL {self.mechanism} key")
+            if base != null_base:
+                raise MCRLContractError(
+                    f"{self.mechanism} draws from ({null_base}, k), not {self.null_key}"
+                )
         for name in ("tau", "tau_s"):
             value = float(getattr(self, name))
             if not (np.isfinite(value) and value > 0):
@@ -215,7 +225,7 @@ class DevSettings:
         """The weight actually multiplying this mechanism's teacher loss."""
         if self.mechanism in ("D2-T0", "D2-null"):
             return float(self.alpha)
-        if self.mechanism == "D3-T0":
+        if self.mechanism in ("D3-T0", "D3-null"):
             return float(self.lambda_e)
         return 0.0
 
@@ -452,7 +462,7 @@ class CFDevTrainer(CFRatioTrainer):
         # same sampling arithmetic, same generator).
         self.replay = TeacherReplayBuffer(config.replay_capacity)
         self._null_rng = (
-            np.random.default_rng(dev.null_key) if dev.mechanism == "D2-null" else None
+            np.random.default_rng(dev.null_key) if dev.null_key is not None else None
         )
         self._last_teacher_loss: float = 0.0
         self._teacher_updates: int = 0
@@ -483,6 +493,12 @@ class CFDevTrainer(CFRatioTrainer):
         if self.dev.mechanism == "D2-null":
             used = cft.permute_scores_among_legal(scores, legal, self._null_rng)
             used_acts = cft.masked_argmax_rows(used, legal)
+        elif self.dev.mechanism == "D3-null":
+            # The margin loss reads ONLY the action, so the null replaces the action
+            # with a seeded uniform legal draw and stores NO T0 quantity at all: the
+            # scores it carries are zeros.
+            used = np.zeros_like(scores)
+            used_acts = cft.random_legal_actions(legal, self._null_rng)
         else:
             used, used_acts = scores, t0_acts
         return t0_acts, used_acts, used, legal, scores
@@ -512,7 +528,7 @@ class CFDevTrainer(CFRatioTrainer):
             target = cft.soft_targets(batch["teacher_scores"], batch["masks"], d.tau)
             p = torch.tensor(target, dtype=torch.float32, device=self.device)
             return d.alpha * cft.d2_ce_loss(scores, mask, p, d.tau_s)
-        if d.mechanism == "D3-T0":
+        if d.mechanism in ("D3-T0", "D3-null"):
             a_t = torch.tensor(np.asarray(batch["teacher_action"], dtype=np.int64),
                                dtype=torch.long, device=self.device)
             return d.lambda_e * cft.d3_margin_loss(scores, mask, a_t, d.margin)

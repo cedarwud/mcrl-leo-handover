@@ -230,6 +230,51 @@ def mutant(monkeypatch):
         monkeypatch.setattr(T, "measure_on_calibration",
                             cfr.CFRatioTrainer.measure_on_calibration)
         monkeypatch.setattr(T, "quarter_update", cfr.CFRatioTrainer.quarter_update)
+    elif MUTANT == "d3null_target_is_t0_action":
+        real = T.teacher_labels
+
+        def bad(self, states, masks):
+            t0, used, scores, legal, raw = real(self, states, masks)
+            if self.dev.mechanism == "D3-null":
+                used = t0
+            return t0, used, scores, legal, raw
+
+        monkeypatch.setattr(T, "teacher_labels", bad)
+    elif MUTANT == "d3null_target_may_be_illegal":
+        def bad(mask, rng):
+            return np.asarray(rng.integers(0, mask.shape[1], size=mask.shape[0]),
+                              dtype=np.int64)
+
+        monkeypatch.setattr(cft, "random_legal_actions", bad)
+    elif MUTANT == "d3null_uses_train_rng":
+        real = T.teacher_labels
+
+        def bad(self, states, masks):
+            if self.dev.mechanism == "D3-null":
+                self._null_rng = self._train_rng
+            return real(self, states, masks)
+
+        monkeypatch.setattr(T, "teacher_labels", bad)
+    elif MUTANT == "d3null_scores_carry_t0":
+        real = T.teacher_labels
+
+        def bad(self, states, masks):
+            t0, used, scores, legal, raw = real(self, states, masks)
+            if self.dev.mechanism == "D3-null":
+                scores = raw
+            return t0, used, scores, legal, raw
+
+        monkeypatch.setattr(T, "teacher_labels", bad)
+    elif MUTANT == "d3null_key_dropped_from_hash":
+        import dev_e0_common as D
+        real = D.arm_config_payload
+
+        def bad(*args, **kwargs):
+            payload = real(*args, **kwargs)
+            payload["dev_settings"].pop("null_key", None)
+            return payload
+
+        monkeypatch.setattr(D, "arm_config_payload", bad)
     elif MUTANT == "manifest_ignores_dev_settings":
         import dev_e0_common as D
         real = D.arm_config_payload
@@ -283,9 +328,9 @@ def _settings(**kw) -> cfr.CFRatioSettings:
 
 
 def _dev(mechanism="D0", **kw) -> cfd.DevSettings:
-    base = dict(mechanism=mechanism,
-                teacher="none" if mechanism == "D0" else "T0",
-                null_key=((9_231_000, 0) if mechanism == "D2-null" else None),
+    teacher = {"D0": "none", "D3-null": "random"}.get(mechanism, "T0")
+    null_key = {"D2-null": (9_231_000, 0), "D3-null": (9_241_000, 0)}.get(mechanism)
+    base = dict(mechanism=mechanism, teacher=teacher, null_key=null_key,
                 devval_episodes=1)
     base.update(kw)
     return cfd.DevSettings(**base)
@@ -570,7 +615,7 @@ def test_teacher_weight_zero_reproduces_d0_bit_identically():
     d0 = _trainer("D0", users=6)
     logs0 = d0.train_cf(progress_every=0)
     for mech, kw in (("D2-T0", {"alpha": 0.0}), ("D3-T0", {"lambda_e": 0.0}),
-                     ("D2-null", {"alpha": 0.0})):
+                     ("D2-null", {"alpha": 0.0}), ("D3-null", {"lambda_e": 0.0})):
         other = _trainer(mech, users=6, dev_kw=kw)
         logs = other.train_cf(progress_every=0)
         for x, y in zip(_weights(d0), _weights(other)):
@@ -875,3 +920,99 @@ def test_launcher_dry_run_plans_without_starting_anything(tmp_path):
         cwd=REPO, capture_output=True, text=True,
     )
     assert bad.returncode != 0 and "RUN-MANIFEST" in (bad.stdout + bad.stderr)
+
+
+# ---------------------------------------------------------------- D3-null
+def test_d3_null_target_is_legal_independent_of_t0_and_seeded():
+    """The D3 matched null: a seeded uniform LEGAL action, no T0 quantity anywhere.
+
+    Red under: d3null_target_is_t0_action, d3null_target_may_be_illegal,
+    d3null_uses_train_rng, d3null_scores_carry_t0.
+    """
+    tr = _trainer("D3-null", users=6)
+    factory = _real_env_factory(6)
+    env = factory()
+    states, masks, _ = env.reset(np.random.default_rng(9_202_000),
+                                 np.random.default_rng(9_203_000))
+    before_train = copy.deepcopy(tr._train_rng.bit_generator.state)
+    before_env = copy.deepcopy(tr._env_rng.bit_generator.state)
+    agree = total = 0
+    draws = []
+    for _t in range(6):
+        t0_acts, used_acts, used_scores, legal, raw = tr.teacher_labels(states, masks)
+        for u in range(len(t0_acts)):
+            if not bool(legal[u].any()):
+                continue
+            total += 1
+            assert legal[u][used_acts[u]], "the null target is illegal in its state"
+            agree += int(used_acts[u] == t0_acts[u])
+        assert np.all(used_scores == 0.0), "the null carries a T0 quantity"
+        draws.append(np.array(used_acts))
+        res = env.step(t0_acts, np.random.default_rng(9_202_000))
+        states, masks = res.user_states, res.action_masks
+    assert tr._train_rng.bit_generator.state == before_train
+    assert tr._env_rng.bit_generator.state == before_env
+    chance = 1.0 / 26.0
+    assert agree / total < 0.25, f"the null agrees with T0 at {agree / total}"
+
+    # legality is a property of the draw, checked where it can be seen: 200 rows
+    # with only 3 legal actions of 28 (an unmasked draw could not stay legal)
+    tight = np.zeros((200, 28), dtype=bool)
+    rng_t = np.random.default_rng((9_241_000, 0))
+    for u in range(200):
+        tight[u, [u % 28, (u + 5) % 28, (u + 11) % 28]] = True
+    tight_acts = cft.random_legal_actions(tight, rng_t)
+    assert all(bool(tight[u, tight_acts[u]]) for u in range(200)), "an illegal null draw"
+    hits = np.bincount([int(a_) for a_ in tight_acts], minlength=28).sum()
+    assert hits == 200
+
+    # the same declared key reproduces the draws; a different index does not
+    same = cft.random_legal_actions(legal, np.random.default_rng((9_241_000, 0)))
+    same2 = cft.random_legal_actions(legal, np.random.default_rng((9_241_000, 0)))
+    other = cft.random_legal_actions(legal, np.random.default_rng((9_241_000, 1)))
+    np.testing.assert_array_equal(same, same2)
+    assert not np.array_equal(same, other)
+
+    # the draw cannot depend on T0's scores: rerun the first step with the teacher's
+    # scores multiplied, from the same generator state
+    fresh_a = _trainer("D3-null", users=6)
+    fresh_b = _trainer("D3-null", users=6)
+    env2 = factory()
+    s2, m2, _ = env2.reset(np.random.default_rng(9_202_000), np.random.default_rng(9_203_000))
+    a1 = fresh_a.teacher_labels(s2, m2)[1]
+    real_scores = cft.t0_scores
+    try:
+        cft.t0_scores = lambda states, masks, c=cft.T0_C: (
+            (lambda s, a, m: (s * -7.0, a, m))(*real_scores(states, masks, c))
+        )
+        a2 = fresh_b.teacher_labels(s2, m2)[1]
+    finally:
+        cft.t0_scores = real_scores
+    np.testing.assert_array_equal(a1, a2)
+
+
+def test_d3_null_version_hash_covers_the_null_identity():
+    """The DEV-NULL key is part of the configuration hash.
+
+    Red under: d3null_key_dropped_from_hash, manifest_ignores_dev_settings.
+    """
+    import dev_e0_common as D
+    from mcrl.runtime import training_pipeline as tp
+    record = tp.read_prereg(tp.CANONICAL_PREREG)
+    kw = dict(episodes=300, devval_episodes=24, calibration_sha256="deadbeef")
+    p0 = D.arm_config_payload(record, CALIB, 7, 0, **kw)
+    p1 = D.arm_config_payload(record, CALIB, 7, 1, **kw)
+    assert p0["dev_settings"]["mechanism"] == "D3-null"
+    assert p0["dev_settings"]["teacher"] == "random"
+    assert tuple(p0["dev_settings"]["null_key"]) == (9_241_000, 0)
+    assert tuple(p1["dev_settings"]["null_key"]) == (9_241_000, 1)
+    assert D.config_hash(p0) != D.config_hash(p1)
+    assert D.config_hash(p0) != D.config_hash(
+        D.arm_config_payload(record, CALIB, 4, 0, **kw)          # D3-T0, same seed
+    )
+    with pytest.raises(MCRLContractError):
+        cfd.DevSettings(mechanism="D3-null", teacher="random", null_key=(9_231_000, 0))
+    with pytest.raises(MCRLContractError):
+        cfd.DevSettings(mechanism="D3-null", teacher="T0", null_key=(9_241_000, 0))
+    with pytest.raises(MCRLContractError):
+        cfd.DevSettings(mechanism="D3-null", teacher="random", null_key=None)

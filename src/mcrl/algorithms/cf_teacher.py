@@ -34,6 +34,10 @@ Mechanisms (Amendment 6 section 2), all on the deployed scalar score
 ``D3`` (DQfD-style unconditional large margin)
     ``lambda_E * (max_a [S(s, a) + m * 1(a != a_T)] - S(s, a_T))`` over legal
     actions.
+``D3-null``
+    the same margin loss with ``a_T`` replaced by a seeded uniform random LEGAL
+    action (DEV-NULL generator) -- the matched null for "does D3's gain need T0's
+    action", with no T0 quantity in any loss input.
 """
 
 from __future__ import annotations
@@ -45,8 +49,8 @@ import torch.nn.functional as F
 from ..env.action_contract import NUM_ACTIONS, no_op_actions
 from ..errors import MCRLContractError
 
-MECHANISMS: tuple[str, ...] = ("D0", "D2-T0", "D2-null", "D3-T0")
-TEACHERS: tuple[str, ...] = ("none", "T0")
+MECHANISMS: tuple[str, ...] = ("D0", "D2-T0", "D2-null", "D3-T0", "D3-null")
+TEACHERS: tuple[str, ...] = ("none", "T0", "random")
 T0_C: float = 1.0
 MASK_FILL: float = -1e9
 """Finite fill for illegal actions (never -inf: 0 * -inf would be NaN)."""
@@ -115,6 +119,23 @@ def permute_scores_among_legal(
             out[u, idx] = np.asarray(scores[u], dtype=np.float64)[idx][
                 rng.permutation(idx.size)
             ]
+    return out
+
+
+def random_legal_actions(mask: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """DEV-NULL: one uniform LEGAL action per row, drawn from ``rng`` only.
+
+    The matched null for D3: the margin loss keeps its shape, weight, margin,
+    schedule, mask and gradient path, and only the action it points at changes --
+    from T0's to a seeded random legal one, which carries no T0 information at all
+    (the same draw ``cf_sources.random_legal`` makes for the NULL3 sources).
+    """
+    mask = np.asarray(mask, dtype=bool)
+    out = np.asarray(no_op_actions(mask.shape[0]), dtype=np.int64)
+    for u in range(mask.shape[0]):
+        valid = np.flatnonzero(mask[u])
+        if valid.size:
+            out[u] = int(rng.choice(valid))
     return out
 
 

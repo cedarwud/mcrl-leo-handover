@@ -35,6 +35,7 @@ DEV_TRAIN_BASE, DEV_ENV_BASE, DEV_MOB_BASE = 9_201_000, 9_202_000, 9_203_000
 DEVVAL_ENV_BASE, DEVVAL_MOB_BASE = 9_211_000, 9_212_000
 DEVVAL_RANDOM_BASE = 9_221_000
 DEV_NULL_D2_BASE = 9_231_000
+DEV_NULL_D3_BASE = 9_241_000
 N_DEVVAL = 24
 
 # ---------------------------------------------------------------- batch
@@ -48,6 +49,7 @@ ARMS: dict[int, tuple[str, str]] = {
     4: ("D3-T0", "equal_share"),
     5: ("D0", "lighting_price"),
     6: ("D2-T0", "lighting_price"),
+    7: ("D3-null", "equal_share"),
 }
 ALPHA0, TAU0, TAU_S0, MARGIN0, LAMBDA_E0 = 1.0, 3.0, 1.0, 0.15, 1.0
 ETA0_EXPECTED = 110_507_234.83444457
@@ -117,6 +119,12 @@ def e0_cf_settings(calib: dict, credit_mode: str) -> CFRatioSettings:
     )
 
 
+def _null_key_for(mechanism: str, k: int):
+    """The declared DEV-NULL generator identity of a matched null, or None."""
+    base = {"D2-null": DEV_NULL_D2_BASE, "D3-null": DEV_NULL_D3_BASE}.get(mechanism)
+    return None if base is None else (base, int(k))
+
+
 def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
                     tau: float | None = None):
     """``tau`` overrides the frozen teacher temperature (E0b's declared tau sweep;
@@ -127,10 +135,10 @@ def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
         raise SystemExit(f"unknown mechanism {mechanism!r}")
     return cfd.DevSettings(
         mechanism=mechanism,
-        teacher="none" if mechanism == "D0" else "T0",
+        teacher={"D0": "none", "D3-null": "random"}.get(mechanism, "T0"),
         alpha=ALPHA0, tau=(TAU0 if tau is None else float(tau)),
         tau_s=TAU_S0, margin=MARGIN0, lambda_e=LAMBDA_E0,
-        null_key=((DEV_NULL_D2_BASE, int(k)) if mechanism == "D2-null" else None),
+        null_key=_null_key_for(mechanism, k),
         devval_env_base=DEVVAL_ENV_BASE, devval_mobility_base=DEVVAL_MOB_BASE,
         devval_episodes=int(devval_episodes),
     )
