@@ -516,6 +516,31 @@ class MODQNTrainer:
         PATCH P-04 (L-2, SDD §3.7 P-3 / §6 G-11): the fail-loud finiteness
         battery.  Non-finite loss, gradient, or online-network parameter
         aborts training instead of continuing silently.
+
+        **B0 D-1 (2026-09-11): the bootstrap action is SHARED across the three
+        heads.**  It used to be ``q_next_all.max(dim=1).values`` computed
+        inside the per-objective loop — head ``i``'s own maximiser.  Head
+        ``i`` then converges toward ``Q*_i``, the optimum of objective ``i``
+        alone, and ``Σ_i ω_i Q*_i`` is **not** the Q-function of
+        ``Σ_i ω_i r_i``: each ``Q*_i`` is attained by a *different* policy, so
+        the weighted sum the deployed selector ranks on is an optimistic bound
+        no single policy reaches.  The deployed rule is
+        ``argmax_a Σ_i ω_i Q_i(s,a)`` (:meth:`select_actions`), so the object
+        to fit is the successor-feature ``ψ^π`` — all three heads evaluated
+        under **one** policy.  The shared action is
+        ``a' = argmax_a Σ_i ω_i Q^target_i(s', a)`` over the *masked* next
+        actions, with ``ω`` read from ``cfg.objective_weights``
+        (``runtime/trainer_spec.py:52``), the same field
+        :meth:`select_actions` reads.  Never a literal.
+
+        ⚠ This **departs from frozen ruling B1 / SDD §8**, whose forbidden
+        list names "Double-DQN 共用純量化動作" and whose W-08 tests asserted
+        the per-head max.  The *vanilla* half is kept — the argmax **and** the
+        gather are both on the target networks, never the online ones, so this
+        is not Double-DQN — but the shared-scalarised-action half is a
+        deliberate departure and B0 is therefore **not** the published-MODQN
+        control arm B1 froze.  See
+        ``.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md``.
         """
         cfg = self.config
         if len(self.replay) < cfg.batch_size:
@@ -532,6 +557,22 @@ class MODQNTrainer:
         nm = torch.tensor(next_masks, dtype=torch.bool, device=self.device)
         dn = torch.tensor(dones, dtype=torch.float32, device=self.device)
 
+        # B0 D-1: one common bootstrap action for all three heads.  Computed
+        # once, outside the per-objective loop, from the TARGET networks only.
+        with torch.no_grad():
+            q_next_by_objective = [
+                self.target_nets[objective](ns) for objective in range(3)
+            ]
+            weights = cfg.objective_weights
+            q_next_scalarized = (
+                weights[0] * q_next_by_objective[0]
+                + weights[1] * q_next_by_objective[1]
+                + weights[2] * q_next_by_objective[2]
+            )
+            # Mask invalid next-actions to large negative value
+            q_next_scalarized = q_next_scalarized.masked_fill(~nm, -1e9)
+            shared_next_action = q_next_scalarized.argmax(dim=1, keepdim=True)
+
         losses: list[float] = []
         for obj_idx in range(3):
             r = torch.tensor(
@@ -541,12 +582,13 @@ class MODQNTrainer:
             # Current Q(s, a)
             q_current = self.q_nets[obj_idx](st).gather(1, act).squeeze(1)
 
-            # Target: r + gamma * max_a' Q_target(s', a') where a' valid
+            # Target: r + gamma * Q_target_i(s', a') at the SHARED valid a'
             with torch.no_grad():
-                q_next_all = self.target_nets[obj_idx](ns)
-                # Mask invalid next-actions to large negative value
-                q_next_all[~nm] = -1e9
-                q_next_max = q_next_all.max(dim=1).values
+                q_next_max = (
+                    q_next_by_objective[obj_idx]
+                    .gather(1, shared_next_action)
+                    .squeeze(1)
+                )
                 target = r + cfg.discount_factor * q_next_max * (1.0 - dn)
 
             loss = self._loss_fn(q_current, target)
