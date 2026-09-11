@@ -413,3 +413,102 @@ That is a real and testable design problem, not a dead end. Three ways out, none
 **Estimated:** the ~130–150-line producer.
 
 **Not established:** the myopic-scalarized demonstrator of option 1 — proposed, never measured. Whether the +23.9% r1 gap survives at the frozen run's RNG-stream position (I controlled for it by ratio against a matched random arm; I did not advance the stream 8,900 episodes). Whether `GAIN_IN_SET`'s advantage over `RSS_MAX` on V0.25 would reappear in MODQN physics — untestable, since MODQN has no beam-set decision variable.
+
+---
+
+## Scalarized-objective demonstrator
+
+**No. No expressible arm beats the trained checkpoint on the scalarized objective: the best of them, `GREEDY_R1R2`, scores +0.8750 ± 0.0236 (n = 24) against the checkpoint's +0.8859 ± 0.0190 (n = 100) — a point estimate **below** the target, statistically indistinguishable from it, and further below the checkpoint's five-window plateau mean of +0.9257; every arm was realizable from the 112-dim observation alone, so this is not a representability failure but an absence.**
+
+Added 2026-09-11 on the coordinator's instruction, after erratum 23 accepted the three corrections above. Read-only: no `update()` call, no gradient step, no optimizer touched; `MODQNTrainer` used only for env-reset / encode / reward-vector plumbing so every statistic is the trainer's own `EpisodeLog` quantity. Scripts in the session scratchpad (`scalar_demo.py`, `scalar_power.py`). **[V for everything in this section unless marked.]**
+
+### How the myopic predictions are built, and what makes them observation-only
+
+Every arm scores each legal action `a` for each user `u` from that user's 112-dim state and nothing else — no realised fading, no future state, no other user's current-step choice.
+
+| Term | Prediction | Source in the observation | Exact? |
+|---|---|---|---|
+| `r̂1_raw(u,a)` | `(B / (load[u,a]+1)) · log₂(1 + sinr[u,a])` bit/s — eq. (3.14) `R = (Bʷ/U)·log₂(1+γ)`, `link_budget.py:590-615`, `B = 1.666667e8 Hz` | block 2 `channel_quality` (per-candidate SINR, previous-step interference, `step.py:1151`) and block 4 `beam_loads` | **Approximate.** The realised r1 is `R_u / P^N`, and `P^N` is a global scalar absent from the observation, so the rule carries **one** free positive constant `κ`. |
+| `r̂2(u,a)` | `0` if `a` = incumbent slot; `−φ1 = −0.5` if `a // 7` = incumbent's satellite slot; `−φ2 = −1.0` otherwise | block 1 `access` one-hot + the action index layout `a = 7l + j` (`action_contract.py:14-16`); `PHI1 = 0.5`, `PHI2 = 1.0` (`action_contract.py:408, 411`); branch rule `classify_handover` (`:422-457`) | **Exact**, except when block 1 is all-zero (incumbent left the candidate table): φ1 and φ2 are then indistinguishable, so I charge −φ2 for every action — constant across actions, hence no effect on that user's argmax. |
+| `r̂3(u,a)` | `−(load[u,a] + 1)` — the count form `−U_{b_u}` in whole users (`step_types.py:178-180`) | block 4, which is `N_u(t−1)`, **the previous step's ungated demand** (`step.py:1163-1174`) | **Approximate and one step stale**, unavoidably: no user can see this step's committed choices. |
+
+Score, in the trainer's own calibrated units — `objective_weights (0.5, 0.3, 0.2)`, `reward_calibration_scales (2029238.4328742754, 1.0, 6.0)`:
+
+```
+s(u,a) = 0.5·κ·r̂1_raw(u,a)  +  0.3·r̂2(u,a)  +  0.2·r̂3(u,a)/6
+```
+
+**The one free constant, and why sweeping it makes the negative stronger.** `κ` absorbs the unobservable `1/(P^N · 2029238.43)`. Rather than pick it, I anchored it (`κ* = 8.394622e-10`, set so the median legal candidate's calibrated r1 term equals the trained checkpoint's own realised 0.44049 per user-step — a physically sane anchor: it implies `P_REF ≈ 587 W`) and then **swept a multiplier `m` over eight declared values spanning five decades**, so no value of the constant can be blamed for the outcome:
+
+| m | r1_mean | r2_mean | r3_mean | **calibrated scalar** | handover rate |
+|---:|---:|---:|---:|---:|---:|
+| 0 (r1 ignored) | 6.592553e+06 | −2.352 | −32.670 | −0.1701 | 0.3243 |
+| **0.1** | 7.629748e+06 | −1.427 | −16.903 | **+0.8885** | 0.1497 |
+| 0.3 | 7.494579e+06 | −1.520 | −16.007 | +0.8571 | 0.1673 |
+| 1 | 9.841624e+06 | −4.692 | −18.100 | +0.4141 | 0.6090 |
+| 3 | 9.891890e+06 | −7.637 | −24.547 | −0.6719 | 0.8873 |
+| 10 | 1.004349e+07 | −8.202 | −25.147 | −0.8240 | 0.8993 |
+| 100 | 9.866370e+06 | −8.430 | −23.570 | −0.8836 | 0.8990 |
+| 10⁴ (≈ pure rate max) | 9.901748e+06 | −8.435 | −23.653 | −0.8792 | 0.8990 |
+
+The curve is single-peaked at `m* = 0.1` and falls away in both directions. 3 episodes each; used only to fix `m*`.
+
+### Result — all arms, 8 episodes each at `m*`
+
+| Arm | r1_mean | r2_mean | r3_mean | **calibrated scalar** | ho rate | φ1 rate | φ2 rate | r1 vs random |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `RANDOM_MASKED` (harness check) | 5.554242e+06 | −7.756 | −13.361 | −1.4037 | 0.8664 | 0.1815 | 0.6849 | 1.000 |
+| `MAX_NOMINAL_GAIN` | 1.107121e+07 | −6.757 | −20.964 | +0.0021 | 0.7010 | 0.0506 | 0.6504 | 1.993 |
+| `GREEDY_SCALARIZED` (r1+r2+r3) | 7.462246e+06 | −1.426 | −15.936 | +0.8798 | 0.1486 | 0.0121 | 0.1365 | 1.344 |
+| `GREEDY_R1R2` | 7.518463e+06 | −1.366 | −16.587 | +0.8897 | 0.1366 | 0.0000 | 0.1366 | 1.354 |
+| `GREEDY_R1R3` | 9.321370e+06 | −8.364 | −25.389 | −1.0587 | 0.9000 | 0.1273 | 0.7728 | 1.678 |
+| **trained `e6b063ef…`, last 100 ep** | **8.938629e+06** | **−2.322** | **−18.598** | **+0.8859** | **0.2490** | — | — | 1.650 |
+
+`RANDOM_MASKED` reproduces the frozen run's own first eight episodes (which ran at ε ≈ 1.0) — r1 5.554e+06 vs 5.416e+06, scalar −1.4037 vs −1.4498 — so the accounting is the same accounting. (The residual is expected: the frozen run's `_train_rng` is also consumed by `replay.sample` at `modqn.py:527`, so the two streams diverge once its buffer fills.)
+
+### The 8-episode margin was noise. At n = 24 it reverses.
+
+`GREEDY_R1R2` at +0.8897 sat +0.0038 above the target — inside a tenth of one standard deviation of the reference (trained sd = 0.1898). So I reran the two candidate arms at **n = 24** with per-episode scalars, same seeds, no `update()`:
+
+| Arm | scalar mean | sd | sem | handover rate |
+|---|---:|---:|---:|---:|
+| `GREEDY_SCALARIZED` | **+0.8659** | 0.1135 | 0.0232 | 0.1501 |
+| `GREEDY_R1R2` | **+0.8750** | 0.1155 | 0.0236 | 0.1412 |
+| `MAX_NOMINAL_GAIN` | −0.0866 | 0.2083 | 0.0425 | 0.7115 |
+| trained checkpoint, last 100 ep | +0.8859 | 0.1898 | 0.0190 | 0.2490 |
+
+**Best scripted arm +0.8750 vs +0.8859: delta −0.0109**, against a combined sem of ≈0.0303. The point estimate is below the target and the difference is not resolvable.
+
+And the reference is not a lucky window. The checkpoint has plateaued — five separated 100-episode windows: ep 4000–4100 **+0.9509**, 6000–6100 **+0.9259**, 7000–7100 **+0.9349**, 8000–8100 **+0.9311**, 8900–9000 **+0.8859**; plateau mean **+0.9257**. Measured against the plateau rather than the final window, the gap widens to **−0.0507**. This also bounds the residual RNG-stream-position confound (my arms sit at stream positions 0–23, the reference at 8900–8999): the trained level does not move systematically with position across 5,000 episodes.
+
+### Which term carried it, and which broke it — both questions answered
+
+- **`r2` is the term that carries the whole thing.** Removing it (`GREEDY_R1R3`) collapses the arm to **−1.0587**, the worst of every arm including random-with-r1-blind, and drives the handover rate to **0.9000**. The scalarized rule's entire advantage over `MAX_NOMINAL_GAIN` is handover suppression.
+- **`r3` does not carry it; its stale prediction is mildly harmful.** Removing it (`GREEDY_R1R2`) *improves* the arm. Paired over the same 24 episodes and seeds: `GREEDY_R1R2 − GREEDY_SCALARIZED = +0.0091, sd 0.0168, sem 0.0034` — small but ~2.7 sem, so real. Block 4 is `N_u(t−1)`; steering on a one-step-stale load count costs more than it buys.
+- **`MAX_NOMINAL_GAIN`'s collapse on the scalar is confirmed to be r2, as suspected.** Its handover rate is **0.7115** against the trained policy's **0.2490** and `GREEDY_SCALARIZED`'s **0.1501** — 2.9× the learner's. Its r1 advantage (+23.9%, 1.993× random) is real and survives; it is simply paid for at a price the objective does not accept. At n = 24 its scalar is **−0.0866**, i.e. below zero, not the marginal +0.0021 that 8 episodes suggested.
+
+### Realizability
+
+Moot in the direction that matters, but worth stating because it removes an escape route: **every arm above is realizable from the observation alone.** Each is an argmax over an affine combination of three functions of the 112-dim state at decision time — no realised fading (block 2 carries *previous-step* interference), no future state, no other user's current-step choice (block 4 is `t−1`), and the single free constant `κ` is a declared scalar, not information. A network of this capacity can represent them. So the finding is **not** "the demonstrator exists but `J_E` cannot be trained toward it"; it is that **the demonstrator does not exist**: among the expressible myopic rules over MODQN's declared objective, none reaches the learner.
+
+### Verdict
+
+**No arm beats +0.8859.** The best expressible myopic scalarized rule ties the trained checkpoint within measurement error with the point estimate below it, and falls −0.0507 short of its plateau. Combined with §"Follow-up" — where the only arm that *did* beat the learner beat it on r1 alone and scored +0.0021 (n=8) / −0.0866 (n=24) on the objective — the position on the MODQN action space is:
+
+- there is a better-than-learner source **for r1 alone**, at 1.993× random against the learner's 1.650×;
+- there is **no** better-than-learner source for the objective the learner is trained on;
+- and the term that separates them is `r2`, which every high-EE rule violates and which the learner has evidently learned to respect (handover rate 0.2490 while holding r1 at 1.650× random).
+
+Per the coordinator's instruction I am not widening the search and not proposing a rescue. The design decision is the coordinator's.
+
+### Evidence classification for this section
+
+**Verified by running code, this session, read-only, no gradient step:** the κ sweep (8 points × 3 episodes), the five-arm panel (8 episodes each), the higher-n paired rerun (3 arms × 24 episodes), and the harness-validity agreement between `RANDOM_MASKED` and the frozen run's episodes 0–7. All at `train_seed=42, env_seed=1337, mobility_seed=7`.
+
+**Verified by reading local source:** `link_budget.py:590-615` (eq. 3.14 and `BEAM_BANDWIDTH_HZ`); `action_contract.py:14-16, 402-457` (index layout, `PHI1`/`PHI2`, `classify_handover`); `step.py:1027, 1125-1184`; `step_types.py:95-107, 178-180`; `episode-logs.json` (9,000 records — the trained mean, sd, plateau windows and `total_handovers`).
+
+**Derived:** the calibrated scalars (`Σ ωⱼ·rⱼ/cⱼ` with the run's own constants); the sems; the implied `P_REF ≈ 587 W`; the plateau mean +0.9257.
+
+**Residual caveat, not eliminated:** my arms are measured at env-RNG stream positions 0–23 and the reference at 8900–8999. I bounded it two ways — a matched random arm at positions 0–7, and the five-window plateau showing no positional drift in the reference — but I did not evaluate the checkpoint itself at positions 0–23, which would need the frozen weights (on `sat`) and an evaluation run.
+
+**Not established:** anything about arms I did not run. Non-myopic rules, learned demonstrators, and rules using information outside the observation were out of scope by instruction and are not evidence either way.

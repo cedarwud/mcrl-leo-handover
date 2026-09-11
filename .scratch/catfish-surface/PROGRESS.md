@@ -28,6 +28,41 @@ Appended `## Follow-up: is there a demonstrator on the MODQN action space` to th
 
 **Net change to the judgement:** classification (b) at ~470-640 lines UNCHANGED. The single biggest failure reason MOVES: not "no demonstrator exists" (that was about `src/` and under-answered) but "the only expressible better-than-learner demonstrator is better on r1 only and worse on the scalarized objective, so `J_E` would fight the reward." Cheapest unmeasured next thing: a myopic demonstrator built on the *scalarized* objective rather than r1.
 
+## Scalarized-objective demonstrator round (coordinator) — COMPLETE
+
+Appended `## Scalarized-objective demonstrator` to the report. Read-only, no `update()` call.
+
+**HEADLINE: NO. No expressible arm beats the trained checkpoint's +0.8859 on the calibrated scalarized objective.**
+
+Construction: score = 0.5*kappa*r1_hat + 0.3*r2_hat + 0.2*r3_hat/6, all three predicted from the
+112-dim observation only. r2_hat exact from block 1 + `a//7` (PHI1=0.5/PHI2=1.0,
+`action_contract.py:408,411`); r3_hat = -(load+1) from block 4 (t-1, stale); r1_hat = (B/(load+1))*log2(1+sinr)
+per eq. 3.14 (`link_budget.py:590-615`), carrying ONE free constant kappa because P^N is unobservable.
+kappa anchored at 8.394622e-10 (implies P_REF ~ 587 W) then **swept over 8 multipliers spanning 5 decades** —
+single peak at m*=0.1 — so no constant choice can be blamed.
+
+| arm (n=24 unless noted) | calibrated scalar | ho rate |
+|---|---:|---:|
+| GREEDY_R1R2 (best) | **+0.8750** +/- 0.0236 | 0.1412 |
+| GREEDY_SCALARIZED | +0.8659 +/- 0.0232 | 0.1501 |
+| MAX_NOMINAL_GAIN | -0.0866 +/- 0.0425 | 0.7115 |
+| GREEDY_R1R3 (n=8) | -1.0587 | 0.9000 |
+| RANDOM_MASKED (n=8, harness check) | -1.4037 | 0.8664 |
+| **trained e6b063ef... last-100** | **+0.8859** +/- 0.0190 | **0.2490** |
+
+Best arm delta = **-0.0109** vs last-100 (combined sem ~0.0303 -> not resolvable, point estimate BELOW);
+**-0.0507** vs the 5-window plateau mean +0.9257 (ep 4000/6000/7000/8000/8900 windows: 0.9509/0.9259/0.9349/0.9311/0.8859
+-> reference is stable, bounds the RNG-stream-position confound).
+The n=8 pass had shown GREEDY_R1R2 at +0.8897 (above target); **that was noise and it reversed at n=24.**
+
+Diagnostics as requested: **r2 carries it** (dropping it -> -1.0587, ho 0.90). **r3 does not**; its stale
+t-1 prediction is mildly harmful — paired GREEDY_R1R2 - GREEDY_SCALARIZED = +0.0091, sem 0.0034 (~2.7 sem).
+MAX_NOMINAL_GAIN's collapse confirmed to be r2: ho rate 0.7115 = 2.9x the learner's 0.2490.
+
+**Realizability: all arms ARE observation-only realizable** (argmax over affine combos of blocks 1/2/4,
+no realised fading, no future state, no other user's current-step choice). So this is an ABSENCE, not a
+representability failure. Per instruction: no rescue proposed, search not widened. Design decision is the coordinator's.
+
 ## Report written
 `/home/u24/papers/mcrl-leo-handover/.scratch/catfish-surface/CATFISH-ATTACHMENT-SURFACE-2026-09-11.md`
 Classification: **(b) bounded code, but at ~430-620 lines it is 1.5-2x the brief's ~300-line bar.**

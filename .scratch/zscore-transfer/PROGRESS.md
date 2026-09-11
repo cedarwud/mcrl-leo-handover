@@ -36,3 +36,26 @@ Started 2026-09-11. Read-only, two repos.
   (= R_u/P_system, family_b_recalibration.py:120-132). Mean of ratios over time, not ratio of sums.
 - Q6 MEASURED here (not assumed): MODQN-COLLAPSE-2026-09-10.md:1 modal_frac 0.04170, 68.70 beams / 7.47 sats (myopic control 0.05010, 63.32/6.47);
   BASE-COLLAPSE-DIAGNOSIS-2026-09-10.md:1 learner a0 modal_frac 0.05236, 49.07 beams (myopic 0.05500, 51.68).
+
+## COMPLETE 2026-09-11
+All six questions answered. Report written to ZSCORE-TRANSFER-2026-09-11.md.
+Verdict: mostly (C), residual (B) with a measured physics reason; (A) rejected as posed.
+
+Late additions (both surfaced by parallel record searches, each re-verified by me against the primary file):
+- Q0 (NEW, biggest): this repo already recorded the whole answer on 2026-07-20.
+  .scratch/chinese-word-r1-symbols-20260905-r1/input/thesis-mc/WRITING-RULES.md:270-290 is headed
+  "USER OVERRIDE — 解崩敘事還原回去，與同日權威裁決相反且現有數據不支持", quotes the user instruction
+  verbatim, and lists L1=428.60 healthy / collapse=145-150 seed-identical / L2-L1=+56.54 "把健康的往上推,
+  不是把崩掉的救回來" / 2026-07-17 retraction / "z-score 有幫助但擋不住崩;lr 才是控制變數".
+  Also: "z-score = substrate, 不得宣稱為 MCRL 元件, 因為它沒有 leave-one-out 對照臂".
+- Q4: out-ZSCORE.md:7-11 — z view 29.9486 vs non-z 29.1769 Mbit/J (+0.7717). The only z-vs-non-z EE
+  level written down here has z HIGHER. [R], off-machine report.
+- Q4: CROWDING-COST-2026-09-10.md:1,134 — d(EE)/d(active) = -425,009.885 bit/J per added mean-active
+  beam, no sign flip 8.00-98.25. Spreading is EE-negative here => measured physical reason for (B).
+- Q4: MODQNZ declared "z line closed" (TRAINING-PAUSE:11, AGENT-REGISTRY:55) but its numbers are NOT on
+  this filesystem (log stops at ep 800/9000; report at /home/sat/mcrl-v025-mqz-ws/). Named as missing measurement 0.
+- Q6 QUALIFIED: src/mcrl/runtime/collapse_metrics.py:1-6,40-45 mandates all four G-3 indicators
+  (active_beam_count, argmax_agreement, q_margin, q_entropy; missing any one fails). Verified grep:
+  BOTH collapse reports have 0 hits for q_margin/q_entropy. So "collapse absent here" is a two-of-four
+  report, not a passed gate — and the missing two are exactly the pair that catches
+  "argmax dispersion under near-flat Q".
