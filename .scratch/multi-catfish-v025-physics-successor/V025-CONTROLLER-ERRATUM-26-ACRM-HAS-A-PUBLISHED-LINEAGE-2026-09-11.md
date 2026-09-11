@@ -106,6 +106,51 @@ the earlier audit went wrong, reproduced under controlled conditions in the same
 **Lesson: a negative literature result is only as good as the framing that searched for it,
 and one framing is not a search.** See `[[framing-determines-the-negative-result]]`.
 
+## Addendum — the shaping is NOT contained to the catfish agent; it reaches the deployed main agent
+
+Owner asked whether ACRM corresponds to PBRS. Checked in the sibling code, **controller-verified**:
+
+- `catfish_faithful_familyb/trainer.py:544-555` — the ACRM-shaped reward vector is what is
+  **pushed into `catfish_replay`**.
+- `trainer.py:462-479` (`_maybe_intervene`) — at each intervention, `n_cf = 0.3 * batch`
+  transitions are **sampled from `catfish_replay` and used to update the MAIN agent's
+  `q_nets`**, carrying that shaped reward.
+- `trainer.py:567-575` — under `strat_hard_discard`, the shaped reward is also pushed into the
+  **main** replay.
+
+**So the shaped reward reaches the deployed agent.** Two statements are withdrawn:
+1. this erratum's "Minimax Exploiter — exactly ACRM's containment" — **the containment does
+   not hold in the implementation**; it holds only in the notation `r^C`;
+2. the controller's own statement to the owner that "the main agent's reward is untouched" —
+   **false in effect**: 30% of every intervention batch trains the main agent on `r^C`.
+
+(Whether the thesis intends the catfish buffer to store `r` or `r^C` is not verified here;
+this is a statement about the sibling implementation.)
+
+### ACRM is not PBRS
+
+PBRS (Ng, Harada & Russell, ICML 1999) is `F(s,a,s') = gamma*Phi(s') - Phi(s)` — a difference
+of a **state potential**, which telescopes along any trajectory and therefore cannot change
+the optimal policy. ACRM's `eta*(r^CF - r^M)` is a difference of **two learners' rewards on
+the same transition**; it depends on both agents' actions, is not a potential difference,
+and does not telescope. **PBRS is not ACRM's lineage — it is the theory ACRM fails.**
+Ng 1999's necessity result: non-potential shaping can change the optimal policy in some MDP.
+
+Because the shaping reaches the main agent (above), **that failure applies to the deployed
+policy, not just to an auxiliary one.**
+
+### Three repairs, now distinguishable
+
+| repair | source | what it does |
+|---|---|---|
+| **bound** | the authors' own conference version, `tanh(r^cat - r^actor)` | caps the term's magnitude (measured 1.15-1.21x the catfish's own reward) |
+| **potential-based advice** | Harutyunyan et al., AAAI 2015 (arbitrary reward → PBA via a learned potential); Devlin et al., AAMAS 2014 (counterfactual-as-potential) — per ACRMSOURCE, not re-read by the controller | restores policy invariance |
+| **containment** | the Minimax-Exploiter structure | store **unshaped** `r` for any transition that reaches the main agent; keep `r^C` only for the catfish's own update |
+
+**Containment is the cheapest and makes the PBRS objection moot for the deployed agent**:
+if the main agent never trains on `r^C`, a non-potential term can only change what the
+catfish explores, which is exactly its intended role. The three are separable arms.
+
 ## Open, flagged unverified in the source report
 
 AlphaStar's exploiter reward definition; Rosin & Belew's fitness-sharing formula (three
