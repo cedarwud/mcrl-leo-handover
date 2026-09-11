@@ -57,7 +57,12 @@ def main() -> int:
     ap.add_argument("--eval-dir", type=Path, required=True)
     ap.add_argument("--root", type=Path, required=True)
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--pool-verify", type=Path, required=True,
+                    help="output of cf3_verify_pools.py; must say ok")
     a = ap.parse_args()
+    pv = json.loads(a.pool_verify.read_text())
+    if not pv.get("ok"):
+        raise SystemExit(f"pool provenance re-verification FAILED: {pv.get('errors')}")
     ev = {arm: {k: json.loads((a.eval_dir / f"{arm}s{k}.json").read_text()) for k in ks}
           for arm, ks in SEEDS.items()}
     keys = [(arm, k) for arm, ks in SEEDS.items() for k in ks]
@@ -161,10 +166,12 @@ def main() -> int:
                                      here.name], capture_output=True, text=True).stdout.strip() or None
     except OSError:
         rep_commit = None
+    if not rep_commit and (here.parents[1] / "COMMIT").is_file():
+        rep_commit = "tree " + (here.parents[1] / "COMMIT").read_text().strip()
     import hashlib
     out = {"report_script": {"path": str(here), "sha256": hashlib.sha256(here.read_bytes()).hexdigest(),
                              "git_commit": rep_commit},
-           "pairing": pairing, "per_seed": per, "arm_means": means, "comparisons": comp,
+           "pool_verify": pv, "pairing": pairing, "per_seed": per, "arm_means": means, "comparisons": comp,
            "C_S_vs_A1": cs, "branch": branch}
     Path(a.out).write_text(json.dumps(out, indent=2, default=str))
     print(json.dumps({"means": means, "comparisons": comp, "branch": branch, "C_S": cs,
