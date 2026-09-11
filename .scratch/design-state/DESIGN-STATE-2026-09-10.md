@@ -293,3 +293,18 @@ physics: per-beam power is a max over served users, so opening a beam pays a nea
 **The conclusion the hypothesis pointed at — that judgements were made against a broken
 reference — is confirmed. The mechanism it proposed is not.** `CROWDCOST` is running the
 controlled version.
+
+---
+
+# CORRECTION — 2026-09-11 ~01:05Z (found by an independent reviewer)
+
+Two statements in this document are false and must not be used:
+
+1. **Any statement that EE uses a demand-capped numerator is wrong.** Declaration v1.8 item 5 fixes a
+   **full-buffer** numerator; every measurement report uses full-buffer with no demand cap.
+2. **"Per-beam power is the max over served users" is wrong for the V0.25 a-r0 path.** That is the
+   legacy environment. The a-r0 path is **TDM**: one active member per beam per slot (CROWDCOST,
+   Part 1).
+
+Also superseded: the three-sides narrative discussed on 2026-09-10/11 was rejected by six
+independent reviews; see `.scratch/reviews/REVIEW-SYNTHESIS-2026-09-11.md`.

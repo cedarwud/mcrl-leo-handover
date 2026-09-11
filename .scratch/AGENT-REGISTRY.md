@@ -28,8 +28,7 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 | SEEDPAR | `a795bc9610ed76c65` | `/home/sat/mcrl-v025-seedpar-ws` | `SEEDPAR-2026-09-11.md` |
 | BEAMCOUNT | `ab265b1f2c82f21d9` | `/home/sat/mcrl-v025-beamcount-ws` | `BEAM-COUNT-CAP-2026-09-10.md` |
 | HCELL | `a3b6026f8954242c5` | `/home/sat/mcrl-v025-hcell-ws` | `H-CELL-EFFECT-2026-09-11.md` |
-| BLIND (Claude) | `ab2b10931331b1b0c` | local `.scratch/reviews/` | `BLIND-CLAIM-STRUCTURE-2026-09-11.md` |
-| ADVERSARY (Claude) | `a4228d7117ff1cced` | local `.scratch/reviews/` | `ADVERSARY-NARRATIVE-2026-09-11.md` |
+| C1VSGAIN | `ae6dc407144ed2d9b` | `/home/sat/mcrl-v025-c1vsgain-ws` | `C1-VS-GAIN-HEURISTIC-2026-09-11.md` |
 
 ## Running — other model families
 
@@ -47,7 +46,7 @@ The server health monitor labels such processes `UNOWNED-BUT-WORKING :: DO NOT K
 
 EXACT93 `a30e930829944c569` · RAWDUP `a2c0a8e01e8945947` · ZSCORE-SCORE `ac3aadfd88c9d995d` ·
 CONVSCORE `a5cfd73bdf2c2cd83` · ETAFIX `afc99c03b4bda2f2e` · C2TARGET `a4bf94ec75e752e2e` ·
-Q1V4 `a078dfa0019061e54` · QCOLLINEAR `a85190aaabc698990`.
+Q1V4 `a078dfa0019061e54` · QCOLLINEAR `a85190aaabc698990` · BLIND `ab2b10931331b1b0c` · ADVERSARY `a4228d7117ff1cced` · MODQNZ (codex, stopped after decisive pair) · XBLIND-ASTRA · XADV-ASTRA · agy blind · agy adversary.
 
 ## Monitors to re-arm after a restart
 
