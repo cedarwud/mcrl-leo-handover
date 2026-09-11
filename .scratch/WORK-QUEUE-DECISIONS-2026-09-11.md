@@ -45,6 +45,19 @@ Verdict: 8/14 checks CONFIRMED, 6 WRONG-or-caveat, **DEAD-PATH SURVIVES WITH COR
 - Gains present only in the realised-information joint search → coordination/observability problem: a redesign of the decision contract (centralised or CTDE), not a fix of this learner.
 - Between the two thresholds: report as "room too small to resolve with the seeds we can afford"; no training is launched on it.
 
+## Owner rulings, ~13:35 UTC (`V025-CONTROLLER-RULING-Q5-NO-GO-AND-CEILING-SCENARIOS-2026-09-11.md`)
+
+| item | ruling | executed |
+|---|---|---|
+| Q5 | **NO-GO** (the current three-catfish implementation is closed for full-length training; the multi-catfish question stays open) | recorded; nothing launched |
+| paper framing | **not decided now**; decided after the ceiling under the three pre-declared scenarios A/B/C in the ruling | — |
+| Q8 part 1 | kill the four stale watcher loops on `sat`; keep `watch_health.sh` | **done 13:38 UTC**: PIDs 1209666, 1332348, 1430512 (`bash -c seen=""; while true …` codex marker loops) and 2469243 (`watch_stall2.sh`) killed by exact PID after cmdline check; 3291897 alive |
+| Q8 part 2 | `b0/corrected-baseline-20260911`: content-equivalence audit → archive tag → then worktree removal; **no branch deletion** | **dispatched** as B0AUDIT (sonnet) |
+| ChatGPT deep research | yes, in a new conversation | owner runs it with the delivered package |
+| Q7 | no | closed |
+| Q4 | wait for the ceiling (scenario B makes it top priority) | gated |
+| Q6 | paused until source value / controllability is shown | gated |
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
