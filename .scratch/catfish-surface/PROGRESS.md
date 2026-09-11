@@ -63,6 +63,47 @@ MAX_NOMINAL_GAIN's collapse confirmed to be r2: ho rate 0.7115 = 2.9x the learne
 no realised fading, no future state, no other user's current-step choice). So this is an ABSENCE, not a
 representability failure. Per instruction: no rescue proposed, search not widened. Design decision is the coordinator's.
 
+## Pooled EE round (coordinator) — COMPLETE 2026-09-11
+
+Appended `## Pooled EE — the declared primary endpoint`. Read-only, no `update()` call.
+All detached probes confirmed finished (`ps` clean) before writing; nothing relaunched.
+
+**HEADLINE: `MAX_NOMINAL_GAIN` 111,553,182.85 bit/J (3.267020e+14 bits / 2.928666e+06 J) vs
+TRAINED `e6b063ef...` 93,137,893.02 bit/J (2.850357e+14 bits / 3.060363e+06 J) — ratio 1.1977,
+delta +1.8415e+07 bit/J, 13.2 sem. => PRE-DECLARED BRANCH 2: the trained objective and the
+declared primary objective DISAGREE. A finding about the objective, NOT a reopening of the
+demonstration line.**
+
+Estimand: two running totals over 24 ep x 10 steps, divided once. `dt = DECISION_STEP_S = 30.08 s`
+(`constants.py:76`). Per-step bits/joules from the env's own `energy.system_throughput_bps` /
+`system_consumed_power_w` via `env.last_outcome` (`trainer_env.py:239-248`,
+`energy_efficiency.py:37-49`) — not reconstructed.
+Numerator convention: **full-buffer Shannon, NO demand cap** (`link_budget.py:590-615` eq. 3.14;
+`step.py:964-970`); grep for demand_cap|rate_target|nominal_rate|setpoint|target_rate|min_rate|qos_rate
+over `src/mcrl/env/` = **0 hits**, so **rate attainment has no referent in this env** — served rate
+reported instead.
+
+| arm (n=24) | pooled bits | pooled joules | pooled EE bit/J | served | ho | scalar |
+|---|---:|---:|---:|---:|---:|---:|
+| MAX_NOMINAL_GAIN | 3.267020e+14 | 2.928666e+06 | **111,553,182.85** | 0.9981 | 0.7117 | -0.0867 |
+| TRAINED e6b063ef (greedy) | 2.850357e+14 | 3.060363e+06 | **93,137,893.02** | 0.9988 | 0.2796 | +0.9063 |
+| GREEDY_R1R2 | 2.612398e+14 | 3.445650e+06 | 75,817,283.47 | 0.9960 | 0.1413 | +0.8743 |
+| GREEDY_SCALARIZED | 2.614246e+14 | 3.473047e+06 | 75,272,421.21 | 0.9961 | 0.1502 | +0.8649 |
+| RANDOM_MASKED (harness check) | 1.842866e+14 | 3.473162e+06 | 53,060,175.56 | 0.9360 | 0.8680 | -1.4104 |
+
+**No stream-position caveat this round**: the local `final-checkpoint.pt` sha256 = e6b063ef...1b09c28b,
+byte-identical to the frozen artefact, so the trained arm ran at the SAME stream positions 0-23 as
+every scripted arm. No proxy substituted.
+
+Key separation: the estimand defect (episode-level mean-of-ratios vs ratio-of-sums) is <=0.06% and
+changes no ordering. The rank flip is a **weighting disagreement** — pooled EE prices r1 only; the
+trained objective prices 0.5 r1 + 0.3 r2 + 0.2 r3, and MAX_NOMINAL_GAIN's handover rate is 0.7117 vs
+the learner's 0.2796. MAX_NOMINAL_GAIN moves from LAST on the scalar to FIRST on pooled EE, and wins
+on both halves of the ratio at once (most bits AND fewest joules). No arm buys EE by dropping service.
+The two GREEDY_* arms that won the trained objective are the WORST non-random arms on pooled EE.
+
+Not widened, no arms added, nothing swept. Design decision is the coordinator's.
+
 ## Report written
 `/home/u24/papers/mcrl-leo-handover/.scratch/catfish-surface/CATFISH-ATTACHMENT-SURFACE-2026-09-11.md`
 Classification: **(b) bounded code, but at ~430-620 lines it is 1.5-2x the brief's ~300-line bar.**

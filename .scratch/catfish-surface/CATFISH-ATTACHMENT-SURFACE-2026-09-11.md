@@ -512,3 +512,90 @@ Per the coordinator's instruction I am not widening the search and not proposing
 **Residual caveat, not eliminated:** my arms are measured at env-RNG stream positions 0–23 and the reference at 8900–8999. I bounded it two ways — a matched random arm at positions 0–7, and the five-window plateau showing no positional drift in the reference — but I did not evaluate the checkpoint itself at positions 0–23, which would need the frozen weights (on `sat`) and an evaluation run.
 
 **Not established:** anything about arms I did not run. Non-myopic rules, learned demonstrators, and rules using information outside the observation were out of scope by instruction and are not evidence either way.
+
+---
+
+## Pooled EE — the declared primary endpoint
+
+**On the declared estimand — pooled bits over pooled joules, two running totals divided once — `MAX_NOMINAL_GAIN` scores 111,553,182.85 bit/J (3.267020e+14 bits / 2.928666e+06 J) against the trained `e6b063ef…` checkpoint's 93,137,893.02 bit/J (2.850357e+14 bits / 3.060363e+06 J): the scripted rule is 1.1977× the learner, +1.8415e+07 bit/J, a 13.2-sem gap that is comfortably resolvable at this seed count — so by the pre-declared reading this is the second branch, **the trained objective and the declared primary objective disagree**, and it is a finding about the objective, not a reopening of the demonstration line.**
+
+Added 2026-09-11 on the coordinator's instruction; the pre-declared reading was fixed before the run and is applied as written. Read-only: no `update()` call, no gradient step, no optimizer step; the trained arm **loads** the frozen checkpoint read-only. Script: session scratchpad `pooled_ee.py`. Wall 474.4 s. **[V for everything below unless marked.]**
+
+### Estimand, stated so it is auditable
+
+```
+pooled_EE = ( Σ over all steps  system_throughput_bps · dt )
+          / ( Σ over all steps  system_consumed_power_w · dt )
+```
+
+accumulated as **two running totals over all 24 episodes × 10 steps** and divided **once** at the end. Not a mean of per-step EE, not a mean of per-user EE. `dt = DECISION_STEP_S = 30.08 s` (`env/constants.py:76`). Both per-step quantities are the environment's own, read off `env.last_outcome.energy` — a `SystemEnergyEfficiency` (`runtime/energy_efficiency.py:37-49`) reached through the frozen trainer view's escape hatch (`runtime/trainer_env.py:239-248`) — **not** reconstructed by me from the reward fields.
+
+**Numerator convention: full-buffer Shannon, no demand cap.** `env/link_budget.py:590-615` implements eq. (3.14) `R = (Bʷ / U_{s,v}) · log₂(1 + γ)`, and `env/step.py:964-970` applies it as `rate = where(served, shannon_rate_bps(sinr, beam_load=load, bandwidth_hz=...), 0.0)`. A grep for `demand_cap|rate_target|nominal_rate|setpoint|target_rate|min_rate|qos_rate` over `src/mcrl/env/` returns **zero hits**. **[V]**
+
+**Rate attainment has no referent in this environment.** There is no nominal rate setpoint to attain — the grep above is the evidence. Rather than import the V0.25 panel's 50 Mbit/s setpoint, which belongs to different physics, I report **served rate** (the environment's own `energy.served`, users actually receiving service, over user-steps) beside every EE figure and state that attainment is undefined here. **[V]**
+
+### Result — 24 episodes per arm, frozen seeds (42 / 1337 / 7)
+
+| Arm | pooled bits (numerator) | pooled joules (denominator) | **pooled EE (bit/J)** | vs random | vs trained | served rate | handover rate | calibrated scalar |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `RANDOM_MASKED` (harness check) | 1.842866e+14 | 3.473162e+06 | 53,060,175.56 | 1.000× | 0.570× | 0.9360 | 0.8680 | −1.4104 |
+| `GREEDY_SCALARIZED` | 2.614246e+14 | 3.473047e+06 | 75,272,421.21 | 1.419× | 0.808× | 0.9961 | 0.1502 | +0.8649 |
+| `GREEDY_R1R2` | 2.612398e+14 | 3.445650e+06 | 75,817,283.47 | 1.429× | 0.814× | 0.9960 | 0.1413 | +0.8743 |
+| **`TRAINED e6b063ef…`** (greedy, ε=0) | 2.850357e+14 | 3.060363e+06 | **93,137,893.02** | 1.755× | 1.000× | **0.9988** | 0.2796 | +0.9063 |
+| **`MAX_NOMINAL_GAIN`** | 3.267020e+14 | 2.928666e+06 | **111,553,182.85** | **2.102×** | **1.1977×** | 0.9981 | 0.7117 | −0.0867 |
+
+The trained arm loads `artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt`, whose SHA-256 I recomputed locally as `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b` — **byte-identical to the frozen artefact**. It therefore runs at the **same RNG stream positions 0–23 as every scripted arm**; the residual stream-position caveat carried by the previous two sections **does not apply here**, and no proxy was substituted. It is evaluated greedy (ε = 0), the deployed policy, matching the determinism of the scripted arms; for reference its calibrated scalar under these conditions is **+0.9063**, consistent with the +0.8859 training-time last-100 mean quoted earlier (measured at ε = 0.01 at a different stream position).
+
+**Resolvability.** Per-episode pooled EE (each episode's own bits/joules), 24 episodes:
+
+| Arm | mean | sd | sem |
+|---|---:|---:|---:|
+| `RANDOM_MASKED` | 53,045,171.95 | 1,932,371.59 | 394,443.70 |
+| `GREEDY_SCALARIZED` | 75,253,969.10 | 3,433,511.04 | 700,862.51 |
+| `GREEDY_R1R2` | 75,810,852.81 | 3,241,135.73 | 661,594.06 |
+| `TRAINED e6b063ef…` | 93,081,610.83 | 4,445,489.88 | 907,431.82 |
+| `MAX_NOMINAL_GAIN` | 111,558,594.999 | 5,221,058.78 | 1,065,744.16 |
+
+`MAX_NOMINAL_GAIN − TRAINED = +1.841529e+07` against a combined sem of `1.3997e+06` — **13.2 sem**. This is resolvable at this seed count by a wide margin; the third branch of the declared reading does not apply. (The two are also run on the same 24 episodes and seeds, so a paired test would be tighter still; the unpaired figure already settles it and I did not add one.)
+
+### Two distinct things are going on, and they must not be conflated
+
+**(a) The estimand defect is real but small here.** Comparing the episode-level mean of ratios against the ratio of sums, arm by arm: `RANDOM` 53,045,171.95 vs 53,060,175.56 (−0.03%), `MAX_NOMINAL_GAIN` 111,558,595.00 vs 111,553,182.85 (+0.005%), `TRAINED` 93,081,610.83 vs 93,137,893.02 (−0.06%). At the episode level the two estimators agree to within 0.06% and **no ordering depends on the choice**. **[V]** I did not instrument both estimators at the per-user-per-step level in the same pass, so I do not quantify the defect at that level and will not infer it across windows. **[stated as a limit, not a result]**
+
+**(b) The disagreement that flips the ranking is not an estimator artefact — it is that the two objectives price different things.** Pooled EE prices `r1` and nothing else. The trained objective prices `0.5·r1 + 0.3·r2 + 0.2·r3`. The two rank the arms in **different orders**:
+
+| Rank | by calibrated scalar (trained objective) | by pooled EE (declared endpoint) |
+|---|---|---|
+| 1 | `TRAINED` +0.9063 | **`MAX_NOMINAL_GAIN`** 1.1155e8 |
+| 2 | `GREEDY_R1R2` +0.8743 | `TRAINED` 9.3138e7 |
+| 3 | `GREEDY_SCALARIZED` +0.8649 | `GREEDY_R1R2` 7.5817e7 |
+| 4 | **`MAX_NOMINAL_GAIN`** −0.0867 | `GREEDY_SCALARIZED` 7.5272e7 |
+| 5 | `RANDOM_MASKED` −1.4104 | `RANDOM_MASKED` 5.3060e7 |
+
+`MAX_NOMINAL_GAIN` moves from **last to first**. The mechanism is visible in the table: its handover rate is 0.7117 against the learner's 0.2796, and `r2` carries weight 0.3 in the trained objective and weight **zero** in pooled EE. So the flip is a **weighting disagreement between a three-term objective and a one-term endpoint**, not a mean-of-ratios artefact — (a) is far too small to produce it.
+
+Two further observations that belong beside the numbers, per G-8:
+
+- **No arm buys EE by dropping service.** Served rates are 0.9981 (`MAX_NOMINAL_GAIN`), 0.9988 (trained), 0.9960–0.9961 (greedy arms), 0.9360 (random). The EE ranking is not a service-for-efficiency trade.
+- **`MAX_NOMINAL_GAIN` wins on both halves of the ratio simultaneously**: it produces the most bits (3.267e+14, 1.146× the learner's) *and* consumes the fewest joules (2.929e+06, 0.957× the learner's). Its advantage is not a denominator effect.
+- **The two `GREEDY_*` arms, which won on the trained objective, are the *worst* non-random arms on pooled EE** (0.808× and 0.814× the learner). Optimising the declared three-term objective myopically costs pooled EE relative to the learner, in the same direction and for the same reason.
+
+### Reading, as pre-declared
+
+The measured branch is the second one, and I apply it exactly as written and no further:
+
+> **`MAX_NOMINAL_GAIN`'s pooled EE > the learner's → the trained objective and the declared primary objective disagree. That is a finding about the objective, not a reopening of the demonstration line.**
+
+The demonstration-line closure of the previous section is unaffected: on the objective the learner is trained on, no expressible arm reaches it (best +0.8750 ± 0.0236 vs +0.8859 ± 0.0190, point estimate below). What this section adds is that **the objective the learner is trained on is not the objective the project declares as primary**, and on the declared one a one-line rule beats the authenticated checkpoint by 19.8%. I am not widening the search, not adding arms, and not sweeping anything. The design decision is the coordinator's.
+
+### Evidence classification for this section
+
+**Verified by running code, this session, read-only, no gradient step:** the five-arm pooled-EE panel (24 episodes each, frozen seeds 42/1337/7); the local SHA-256 of `final-checkpoint.pt` matching `e6b063ef…1b09c28b`; the per-episode spreads; the zero-hit grep for a demand cap / rate setpoint.
+
+**Verified by reading local source:** `runtime/energy_efficiency.py:37-49, 114-144`; `runtime/trainer_env.py:239-248`; `env/step.py:964-970, 1005-1030`; `env/link_budget.py:590-615`; `env/constants.py:76`; `env/step_types.py:168-172` (the additivity contract that makes `Σ_u r1_u` the system EE, which is why the denominator here is the same `P^N` the reward uses).
+
+**Derived:** the ratios, the 13.2-sem figure (unpaired, from the two per-episode sems), and the two ranking tables.
+
+**Limit, stated rather than papered over:** I compared mean-of-ratios against ratio-of-sums only at the **episode** level, where they agree to ≤0.06%. I did not instrument both at the per-user-per-step level in the same pass, so the size of the estimand defect at that level is **not established here**, and the earlier sections' `r1_mean` figures should continue to be read as what they are — a mean over steps of a per-step system EE, not the declared pooled estimand.
+
+**Not established:** anything about arms I did not run, or about this checkpoint under any evaluation harness other than the 24 episodes at stream positions 0–23 used here.
