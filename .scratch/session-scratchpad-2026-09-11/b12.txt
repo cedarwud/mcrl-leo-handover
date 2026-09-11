@@ -1,0 +1,464 @@
+=================== V025-CONTROLLER-FIGURE-PLAN-2026-09-10.md
+     1	# Figure plan — and what each figure requires the runs to record
+     2	
+     3	**2026-09-10 13:00 UTC. Written before the first training run, because a figure specification
+     4	is an input to a measurement specification, not an output of one.** Deciding the axes after
+     5	the run risks discovering the run did not record what a figure needs.
+     6	
+     7	The thesis currently contains **two** images in total: one historical-baseline diagram in
+     8	§2.1 Related Work, and the system model in §3.1.1. **There are no results figures.**
+     9	
+    10	Every axis below names its reference, information class, estimand and numerator, because a
+    11	figure inherits those from its data and a mislabelled axis is the same defect as a mislabelled
+    12	number.
+    13	
+    14	---
+    15	
+    16	## A. Figures that do not depend on the training outcome — buildable now
+    17	
+    18	### F1 — Anytime quality curve *(the motivation figure)*
+    19	
+    20	- **y:** pooled EE, Mbit/J, declared full-buffer numerator
+    21	- **x:** wall-clock search budget, seconds, log or linear from 0 to convergence
+    22	- **marks:** the contract's **10 s coordinator budget** (v1 §F2) and the **30.08 s** anchor
+    23	  interval; the converged fixed point as an asymptote
+    24	- **status: measured.** `ANYTIME-UNILATERAL-2026-09-10.md`, SEALED pooled curve:
+    25	  base `3.724824` → 10 s `15.336646` → 20 s `22.535029` → 30.08 s `25.846321` →
+    26	  convergence `30.786890`
+    27	- **why it is the motivation:** at the contract's own budget the search holds `42.91%` of its
+    28	  prize. That gap is what a learned coordinator exists to close.
+    29	- **must state:** traversal order (first-improvement), provisioning rule, panel identity
+    30	
+    31	### F2 — The value ladder *(where the EE actually lives)*
+    32	
+    33	- **y:** pooled EE, Mbit/J
+    34	- **x:** categorical — carrier incumbent · one-shot per-user best response · unilateral fixed
+    35	  point · bounded joint optimum
+    36	- **status: `PANELCEIL` is computing this on the training panel.** Must be one panel; the
+    37	  existing `+0.899%` (8 anchors) and `+100.7%` (20 anchors) are **on different panels and may
+    38	  not be stacked**.
+    39	- **must state:** which fixed point, since traversal order alone moves it by `8.13%` (SEALED) /
+    40	  `1.62%` (MARGIN_Q) — roughly nine times the coordination band
+    41	
+    42	### F3 — Per-date distribution of the coordination gain
+    43	
+    44	- **y:** relative pooled EE gain over the unilateral fixed point, %
+    45	- **x:** date (30 TRAIN dates), sorted or as a distribution
+    46	- **marks:** mean `+0.717%`, 95% t interval `[+0.436%, +0.997%]`, and the **4 of 30
+    47	  non-positive dates**
+    48	- **status: measured**, `CEILING30-MARGIN-2026-09-10.md:34`, date SD `0.751%`
+    49	- **why it matters:** it shows the effect's spread honestly, and the non-positive dates are
+    50	  part of the result, not noise to be smoothed
+    51	
+    52	### F4 — Regime map
+    53	
+    54	- **y:** coordination gain, %
+    55	- **x:** offered load (users) — **second panel:** rate target (Mbit/s)
+    56	- **status: measured**, 11 points, **never above 1%** on any axis swept, including 200 users
+    57	  and 80 Mbit/s
+    58	- **why it matters:** it is the evidence that the coordination band is not a regime artefact,
+    59	  and it bounds what any decomposition can partition
+    60	
+    61	### F5 — Mode-selection headroom at fixed power *(diagnostic, clearly labelled)*
+    62	
+    63	- **y:** pooled EE, Mbit/J
+    64	- **x:** categorical selection rule — declared · stale-CQI at 0 dB · stale-CQI at −1 dB ·
+    65	  realised-SINR oracle
+    66	- **also plot:** decode-failure rate on a second axis, since a rule that raises credited bits
+    67	  while raising failures is not a gain
+    68	- **status: measured**, `MODE-CAUSAL-REACHABILITY-2026-09-10.md`; **carrier-assignment panel,
+    69	  base `3.89` Mbit/J** — must be labelled as such and **must not** be presented as transferable
+    70	  to the fixed point
+    71	
+    72	---
+    73	
+    74	## B. Figures that require the training run — and the fields they need recorded
+    75	
+    76	### F6 — Ablation
+    77	
+    78	- **y:** pooled EE, Mbit/J, declared full-buffer numerator
+    79	- **x:** categorical arm — `ALL_NEUTRAL_CONTROL` (**the reference**) · `DROP_C1` · `DROP_C2` ·
+    80	  `DROP_C3` · `FULL`
+    81	- **also plot, per amendment 2:** the **all-knockout** selection computed from the `FULL`
+    82	  checkpoint, so the primary contrast can be shown not to be a knockout contrast
+    83	- **requires the run to record:** per-arm pooled bits, pooled joules, committed selection per
+    84	  anchor, served count, rate-target attainment, deadline-miss rate
+    85	
+    86	### F7 — Training trajectory
+    87	
+    88	- **y:** contrast `FULL − ALL_NEUTRAL_CONTROL`, relative %
+    89	- **x:** epoch, at the five checkpoints (100/200/300/400/500)
+    90	- **also plot:** each `FULL − DROP_Ci`
+    91	- **why:** the pre-declared continuation rule is about **convergence, not direction** — a flat
+    92	  contrast and a moving one are different findings, and only this figure distinguishes them
+    93	- **requires the run to record:** the contrast at **every** checkpoint, not only the last
+    94	
+    95	### F8 — Recovered fraction under budget *(the acceleration axis)*
+    96	
+    97	- **y:** pooled EE attained as a fraction of the certified fixed point's, %
+    98	- **x:** wall-clock budget, with the contract's 10 s marked
+    99	- **series:** each learned arm, **plus the anytime incumbent at the same budget** — the receipt
+   100	  requires the comparator to be the anytime incumbent, not the base configuration
+   101	- **requires the run to record:** physics evaluations consumed per arm, and wall-clock to
+   102	  decision, so "acceleration" has a denominator
+   103	
+   104	---
+   105	
+   106	## C. What this changes about the training run
+   107	
+   108	The first-run pre-declaration already requires per-arm pooled EE, the contrasts at every
+   109	checkpoint, service co-reports and deadline misses. **F8 adds two fields that were not
+   110	required: physics evaluations consumed per arm, and wall-clock to decision.** Without them the
+   111	acceleration axis cannot be plotted and a second run would be needed.
+   112	
+   113	**Added to the run's recording requirements.**
+   114	
+   115	## D. Count
+   116	
+   117	**Eight figures**, of which **five are buildable now** (F1–F5) and three wait on the run.
+   118	Method figures for the three routes wait on the decomposition decision and are not listed here.
+=================== V025-CONTROLLER-PREDECLARATION-FIRST-TRAINING-2026-09-10.md
+     1	# Pre-declaration — the first training run, and how its result will be read
+     2	
+     3	**2026-09-10 11:50 UTC. Written before the corpus is finished and before any learned arm
+     4	exists.** No sealed constant, threshold, sign, seed, horizon, price, guard or acceptance rule
+     5	is changed.
+     6	
+     7	---
+     8	
+     9	## 0. Why this run exists
+    10	
+    11	**No production training run scored on the reported endpoint has ever happened in this
+    12	project.** Every EE figure quoted today is from an oracle or an exact search:
+    13	
+    14	| figure | source | learner involved |
+    15	|---|---|---|
+    16	| `+0.899%` / `+0.717%` coordination band | exact joint vs exact unilateral fixed point | **none** |
+    17	| `+100.7%` acceleration headroom at 10 s | anytime **search** curve | **none** |
+    18	| `+1.93%` control law | non-causal best-known search | **none** |
+    19	
+    20	The one measurement involving trained heads is `C3REACH`, which used four epoch-2000 `FULL`
+    21	lineages and reported pooled EE `36.63 -> 15.84` Mbit/J under the pilot's boundary-0 scoring —
+    22	**negative**, and in unresolved contradiction with `RESIDTOGGLE`. The r8 panel smoke was
+    23	**2 source epochs, 1 retained anchor**, and carries `smoke_test_not_evidence: true`.
+    24	
+    25	**So the quantity every argument today has turned on — what a trained system actually does to
+    26	pooled EE against a reference that can separate arms — does not exist.** This run produces it.
+    27	
+    28	## 1. Gate before the run — the rule I wrote on 2026-09-08 and violated twice
+    29	
+    30	**No arm pair runs without a fixture on which the arms must produce different numbers.**
+    31	Before training, on a checked-in fixture, demonstrate that `FULL`, each `DROP_Ci` and
+    32	`ALL_NEUTRAL_CONTROL` **can** select differently and produce different pooled EE. Report
+    33	PASS/FAIL per pair. **A FAIL stops the run.** This gate exists because `MARGIN_Q` produced
+    34	eight contrasts identical to 16 significant digits, and the C2 arms in `FACTORIAL` produced
+    35	three byte-identical pairs, and neither had such a fixture.
+    36	
+    37	## 2. The run
+    38	
+    39	| | |
+    40	|---|---|
+    41	| corpus | the **exact-path** corpus from `EXACTGEN2` — declared targets, **not** the shipped surrogate rows |
+    42	| feature schema | state which of v1 / v2 is used, and its digest, in the receipt |
+    43	| arms | the sealed five: `FULL`, `DROP_C1`, `DROP_C2`, `DROP_C3`, `ALL_NEUTRAL_CONTROL` (`learner.py:28`) |
+    44	| epochs | **500**, checkpoint cadence **100** |
+    45	| head literals | the sealed ones, unchanged: C1 `(8,)` relu lr `1.0e-2` gauge_beta `0.2`; C2 `(100,50,50)` tanh lr `1.0e-3` gauge_beta `0.1`; C3 `(64,64)` relu lr `1.0e-3`; Adam `(0.9, 0.999)` |
+    46	| seeds | state the count actually run; the code default is 12 and amendment v1.1 requires 16 — **report which was used, do not silently take the default** |
+    47	
+    48	**500, not 2000, because resume is bit-exact** (round-trip verified by `PROTOFORM`), so
+    49	continuation costs nothing and a first look is ~52 minutes rather than ~3.5 hours.
+    50	
+    51	## 3. Scoring
+    52	
+    53	- **Reference: `ALL_NEUTRAL_CONTROL`.** `BASE` is **not** a reference on this run and is never
+    54	  relabelled as one — the r8 receipt shows eight contrasts against `BASE` collapsing to four
+    55	  distinct values with every arm sharing one repair seed.
+    56	- **Numerator: the declared full-buffer decodable throughput** (declaration v1.8 item 5). **No
+    57	  demand cap.** A cap would be a versioned model amendment, not a reporting choice.
+    58	- **Contrasts, at every one of the five checkpoints:** `FULL - ALL_NEUTRAL_CONTROL` (primary),
+    59	  and `FULL - DROP_Ci` for each route.
+    60	- **Co-reported, per contract:** rate-target attainment, service availability, handover rate,
+    61	  and deadline-miss rate.
+    62	- **Panel:** small and stated before the run — anchors, worlds, seeds, and the exact anchor
+    63	  list, fixed in the launch receipt. **This is a signal, not a claim panel.** No result from
+    64	  this run is a claim about efficacy.
+    65	
+    66	## 4. The continuation rule, fixed now
+    67	
+    68	Continue past 500 **only** if the primary contrast is still **moving monotonically across the
+    69	five checkpoints**, i.e. not yet converged.
+    70	
+    71	**This condition is about convergence, not direction.** If the contrast has flattened — at any
+    72	value, positive, zero or negative — the run stops at 500 and is reported as it stands. I will
+    73	not continue because a number is disappointing, and I will not stop because a number is
+    74	pleasing.
+    75	
+    76	## 5. The reading, fixed now
+    77	
+    78	- **`FULL - ALL_NEUTRAL_CONTROL` negative or zero at convergence**: the learned system does not
+    79	  beat neutral-source training on this corpus, schema and panel. That is the result. It is
+    80	  reported with the same detail as any other, and it does **not** license a further design
+    81	  change chosen to reverse it.
+    82	- **A route's `FULL - DROP_Ci` zero or negative**: reported as zero or negative. No ordering
+    83	  among routes is required.
+    84	- **A flat-zero contrast at 500 with no movement across checkpoints** is evidence the heads
+    85	  learned nothing usable on this corpus — a different finding from a converged negative, and
+    86	  reported as such.
+    87	- **Loss values are never evidence about EE**, in either direction, at any checkpoint.
+    88	- **Every reported number carries four fields**: reference, information class, estimand,
+    89	  numerator.
+    90	
+    91	## 6. What this run cannot settle
+    92	
+    93	- It is a **small panel**. It gives a sign and a magnitude, not an interval that meets the
+    94	  contract's decision bound.
+    95	- It measures the **current** decomposition. It says nothing about the two candidate
+    96	  replacements.
+    97	- It is on the **coordination axis**, not the acceleration axis pre-declared separately at
+    98	  11:40 UTC. Those two are never restated as one another.
+    99	- The `RESIDTOGGLE` / `C3REACH` sign contradiction remains open; `SIGNFORK` was killed and has
+   100	  not been re-run.
+   101	
+   102	---
+   103	
+   104	# AMENDMENT — one run, two axes. 2026-09-10 11:55 UTC, before the run.
+   105	
+   106	**The coordination scoring and the acceleration scoring use the same checkpoints. They are one
+   107	training run, scored twice, not two runs.** Recording this as an amendment because I wrote them
+   108	as two separate pre-declarations an hour apart and did not notice they shared a training run
+   109	until the owner pressed on why I was not directing the work.
+   110	
+   111	## The two scorings, from the same five checkpoints
+   112	
+   113	| | axis A — coordination | axis B — acceleration |
+   114	|---|---|---|
+   115	| reference | `ALL_NEUTRAL_CONTROL` | `ALL_NEUTRAL_CONTROL`, **and** the anytime incumbent at the same budget, reported beside it |
+   116	| quantity | pooled EE | pooled EE **attained as a fraction of the certified fixed point's**, under the contract's **10 s** coordinator budget (contract v1 **F2**) |
+   117	| oracle ceiling | `+0.899%` (8 anchors) / `+0.717%` (30 dates) | `+100.7%` above the 10 s anytime incumbent (20-anchor panel) |
+   118	| numerator | declared full-buffer, no cap | declared full-buffer, no cap |
+   119	| contrasts | `FULL - ALL_NEUTRAL_CONTROL`; `FULL - DROP_Ci` | identical set, on recovered fraction |
+   120	
+   121	**The owner's requirement is unchanged on both axes: each of C1, C2, C3 must raise EE.** What
+   122	differs is the reference the gain is measured against, and therefore how large a gain is even
+   123	available. The coordination axis has a measured oracle ceiling of about one per cent; the
+   124	acceleration axis has a measured oracle ceiling of about one hundred per cent. **Changing axis
+   125	is not changing the claim.**
+   126	
+   127	## Two panel identities that must not be silently merged
+   128	
+   129	The two oracle ceilings quoted above are **on different panels**: `+0.899%` is 8 anchors over
+   130	TLE dates `2025-07-28` and `2026-05-30`; `+100.7%` is the twenty-anchor anytime panel. They are
+   131	both relative pooled-EE gains, but against different references and on different anchor sets,
+   132	and **they may not be stacked into a single ladder** without a measurement on one common panel.
+   133	
+   134	Related, and larger than the coordination band itself: search **traversal order** alone moves
+   135	the fixed point by `8.13%` (`SEALED`) and `1.62%` (`MARGIN_Q`) — first-improvement versus
+   136	best-improvement, on all 20 anchors, both rules
+   137	(`ANYTIME-UNILATERAL-2026-09-10.md:11`). **Which fixed point is the reference matters about
+   138	nine times more than the coordination gain above it.** Every reported figure names its fixed
+   139	point.
+   140	
+   141	## Consequent requirement on the run
+   142	
+   143	The launch receipt states, for each scoring: the reference object and its construction, the
+   144	information class, the estimand, the numerator, the panel identity (anchors, worlds, dates,
+   145	seeds), and the fixed-point traversal order. **A figure missing any of these is not reported.**
+   146	
+   147	---
+   148	
+   149	# AMENDMENT 2 — the primary contrast must prove it is not a knockout. 2026-09-10 12:45 UTC.
+   150	
+   151	`NEUTRAL-VS-KNOCKOUT-2026-09-10.md` (`/home/sat/mcrl-v025-mutants-ws/`) reports:
+   152	
+   153	- **In principle, distinguishable.** The zero-target construction does not force the zero
+   154	  function. At epoch 500 the neutral C3 head had held-out maximum absolute output
+   155	  `20.6831760988` and parameter L2 norm `16.1992481613`. It had **not** collapsed to zero.
+   156	  Source verified: `PairwiseBatch.neutral` replaces only `target_deltas` with
+   157	  `np.zeros_like(...)` (`learner.py:146-164`); `CoalitionBatch.neutral` replaces only
+   158	  `target_psi` (`:634-655`); feature rows, support, overlap, row weights, order and
+   159	  optimisation dose are preserved (`:525-540`).
+   160	- **In practice, identical on the tested slice.** At every checkpoint from 100 to 500,
+   161	  neutral-present and C3-knockout selected **the same configuration at all five anchors**, so
+   162	  bits, joules and pooled EE were identical. **0 of 5 anchors differed; the pooled EE
+   163	  difference was exactly zero.**
+   164	
+   165	Scope: one route, one seed, five anchors. It does not establish that the full
+   166	`ALL_NEUTRAL_CONTROL` panel is decision-identical to an all-route knockout. It does establish
+   167	that **retaining and updating a neutral head is not by itself evidence of a distinct
+   168	intervention.**
+   169	
+   170	## The requirement this adds to the run
+   171	
+   172	**`FULL - ALL_NEUTRAL_CONTROL` may not be reported as the primary number until decision-level
+   173	separation from the corresponding all-route knockout is demonstrated on the same panel.**
+   174	Absent that, the contrast is operationally a knockout contrast wearing a source-substitution
+   175	label, and erratum 14 requires the two to be distinct interventions.
+   176	
+   177	**This needs no sixth arm.** The sealed inventory is exactly five and the checkpoint format
+   178	rejects any other (`learner.py:1170-1171`). A knockout requires no training: it is the removal
+   179	of the heads' contributions at scoring time. So the scoring harness must, from the **`FULL`
+   180	checkpoint**, additionally evaluate the all-terms-removed selection and report:
+   181	
+   182	1. the number of anchors where `ALL_NEUTRAL_CONTROL`'s committed selection differs from the
+   183	   all-knockout selection;
+   184	2. their pooled EE difference on the declared full-buffer numerator;
+   185	3. the same two figures at **every** checkpoint, so a separation that appears only late is
+   186	   visible.
+   187	
+   188	**Reading, fixed now:** if those selections coincide at every anchor and every checkpoint, the
+   189	primary contrast is reported as a **knockout** contrast and labelled as such, and no
+   190	source-substitution claim is made from it.
+   191	
+   192	## Not contradicted by the fixture gate
+   193	
+   194	`TRAINING-RUNNER-2026-09-10.md` reports the arm-difference gate PASS 4/4, including
+   195	`FULL vs ALL_NEUTRAL_CONTROL` at 182 versus 0 selection differences and pooled fixture EE
+   196	`215.626778` versus `100.000000`. **That is a different comparison.** It shows `FULL` separates
+   197	from neutral on a fixture built to separate them; it says nothing about whether **neutral
+   198	separates from knockout**. The two must not be conflated.
+   199	
+   200	---
+   201	
+   202	# AMENDMENT 3 — the training panel is declared now. 2026-09-10 13:05 UTC.
+   203	
+   204	**Fixed before any anchor of it has been scored, and before the coalition shards exist.**
+   205	
+   206	## The panel
+   207	
+   208	**The first 20 anchors of the exact-path corpus in its own declared generation order**, at
+   209	`/home/sat/mcrl-v025-datepool-ws/artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/`.
+   210	
+   211	- **A prefix of a fixed order, not a selection.** The corpus is generated in a pre-declared
+   212	  order; taking its first 20 means the panel cannot be chosen for what it contains.
+   213	- **20, because that is the size of the existing anytime panel**, so the acceleration axis has
+   214	  a like-sized precedent, and because the pre-declaration calls for a signal, not a claim panel.
+   215	- If fewer than 20 exist when everything else is ready, **use what exists, state the count, and
+   216	  do not wait for a rounder number.**
+   217	
+   218	## What this bounds
+   219	
+   220	`EXACTGEN2` was at anchor index 017 at 13:03, moving at roughly **7.6 min/anchor** (anchor 006
+   221	at 11:39, anchor 015 at 12:47, anchor 017 at 13:03). **The first run therefore does not wait
+   222	for the 6-hour corpus budget to expire.** `COALBUILD` needs joint evaluations for this prefix
+   223	only, not for all 180 anchors.
+   224	
+   225	## What is still unknown, stated as unknown
+   226	
+   227	The joint-evaluation cost per anchor **does not exist yet**. `COALBUILD` was dispatched at
+   228	12:46 and at 13:03 had written its build and analysis code but no coalition shard. **Until it
+   229	reports measured seconds per anchor, the start time of the first training run is not
+   230	predictable, and I will not estimate it.**
+   231	
+   232	## Not changed by this amendment
+   233	
+   234	The reference (`ALL_NEUTRAL_CONTROL`), the numerator (declared full-buffer, no cap), the arms
+   235	(the sealed five), the epochs (500, cadence 100), the continuation rule (convergence, not
+   236	direction), the knockout separation requirement of amendment 2, and the dual-axis scoring of
+   237	amendment 1 all stand unchanged.
+=================== V025-CONTROLLER-PIPELINE-CONTRACT-2026-09-10.md
+     1	# Pipeline contract — the interfaces, written down once
+     2	
+     3	**2026-09-10 13:15 UTC.** Today's four real blockers were **not** failed tests. They were
+     4	interface mismatches between stages built in isolation against assumed contracts:
+     5	
+     6	| blocker | found | how |
+     7	|---|---|---|
+     8	| the only code that trains arms is hard-coded to 2 epochs (`run_c3_panel_smoke.py:612`, `:721`), `--output` its only argument | 12:10 | reading the CLI |
+     9	| the runner fails closed without `mcrl-v025-stagec-c3-coalition-shard-v2`; the corpus has none | 12:33 | reading the reader, then `find -iname '*coalition*'` |
+    10	| the stored physics has no joint evaluation with changed set ≥ 2, so `Psi_A` is unrecoverable | 12:45 | `COALSHARD` Part 1 |
+    11	| the health monitor's `run_resumable\.sh` regex never matched `run_resumable2.sh`, so every job launched after 09:50 looked orphaned | 12:52 | checking a flagged "orphan" before killing it |
+    12	
+    13	**Every one would have been visible at design time if this document had existed.** It exists
+    14	now. A stage may only be built against what is written here; if a stage needs something not
+    15	listed, the contract is amended **first**.
+    16	
+    17	---
+    18	
+    19	## Stage 1 — corpus
+    20	
+    21	**Produces** `artifacts/v025-exact-source-20260910-BUILD_NOT_CLAIM/`, generated in a
+    22	pre-declared anchor order, physics separated from a rebuildable view layer.
+    23	
+    24	| layer | schemas | consumer |
+    25	|---|---|---|
+    26	| physics | `-physics-shard-v1`, `-configuration-physics-v1`, `-row-physics-v1`, `-anchor-context-v1` | rebuilds any view or target without re-running physics |
+    27	| view | `mcrl-v025-exact-source-view-shard-v1` | Stage 2, C1/C2 |
+    28	| view | `mcrl-v025-stagec-c3-coalition-shard-v2` | Stage 2, C3 — **`COALBUILD` is adding this** |
+    29	
+    30	**Requirements, all load-bearing:** canonical JSON with a valid `.sha256` sidecar per shard;
+    31	C1, C2 and C3 shards share **one physics digest**; targets are the declared
+    32	`c1_difference_surplus` and `c2_persistence_forecast` and the exact `Psi_A`, never the
+    33	`kappa*tanh(log ratio)` surrogate; `Psi` is **exactly zero on every singleton**; the coalition
+    34	support and its **size distribution** are reported, because a support dominated by `|A| = 1`
+    35	bounds what any C3 fit can mean.
+    36	
+    37	**Known constraint:** `Delta F(A)` for `|A| >= 2` requires a **real joint evaluation** and is
+    38	not reconstructible from singleton outcomes.
+    39	
+    40	## Stage 2 — training runner
+    41	
+    42	`/home/sat/mcrl-v025-retrain-ws/scripts/run_stagec_training.py`, sha256
+    43	`4885570b8552dc95a2143764cc10bd7b78f06504d63c4fa07866817bfc797d66`.
+    44	
+    45	**Consumes** the view layer only — any admitted path containing a `physics` component is
+    46	rejected. **Mandatory:** `--corpus --output --epochs --seeds`. `--checkpoint-cadence` defaults
+    47	to 100 and is checked against the sealed value. `--seeds N` means `V025_LEARNER/seed/{1..N}`;
+    48	a value other than the v1.1-required 16 emits a loud notice and is recorded as nonconforming.
+    49	**No silent 12-seed default.**
+    50	
+    51	**Sealed bounds, verified:** at most **2,000** completed epochs; only the production five-arm
+    52	inventory (`learner.py:1170-1171`, `:1186`). Head literals unchanged: C1 `(8,)` relu lr `1.0e-2`
+    53	gauge_beta `0.2`; C2 `(100,50,50)` tanh lr `1.0e-3` gauge_beta `0.1`; C3 `(64,64)` relu
+    54	lr `1.0e-3`; Adam `(0.9, 0.999)`.
+    55	
+    56	**Start gate:** the arm-difference fixture must PASS for all four pairs. Any identical raw
+    57	score, identical selection, or identical pooled fixture EE is a **hard failure**. Currently
+    58	PASS 4/4.
+    59	
+    60	**Emits** checkpoints at cadence, each verified readable by the sealed loader in-run, plus a
+    61	launch receipt.
+    62	
+    63	**Must also record, for Stage 3 axis B:** **physics evaluations consumed per arm** and
+    64	**wall-clock to decision**. These were added on 2026-09-10 after the figure plan showed F8
+    65	could not otherwise be drawn. **If the runner does not record them, that is a Stage 2 defect,
+    66	not a Stage 3 workaround.**
+    67	
+    68	## Stage 3 — scorer
+    69	
+    70	`SCORER`, in `/home/sat/mcrl-v025-selector-ws`. **Consumes** Stage 2 checkpoints. One run,
+    71	scored twice.
+    72	
+    73	**Axis A, coordination:** pooled EE on the **declared full-buffer numerator** — no demand cap,
+    74	per declaration v1.8 item 5. Reference `ALL_NEUTRAL_CONTROL`; **`BASE` is never a reference and
+    75	never relabelled as one.** Contrasts `FULL - ALL_NEUTRAL_CONTROL` and `FULL - DROP_Ci`, at
+    76	**every** checkpoint.
+    77	
+    78	**Axis B, acceleration:** pooled EE as a fraction of the certified fixed point's, at the
+    79	contract's **10 s** budget (v1 §F2), with **the anytime incumbent at the same budget** reported
+    80	beside every arm.
+    81	
+    82	**Knockout check, required before the primary number may be reported:** from the `FULL`
+    83	checkpoint, evaluate the all-terms-removed selection and report anchors differing from
+    84	`ALL_NEUTRAL_CONTROL` and their pooled EE difference. If they coincide everywhere, the primary
+    85	contrast is reported as a **knockout** contrast and labelled as such.
+    86	
+    87	**Every figure names:** reference and its construction, information class, estimand, numerator,
+    88	panel identity, and **fixed-point traversal order** — traversal order alone moves the fixed
+    89	point by `8.13%` (SEALED) / `1.62%` (MARGIN_Q), about nine times the coordination band.
+    90	
+    91	## Stage 4 — figures
+    92	
+    93	Eight, per `V025-CONTROLLER-FIGURE-PLAN-2026-09-10.md`. F1-F5 need no training and are
+    94	buildable from receipts already on disk. F6-F8 consume Stage 3 tables.
+    95	
+    96	---
+    97	
+    98	## The rule this document imposes
+    99	
+   100	**Before any stage is built, its consumer's contract is read — not assumed.** Where a consumer
+   101	does not exist yet, its contract is written here first. Today two blockers were found by
+   102	reading a CLI and a reader; both would otherwise have surfaced at launch, after the preparation
+   103	was already spent.
+   104	
+   105	**And: run the reader, do not reason about it.** Reasoning about whether stages connect is
+   106	free and was wrong twice today.

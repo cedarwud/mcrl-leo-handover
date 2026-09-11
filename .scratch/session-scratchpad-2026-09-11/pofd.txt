@@ -1,0 +1,1062 @@
+Policy Optimization with Demonstrations
+
+Bingyi Kang 1 Zequn Jie 2 Jiashi Feng 1
+
+Abstract
+Exploration remains a signiﬁcant challenge to reinforcement learning methods, especially in environments where reward signals are sparse. Recent
+methods of learning from demonstrations have
+shown to be promising in overcoming exploration
+difﬁculties but typically require considerable highquality demonstrations that are difﬁcult to collect. We propose to effectively leverage available
+demonstrations to guide exploration through enforcing occupancy measure matching between the
+learned policy and current demonstrations, and
+develop a novel Policy Optimization from Demonstration (POfD) method. We show that POfD induces implicit dynamic reward shaping and brings
+provable beneﬁts for policy improvement. Furthermore, it can be combined with policy gradient methods to produce state-of-the-art results, as
+demonstrated experimentally on a range of popular benchmark sparse-reward tasks, even when
+the demonstrations are few and imperfect.
+
+1. Introduction
+Reinforcement Learning (RL) solves sequential decision
+making problems based on the experiences collected by
+interacting with environments. Thanks to the advances in
+deep learning, various neural network powered RL methods
+have made signiﬁcant progress for multiple applications,
+including Atari games (Mnih et al., 2015; Van Hasselt et al.,
+2016; Mnih et al., 2016), robot locomotion tasks (Schulman et al., 2015; 2017) and the game of Go (Silver et al.,
+2016; 2017). However, exploration problems, that how to
+gain more experience with novel strategies to improve the
+performance in the long run, are still challenging in deep
+RL methods. When the reward signals are sparse and rare,
+existing methods still struggle to explore effectively to learn
+meaningful policies. This is because most of them rely
+1
+
+Department of Electrical and Computer Engineering, National
+University of Singapore, Singapore 2 Tencent AI Lab, China. Correspondence to: Bingyi Kang <kang@u.nus.edu>.
+Proceedings of the 35 th International Conference on Machine
+Learning, Stockholm, Sweden, PMLR 80, 2018. Copyright 2018
+by the author(s).
+
+on heuristic exploration strategies, e.g., -greedy for value
+based methods (Van Hasselt et al., 2016) and noise-based
+exploration for policy gradient methods (Sutton et al., 2000),
+which are undirected and incapable of ﬁnding interesting
+states explicitly.
+Some recent works (Nair et al., 2017; Houthooft et al., 2016;
+Plappert et al., 2017; Pathak et al., 2017) have been devoted
+to tackling the exploration problems in RL. They are basically rooted in the following two ideas. 1) Reshape the
+original reward function by encouraging the agent to visit
+states never seen before, driven by intrinsic curiosity (Pathak
+et al., 2017) or information gain (Houthooft et al., 2016).
+2) Use demonstration trajectories sampled from an expert
+policy to guide the learning procedure, by either putting
+the demonstrations into a replay memory (Nair et al., 2017;
+Hester et al., 2017; Večerı́k et al., 2017) or using them to pretrain the policy in a supervised manner (Silver et al., 2016).
+Learning from demonstrations has shown promising performance in overcoming exploration difﬁculties in sparsereward environments. However, existing schemes cannot
+fully leverage the power of the demonstration data, limited
+by only treating them in the same way as self-generated data,
+and usually require a tremendous number of high-quality
+demonstrations which are difﬁcult to collect at scale.
+To address this problem, we propose to combine above
+two ideas by developing a principled method that rewards
+demonstration-like actions more during interaction with
+environments, which thus encourages exploration for meaningful states when feedback is sparse. The intuition is that,
+when the reward signal is not available, the agent should
+mimic the demonstrated behavior in early learning stages
+for exploration. After acquiring sufﬁcient skills, the agent
+can explore new states on its own. This is actually a dynamic intrinsic reward mechanism that can be introduced
+for reshaping native rewards in RL. To this end, we propose
+a novel Policy Optimization from Demonstration (POfD)
+method, which can acquire knowledge from demonstration
+data to boost exploration, even though the data are scarce
+and imperfect. We realize our idea with three technical novelties. 1) We reformulate the policy optimization objective
+by adding a demonstration-guided exploration term, which
+measures the divergence between the current policy and
+the expert one, forcing expert-alike exploration. We theoretically analyze the beneﬁts brought by POfD to vanilla
+
+Policy Optimization with Demonstrations
+
+policy gradient ones, in terms of improvement over the
+expected return. 2) We convert the proposed objective to
+a new one deﬁned on occupancy measure (Ho & Ermon,
+2016) for better exploiting demonstrations and establish an
+optimization-friendly lower bound. 3) We eventually draw
+a connection between optimizing the derived lower bound
+and generative adversarial training (Goodfellow et al., 2014),
+and show that the optimization can thus easily proceed in
+a manner of alternating between two sub-procedures. One
+is ﬁtting a discriminator measuring the similarity between
+expert data and self-generated data to reshape the reward;
+the other one is updating the policy with the gradient from
+the reshaped reward function. POfD is general and compatible with most policy gradient methods. We also show that
+existing replay memory based learning from demonstration
+methods (Hester et al., 2017; Večerı́k et al., 2017) can be
+interpreted as degenerated cases of our method int terms of
+how to leverage the demonstration data.
+We evaluate our POfD on physical locomotion tasks based
+on Mujoco (Todorov et al., 2012) in sparse-reward environments. We compare POfD against 5 state-of-the-art
+baselines. The experiments clearly demonstrate that POfD
+surpasses all the well-established baselines and performs
+very well in these environments. Its performance is even
+comparable with that achieved by policy gradient methods
+in oracle dense-reward environments.
+
+2. Related Work
+Recently, learning from demonstration (LfD) (Schaal, 1997)
+has received increasing attention as a promising way to
+overcome exploration difﬁculties in RL (Subramanian et al.,
+2016). Most LfD methods adopt value-based RL algorithms,
+which are off-policy in nature. For instance, DQfD (Hester
+et al., 2017) introduces LfD into DQN (Mnih et al., 2015) by
+adding demonstration data into the replay buffer. It uses a
+reﬁned priority replay mechanism (Schaul et al., 2015) and
+gives additional priority to the demonstration data. However,
+DQfD is limited to applications with discrete action spaces.
+DDPGfD (Večerı́k et al., 2017) extends LfD to continuous
+action domains, which is built upon DDPG (Lillicrap et al.,
+2015) similar to DQfD. Both DQfD and DDPGfD suffer the
+problem of under-exploiting demonstration data, as detailed
+in Sec. 5. Some existing methods leverage demonstration
+data in different ways. Kim et al. (2013); Piot et al. (2014)
+are based on policy iteration and use demonstration data
+to shape the value function. Moreover, they require the
+value of demonstrated state-action pairs to be larger than
+the others with a margin. Those methods would suffer performance decline when only imperfect demo data are given.
+Aravind S. Lakshminarayanan (2016) considered LfD under settings where the demonstration data are in paucity.
+They proposed a hybrid framework that learns the policy
+
+in which the probability of taking demonstrated actions is
+maximized. Recently, Brys et al. (2015) introduced a reward
+reshaping mechanism to encourage taking actions close to
+the demonstrated ones. They share a similar motivation
+with us but their method has a different course. They deﬁned a potential function based on multi-variate Gaussian to
+model the distribution of state-actions. Different from our
+POfD, all the above methods require a signiﬁcantly large
+amount of perfect demonstration data to achieve satisfactory
+performance.
+Imitation learning aims at mimicking expert behaviors,
+which can be realized in multiple ways. Most recent successful imitation learning algorithms are based on Inverse
+Reinforce Learning (IRL) (Ng et al., 2000), which targets
+at recovering the reward function of a given task from samples, without knowing the dynamics. Following this line,
+Syed & Schapire (2008); Syed et al. (2008) casted IRL
+problems as a two-player zero-sum game which is then
+solved by alternating between ﬁtting the reward function
+and selecting the policy. However, their capacity is limited
+to small-scale problems. Very recently, Generative Adversarial Imitation Learning (GAIL) (Ho & Ermon, 2016) is
+shown to be very effective in high-dimensional continuous
+control problems. Instead of ﬁtting the underlying reward
+function as traditional IRL algorithms, GAIL uses a discriminator to distinguish whether a state-action pair is from the
+expert or the learned policy. Meanwhile, GAIL optimizes
+the policy to confuse the discriminator. Though effective
+for imitation learning, these algorithms cannot leverage the
+valuable feedback given by the environments and usually
+suffer sharp performance decline when the expert data are
+imperfect. Our POfD overcomes such inherent limitations
+by learning from feedbacks and can learn well-performing
+policies even though the expert data are imperfect.
+A similar and contemporary idea has also been introduced
+in (Li et al., 2017; Zhu et al., 2018) to learn an agent with
+hybrid imitation learning and reinforcement learning reward.
+However, they only treat it as a heuristic method and provide
+intuitive explanations. In contrast, we consider a novel practical setting and develop the reward reshaping mechanism
+theoretically with monotonic improvement guarantee.
+
+3. Background
+3.1. Preliminaries
+We consider the standard Markov Decision Process (MDP)
+(Sutton & Barto, 1998). MDP is deﬁned by a tuple
+S, A, P, r, γ, where S and A are the state space and the
+action space respectively, P(s |s, a) is the transition distribution of taking action a at state s, r(s, a) is the reward
+function, and γ ∈ (0, 1) is the discount factor.
+Given a stochastic policy π(a|s) = p(a|s; π) mapping from
+
+Policy Optimization with Demonstrations
+
+states to action probabilities, the performance of π is usually
+evaluated by its expected discounted reward η(π):
+
+∞
+
+t
+γ r(st , at ) ,
+η(π) = Eπ [r(s, a)] = E(s0 ,a0 ,s1 ,... )
+t=0
+
+(1)
+where (s0 , a0 , s1 , . . . ) is a trajectory generated by executing policy π, i.e., s0 ∼ p0 , at ∼ π(·|st ) and st+1 ∼
+P(·|st , at ). Similarly, following the standard deﬁnitions,
+the value function Vπ and action value function Qπ can
+be written as Vπ (s) = Eπ [r(·, ·)|s0 =s] and Qπ (s, a) =
+Eπ [r(·, ·)|s0 =s, a0 =a]. Subtracting Qπ (s, a) by Vπ (s)
+gives the advantage function Aπ (s, a) = Qπ (s, a) − Vπ (s)
+that reﬂects the expected additional reward that the agent
+will get after taking action a in state s.
+Reinforcement Learning (RL) (Sutton & Barto, 1998) is a
+set of algorithms trying to infer a policy achieving maximal
+reward η(π) with regard to some form of reward signals
+r(s, a) from trajectories D = {τi } generated by executing
+a current policy (on-policy methods) or some other policy
+(off-policy methods). Each trajectory consists of a sequence
+of state transitions τ = {(s0 , a0 ), (s1 , a1 ), . . . , (sT , aT )}.
+The occupancy measure, deﬁned as follows, characterizes
+the distribution of action-state pairs when executing policy
+π. It will play an important role in our analysis.
+Deﬁnition 1. (Occupancy measure) Let ρπ (s) : S → R
+denote the unnormalized distribution of state visitation by
+following policy π in the environment:
+ρπ (s) =
+
+∞
+
+
+γ t P (st = s|π).
+
+t=0
+
+Then the unnormalized distribution of state-action pairs
+ρπ (s, a) = ρπ (s)π(a|s) is called occupancy measure of
+policy π.
+Substituting ρπ (s, a) into Eqn. (1), we have the following
+equivalent formulation for the expectation over policy π:
+∞ 
+
+
+
+
+π(a|s)γ t r(s, a)
+
+3.2. Problem Deﬁnition
+In practice, most RL tasks and environments do not provide a well-designed reward function. Instead, only a little
+sparse feedback indicating whether the goal is reached is
+available. Existing RL algorithms usually fail to explore and
+collect useful information in such sparse-reward settings. In
+this work, we are interested in solving such a challenging
+problem by developing a method capable of learning from
+both (sparse) rewards and expert demonstrations.
+In particular, in addition to sparse rewards from environments as in traditional RL settings, the agent is also
+provided with a few (and possibly imperfect) demonstrations DE = {τ1 , τ2 , . . . , τN }, where the i-th trajectory
+τi = {(si0 , ai0 ), (si1 , ai1 ), . . . , (siT , aiT )} is generated from
+executing an unknown expert policy πE in the environment.
+We aim to develop a method that can boost exploration
+through effectively leveraging DE in such settings and maximize η(π) in Eqn. (1).
+Throughout the paper, we use πE to denote the expert policy
+that gives the relatively good η(π), and use ÊD to denote
+empirical expectation estimated from the demonstrated trajectories DE . We have the following reasonable and necessary assumption on the quality of the expert policy πE .
+Assumption 1. In early learning stages, we assume acting
+according to expert policy πE will provide higher advantage
+value with a margin as least δ over current policy π, i.e.,
+EaE ∼πE ,a∼π [Aπ (s, aE ) − Aπ (s, a)] ≥ δ.
+We do not need to assume the expert policy πE to be advantageous over all the policies, as our proposed POfD will
+learn from both rewards and demonstrations and can possibly learn a policy better than πE through exploration on its
+own in later learning stages.
+
+4. Method
+4.1. Policy Optimization with Demonstrations
+
+which provides an alternative way to compute the expected
+discounted return. An important property of the occupancy
+measure is that it uniquely speciﬁes a policy, as described
+in the following lemma.
+
+Suppose πθ is a θ-parameterized policy and is differentiable.
+Policy gradient methods optimize the expected return η(πθ )
+by updating θ with the gradient of η(πθ ) w.r.t. θ (Sutton
+et al., 2000; Williams, 1992). They usually start optimizing
+the policy πθ by random exploration, which may cause
+slow convergence when the state and action spaces have
+high dimensionality, and may even lead to failure when the
+environment feedback is sparse. We propose to address
+this problem by forcing the policy to explore in the nearby
+region of the expert policy πE (as shown in Fig.1), which is
+speciﬁed by several demonstrated trajectories DE .
+
+Lemma 1. (Theorem 2 of (Syed et al., 2008)) Suppose ρ is
+the occupancy measure for πρ (a|s)   ρ(s,a)
+ . Then πρ
+a ρ(s,a )
+is the only policy whose occupancy measure is ρ.
+
+To this end, besides maximizing the expected return η(πθ )
+through learning from sparse feedback during interaction with environments, we also encourage the policy π
+
+Eπ [r(s, a)] =
+
+t=0
+
+=
+
+
+s
+
+=
+
+
+
+P (st = s|π)
+
+s
+
+ρπ (s)
+
+
+
+a
+
+π(a|s)r(s, a)
+
+(2)
+
+a
+
+ρπ (s, a)r(s, a),
+
+s,a
+
+Policy Optimization with Demonstrations
+
+previous iteration. Eqn. (4) can be rewritten as
+
+
+η(π) = η(πold ) +
+ρπ (s)
+π(a|s)Aπold (s, a).
+s
+
+Figure 1. Our proposed POfD explores in the high-reward regions
+(red arrows), with the aid of demonstrations (the blue curve). It
+thus performs better than random explorations (olive green dashed
+curves) in sparse-reward environments.
+
+to explore by “following” the demonstrations DE . We
+therefore introduce demonstration-guided exploration term
+LM (πθ , πE ) = DJS (πθ , πE ), which is deﬁned over JensenShannon divergence between current policy πθ and the expert one πE , to the vanilla objective η(πθ ). This gives a new
+learning objective:
+L(πθ ) = −η(πθ ) + λ1 DJS (πθ , πE ),
+where λ1 is a trading-off parameter. However, the above
+policy divergence measure between πθ and πE is infeasible
+as πE is unknown. Fortunately, leveraging the one-to-one
+correspondence between the policy and occupancy measure
+as given by Lemma 1, we can instead deﬁne a divergence
+over the occupancy measures ρπ (s, a) and ρπE (s, a), which
+is easier to optimize through adversarial training on demonstrations, as we will show later. Based on their occupancy
+measure LM  DJS (ρθ , ρE ), where ρθ and ρE are short
+for ρπθ and ρπE , our proposed demonstration guided learning objective is
+L(πθ ) = −η(πθ ) + λ1 DJS (ρθ , ρE ).
+
+(3)
+
+We here slightly abuse DJS to apply it to the unnormalized
+distribution ρ. Later, we will establish a lower bound to it
+without needing to directly optimize it.
+4.2. Beneﬁts of Exploration with Demonstrations
+To better understand the new objective (3), we here prove
+that introducing the guiding term DJS (ρθ , ρE ) boosts the
+advantage value for the learned policy, and brings nontrivial beneﬁts in terms of policy improvement for policy
+gradient methods. To see this, we introduce following the
+useful expression at ﬁrst (Kakade & Langford, 2002) that
+is commonly used in policy gradient methods (Schulman
+et al., 2015; 2017; Kakade, 2002),
+
+∞
+
+t
+γ Aπold (s, a) .
+(4)
+η(π) = η(πold ) + Eτ ∼π
+t=0
+
+In the above, the expected return η(π) of policy π is expressed in terms of the advantage over the policy πold in the
+
+(5)
+
+a
+
+To alleviate difﬁculties brought by complex dependency of
+ρπ (s) over π, policy gradient methods usually optimize the
+following surrogate objective, which is a local approximation to η(π) up to ﬁrst order:
+
+
+ρπold (s)
+π(a|s)Aπold (s, a),
+Jπold (π) = η(πold ) +
+s
+
+a
+
+where ρπ is replaced by ρπold and we ignore the change
+in state distribution due to policy update. Policy gradient
+methods are guaranteed to improve η(π) monotonically
+by optimizing the above surrogate Jπold (π) with a sufﬁmax
+ciently small update step πold → π such that DKL
+(π, πold )
+is bounded (Schulman et al., 2015; 2017; Kakade, 2002).
+In particular, TRPO (Schulman et al., 2015) imposes
+max
+hard constraints with ﬁxed penalty on DKL
+(π, πold ) while
+PPO (Schulman et al., 2017) and natural policy gradimax
+(π, πold ) for regularization
+ent (Kakade, 2002) use DKL
+with ﬁxed or adaptive weights.
+POfD additionally imposes a regularization DJS (πθ , πE )
+between πθ and πE in order to encourage explorations
+around regions demonstrated by the expert πE . We formally
+show the beneﬁts from leveraging the expert demonstration
+in this way by giving the following theorem.
+max
+Theorem 1. Let α
+=
+DKL
+(πold , π)
+=
+max
+(πE , π) =
+maxs DKL (π(·|s), πold (·|s)), β = DJS
+maxs DJS (π(·|s), πE (·|s)), and πE is an expert policy
+satisfying Assumption 1. Then we have
+η(π) ≥ Jπold (π) −
+
+2γ(4βE + απ )
+δ
+,
++
+2
+(1 − γ)
+1−γ
+
+where E = maxs,a |AπE (s, a)| , π = maxs,a |Aπ (s, a)|.
+We provide proof in the supplement. The above theorem
+implies the beneﬁts of adding matching regularization. Let
+max
+max
+(π, πE ) − Cπ DKL
+(π, πi ) + δ̂
+Mi (π) = Jπi (π) − CπE DJS
+8γE
+2γπ
+δ
+where CπE = (1−γ)2 , Cπ = (1−γ)2 , δ̂ = 1−γ . Then,
+η(πi+1 ) ≥ Mi (πi+1 ),
+max
+η(πi ) = Mi (πi ) + CπE DJS
+(πi , πE ) − δ̂,
+
+η(πi+1 ) − η(πi )
+max
+≥ Mi (πi+1 ) − Mi (πi ) − CπE DJS
+(πi , πE ) + δ̂.
+
+The above result is reminiscent of classic monotonic improvement guarantees for policy gradient methods (Schulman et al., 2015; 2017; Kakade, 2002). However, POfD brings another factor to the improvement
+max
+−CπE DJS
+(πi , πE ) + δ̂. This implies that following the
+max
+demonstrations (i.e., having small DJS
+(πi , πE )) will fully
+utilize the advantage δ̂ and bring improvement with a margin
+over pure policy gradient methods.
+
+Policy Optimization with Demonstrations
+
+4.3. Optimization
+In this subsection, we introduce a practical optimization
+algorithm for Eqn. (3), which is compatible with any policy gradient methods. In particular, instead of performing
+optimization on the difﬁcult Jensen-Shannon divergence
+directly, we optimize its lower bound given as follows.
+−u
+
+e
+Theorem 2. Let h(u) = log( 1+e1−u ), h̄(u) = log( 1+e
+−u )
+and U (s, a) : S × A → R be an arbitrary function. Then
+we have
+
+DJS (ρπ , ρE ) ≥
+
+
+sup Eρπ [h(U (s, a))] + EρE [h̄(U (s, a))] + log 4.
+U
+
+We defer the proof to supplement due to space limit. With
+the above theorem, the occupancy measure matching objective LM can be written as
+LM  sup
+
+Eπθ [log(D(s, a))] + EπE [log(1 − D(s, a))],
+D∈(0,1)S×A
+
+1
+where D(s, a) = 1+e−U
+(s,a) : S × A → (0, 1) is an arbitrary mapping function followed by a sigmoid activation
+function for scaling. The supremum ranging over D(s, a)
+thus represents the optimal binary classiﬁcation loss of distinguishing the current policy πθ and the expert policy πE
+w.r.t. the state-action pairs sampled from ρθ and ρE .
+
+To avoid potential overﬁtting risks, we introduce causal
+entropy −H(πθ ) as another regularization term, similar
+to (Ziebart et al., 2008; Ziebart, 2010). Therefore, the overall
+objective of our proposed POfD is formulated as
+min L = −η(πθ ) − λ2 H(πθ )+
+θ
+
+λ1 sup
+
+Eπθ [log(D(s, a))] + EπE [log(1 − D(s, a))].
+D∈(0,1)S×A
+
+It is actually a minimax problem closely related to
+the learning target of Generative Adversarial Networks
+(GANs) (Goodfellow et al., 2014). GANs aim to train a
+generative model G to produce samples indistinguishable
+from the ones from real distributions for a well-trained discriminative model D. In our case, the true distribution is the
+expert policy πE (a|s), or equivalently the expert occupancy
+measure ρE (s, a). The generator to learn is the policy model
+πθ (a|s). Suppose D is parameterized by w. By labeling
+expert state-action pairs as true (“1”) and policy state-action
+pairs as false (“0”), we get the following objective,
+min max L = −η(πθ ) − λ2 H(πθ )+
+θ
+
+w
+
+λ1 (Eπθ [log(Dw (s, a))] + EπE [log(1 − Dw (s, a))]) .
+(6)
+Moreover, the minimax objective (6) can be simpliﬁed by
+substituting Eqn. (1) and Eqn. (2) into it, resulting in a
+
+dynamic reward reshaping mechanism over the original
+reward signal:
+min max − Eπθ [r (s, a)] − λ2 H(πθ )
+θ
+
+w
+
++ λ1 EπE [log(1 − Dw (s, a))],
+
+(7)
+
+where r (s, a) = r(a, b) − λ1 log(Dw (s, a)) is the reshaped
+reward function. This function augments the environment
+reward with demonstration information. When the environment feedback is sparse or exploration is insufﬁcient, the
+augmented reward can force the policy to generate similar
+trajectories as the expert policy πE . In other words, the
+divergence of π and πE is minimized. Therefore, our algorithm is able to explore the environment more efﬁciently.
+The above objective can be optimized efﬁciently by alternately updating policy parameters θ and discriminator parameters w. First, trajectories are sampled by executing
+the current policy πθ and mixed with demonstration data to
+train the discriminator by SGD. The gradient is given by
+Eπ [∇w log(Dw (s, a))] + EπE [∇w log(1 − Dw (s, a))].
+Then, ﬁxing the discriminator Dw , i.e., a ﬁxed reward function r (s, a), the policy πθ is optimized with a chosen policy
+gradient method. In particular, by policy gradient theorem
+(Sutton et al., 2000), the reshaped policy gradient is:
+∇θ Eπθ [r (s, a)] = Eπθ [∇θ log πθ (a|s)Q (s, a)],
+where Q (s̄, ā) = Eπθ [r (s, a)|s0 = s̄, a0 = ā].
+The gradient for causal entropy regularization is given by
+∇θ Eπθ [− log πθ (a|s)] = Eπθ [∇θ log πθ (a|s)QH (s, a)],
+where QH (s̄, ā) = Eπθ [− log πθ (a|s)|s0 = s̄, a0 = ā].
+The optimization details are summarized in Alg. 1. It is compatible with any policy gradient methods, e.g., TRPO (Schulman et al., 2015) and PPO (Schulman et al., 2017).
+
+5. Discussion on Existing LfD Methods
+DQfD (Hester et al., 2017) and DDPGfD (Večerı́k et al.,
+2017) are two latest LfD methods. They both leverage
+demonstrations to aid exploration in RL, aiming to improve
+RL in terms of either convergence speed or performance.
+Here we provide a new perspective that interprets DQfD
+and DDPGfD through occupancy measure matching, which
+thus connects them with our POfD.
+DQfD The DQfD method is built upon Deep Q-Networks
+(DQN) (Mnih et al., 2015). As a Q-learning algorithm, DQN
+models the Q value with a w-parameterized neural network
+Qw (s, a). The objective for optimizing Qw is
+2
+
+JDQN = E[(Rt (n) − Qw (st , at )) ], where
+Rt (n) =
+
+t+n−1
+
+i=t
+
+γ i−t ri + max γ n Qw (st+n , a).
+a
+
+(8)
+
+Policy Optimization with Demonstrations
+
+Algorithm 1 Policy optimization with demonstrations
+E
+Input: Expert demonstrations DE = {τ1E , . . . , τN
+}, ini-
+
+tial policy and discriminator parameters θ0 and w0 , regularization weights λ1 , λ2 , maximal iterations I.
+for i = 1 to I do
+Sample trajectories Di = {τ }, τ ∼ πθi .
+Sample expert trajectories DiE ⊂ DE .
+Update discriminator parameters from wi to wi+1 with
+the gradient
+ÊDi [∇w log(Dw (s, a))]+ÊDiE [∇w log(1−Dw (s, a))]
+Update the rewards in Di with
+r (s, a) = r(a, b)−λ1 log(Dwi (s, a)), ∀(s, a, r) ∈ Di
+Update the policy with policy gradient method (e.g.,
+TRPO, PPO) using the following gradient
+ÊDi [∇θ log πθ (a|s)Q (s, a)] − λ2 ∇θ H(πθi )
+end for
+DQfD takes advantage of demonstration data by putting
+them into a replay memory D and keeping them throughout
+the Q-learning process. Here we show minimizing Eqn. (8)
+with expert demonstration and self-generated off-policy data
+is actually equivalent to imposing an occupancy measure
+matching regularization to the original DQN objective 1 .
+Let DE denote the replay memory containing expert data
+only. Then the objective (8) for DQfD can be separated as
+2
+
+JDQfD = ÊD [(Rt (n) − Qw (st , at )) ]+
+2
+
+αÊDE [(Rt (n) − Qw (st , at )) ],
+
+(9)
+
+where α is speciﬁed by the ratio of samples from D and DE .
+Based on Eqn. (2), Qw (s, a) = E[r(·, ·)|s0 =s, a0 =a] =
+ρπ (s, a)r(s, a), and QE (s, a) = ρE (s, a)r(s, a). Thus
+2
+
+ÊDE [(Rt (n) − Qw (st , at )) ]
+
+
+2
+= ÊDE (ρ̂E (s, a) − ρπ (s, a)) r2 (s, a) ,
+
+(10)
+
+which can be interpreted as a regularization forcing current
+policy’s occupancy measure to match the expert’s empirical
+occupancy measure, weighted by the potential reward we
+will get from that state-action pair. For high reward stateaction pairs, there is a greater penalty on the discrepancy
+between ρ̂E and ρπ .
+1
+DQfD has two training stages and an extra supervised loss
+JE (Q) = maxa∈A [A(s, a) + (aE , a) − Q(s, aE )]. In the pretraining stage, DQfD trains on the demonstrations with JE . In
+the RL training stage, JE becomes less signiﬁcant. Since we
+are interested in the Q-learning part of DQfD and how it utilizes
+demonstration data, we focus on analyzing objective (8).
+
+DDPGfD Similar to DQfD, DDPGfD leverages the
+demonstration data by putting them into the replay memory.
+But DDPGfD is based on an actor-critic framework (Lillicrap et al., 2015). Aside from a Q-network Qw , DDPGfD
+introduces another policy network parameterized by θ to
+model a deterministic policy πθ (s). Its Q-network is optimized off-policy with Eqn. (8), while its policy network is
+optimized directly with the following gradient of Q-value
+Qw (s, a) w.r.t. the action a = πθ (s):
+∇θ JDDPGfD ≈ Es,a [∇a Qw (s, a)∇θ πθ (s)], a = πθ (s).
+The above equation shows that the update of policy πθ
+is not directly dependent on the demonstration data DE ,
+but depends on the learned Q-network Qw solely. Since
+DDPGfD shares the same objective function for Qw as
+DQfD, as well as the same way of leveraging demonstrations
+as shown in Eqn. (9) and Eqn. (10). Thus we can draw a
+similar conclusion, i.e. demonstrations in DDPGfD induce
+an occupancy measure matching regularization.
+Although the above replay memory based LfD methods can
+beneﬁt RL algorithms to some extent in sparse-reward environments, they can not sufﬁciently exploit the demonstration
+data due to following limitations. First, such a paradigm
+utilizes expert trajectories only by treating them as learning
+reference, whose effect may be signiﬁcantly underexploited
+when demonstrations are few, as veriﬁed by our experiments.
+Second, to be compatible with collected data during training,
+the demonstrated trajectories are required to be associated
+with rewards for each state transition. However, the rewards
+in demonstrations may differ from the ones used for learning
+the policy in the current environment (Ziebart et al., 2008),
+or they may be unavailable.
+By reformulating the original objective (9) into (10), we ﬁnd
+that, instead of mixing expert data with self-generated data,
+putting an occupancy measure matching regularization can
+avoid the requirement of rewards in demonstrations, as what
+POfD does. In this way, LfD will no longer be restricted to
+the off-policy RL setting.
+
+6. Experiments
+In this section, we aim at investigating 1) whether POfD
+can aid exploration when provided with a few demonstrations, even though the demonstrations are imperfect, and
+2) whether POfD can succeed and achieve high empirical
+return, especially when feedback of the environment is extremely sparse. To comprehensively assess our method, we
+conduct extensive experiments on eight widely used physical control tasks, ranging from low-dimensional ones such
+as cartpole (Barto et al., 1983) and mountain car (Moore,
+1990) to high-dimensional and naturally sparse environments based on OpenAI Gym (Brockman et al., 2016) and
+Mujoco (Todorov et al., 2012). The speciﬁcations of envi-
+
+Policy Optimization with Demonstrations
+
+ronments we used are given in Table 1.
+Settings In view of the property of each individual environment, we apply four ways for sparsifying their builtin dense rewards for evaluating performance of different
+methods in sparse-reward environments, detailed as follows.
+TYPE1: a reward of +1 is given when the agent reaches
+the terminal state, and otherwisely 0. This is also employed
+by (Houthooft et al., 2016) for MountainCar. TYPE2: a
+reward of +1 is given when the agent survives for a while
+(e.g., 200 steps for CartPole). TYPE3: a reward of +1 is
+given for every time the agent moves forward over a speciﬁc
+number of units in Mujoco environments. TYPE4: specially designed for InvertedDoublePendulum, a reward +1
+is given when the second pole stays above a speciﬁc height
+of 0.89. Instead of providing dense rewards to state-action
+pairs at every step, the environment directly tells the agent
+the target state, e.g. reaching a goal and moving forward,
+through providing sparse rewards. This is more practical
+and hence we do not consider extensive reward engineering.
+For clearer distinction, we call the original simulator dense
+environments, while the ones with altered reward are called
+sparse environments.
+Without speciﬁcation, we use only one single imperfect trajectory as demonstrations. To collect demonstrations, we
+train an agent insufﬁciently by running TRPO (Schulman
+et al., 2015) in the corresponding dense environment. Then,
+an imperfect trajectory is randomly sampled by executing
+the agent. Our POfD is evaluated using two metrics. First,
+for each sparse environment, the method is run for 5 times
+with different random initialization and we investigate training curves to understand how POfD facilitates exploration.
+Second, empirical returns in numerical values are calculated
+by averaging over 500 cumulated rewards for the learned
+policy. We compare POfD against ﬁve strong baselines,
+including 1) training the policy with TRPO (Schulman et al.,
+2015) in dense environments which is referred to as expert;
+2) training the policy with TRPO in sparse environments;
+3) applying GAIL (Ho & Ermon, 2016) to learn the policy
+from demonstrations, under the same setting as our POfD; 4)
+DQfD and 5) DDPGfD, which are the state-of-the-art LfD
+algorithms for discrete and continuous actions respectively.
+Implementation Details Due to space limit, we defer implementation details to the supplementary material.
+Results We ﬁrst test the performance of POfD in sparse
+control environments with discrete actions, including CartPole and MountainCar. The learning curves are plotted in
+Fig. 2, while the averaged cumulated rewards are given in
+Table 1. From the numerical results in Table 1, we can see
+that our method achieves performance comparable with the
+policy learned under dense environments, e.g., -98.38 vs
+
+Figure 2. Learning curves of our POfD versus strong baselines
+under sparse environments with discrete action space.
+
+-98.75 for CartPole, even though POfD only has access to
+sparse rewards and a single demonstration trajectory that
+is much worse than the expert. The learning curves in
+Fig. 2 demonstrate that both TRPO and DQfD fail to explore sufﬁciently to obtain informative feedback from the
+sparse environments. The demonstration data insufﬁciency
+severely limits the learning ability of DQfD which usually
+requires as many demonstration data as self-generated ones.
+Furthermore, GAIL succeeds in CartPole but converges to
+the imperfect demonstration data in MontainCar. Our POfD
+outperforms GAIL by a signiﬁcant margin in terms of both
+convergence rate and ﬁnal performance.
+Then POfD as well as the baselines are evaluated in sparse
+locomotion control tasks, including Hopper, HalfCheetah,
+Walker2d and InvertedDoublePendulum. Similarly, the numerical results are listed in Table 1 while the learning course
+is visualized in Fig. 3. Throughout the four experiments,
+POfD achieves expert-level performance in terms of cumulated rewards. Moreover, POfD surpasses TRPO in dense
+environments substantially in multiple environments. For
+example, observing results of Walker2D, POfD obtains an
+averaged return of 7687.47, while the expert is only 6717.08.
+The margin becomes more remarkable considering the return of demonstration data we use is only 1701.13, strongly
+proving that our intrinsic reward reshaping mechanism beneﬁts the exploration a lot. Observing the learning process
+of different methods, it is clear that TRPO consistently fails
+to explore the environments when the feedback is sparse,
+except for HalfCheetah. This may be because there is no
+terminal state in HalfCheetah, thus a random agent can
+perform reasonably well as long as the time horizon is sufﬁciently long. This can be observed in the ﬁgure where
+the improvement of TRPO emerges very late (after 400
+iterations). DDPGfD and GAIL share some common drawback: they both converge to the imperfect demonstration
+data as training proceeds. For HalfCheetah, GAIL fails to
+converge and DDPGfD converges to an even worse point.
+This is well expected because the policy and value networks
+are prone to over-ﬁtting when the data are few. Thus the
+
+Policy Optimization with Demonstrations
+Table 1. Environment speciﬁcations and results. All results are measured in the corresponding dense environment expect for Reacher
+which is evaluated in a naturally sparse environment.
+Empirical Return
+Expert
+
+S
+
+A
+
+Sparsiﬁcation
+
+MountainCar-v1
+CartPole-v0
+
+2
+
+R
+R4
+
+{0, 1, 2}
+{0, 1}
+
+TYPE1
+TYPE2
+
+−165.0
+49
+
+−98.75
+500
+
+−98.35 ± 9.35
+500 ± 0
+
+Hopper-v1
+HalfCheetah-v1
+Walker2d-v1
+DoublePendulum-v1
+
+R11
+R17
+R17
+R11
+
+R3
+R6
+R6
+R
+
+TYPE3 (1 unit)
+TYPE3 (15 unit)
+TYPE3 (1 unit)
+TYPE4
+
+793.86
+1827.77
+1701.13
+520.23
+
+3571.38
+4463.46
+6717.08
+8399.86
+
+3652.23 ± 263.62
+4771.15 ± 646.96
+7687.47 ± 394.97
+9116.08 ± 1290.74
+
+Humanoid-v1
+Reacher-v1
+
+R376
+R11
+
+R17
+R2
+
+TYPE3 (1 unit)
+TYPE1
+
+2800.05
+0.73
+
+9575.40
+0.75
+
+9823.43 ± 2015.48
+0.86 ± 0.34
+
+Environment
+
+Demonstration
+
+Ours
+
+Figure 3. Learning curves of our POfD versus baselines under sparse environments with continuous action space.
+
+training process of GAIL and DDPGfD is severely biased
+by the imperfect data. Eventually, our proposed method
+can effectively explore the environment with the help of
+demonstration-based intrinsic reward reshaping, and succeeds consistently across different tasks both in terms of
+learning stability and convergence speed.
+Humanoid is a locomotion task about teaching a human-like
+robot to walk naturally. This task has a state space of dimension as high as 376, rendering it much harder than the above
+investigated tasks. The experimental results in Table 1 indicate that POfD still achieves expert-level performance. The
+learning curves in Fig. 3 demonstrate that all the other three
+baseline methods, i.e., TRPO, GAIL and DDPGfD, fail to
+learn good policies from such a reward-sparse environment.
+In particular, the LfD baselines, i.e., GAIL and DDPGfD,
+cannot even reach the demonstration performance (the yellow horizontal line in the ﬁgure). In stark contrast, POfD
+converges fast and stably to the expert level performance.
+Such results strongly support that POfD can generalize well
+to challenging tasks with high-dimensional state spaces.
+The last environment we use for evaluation is Reacher. It
+is an environment where rewards are naturally sparse and
+is difﬁcult to solve. The target of this task is to control the
+robot arm to touch the target red ball. The environment
+reward is sparse: every time the arm reaches the ball and
+holds for a while (e.g., 5 time steps), it receives a reward of
++1; otherwise it gets zero reward. For every instantiation of
+the environment, the location of the target ball is randomly
+
+generated. This increases the task difﬁculty signiﬁcantly.
+In Gym implementation, it is signiﬁcantly simpliﬁed by
+crafting a distance-to-target based reward function and we
+only use it to generate demonstrations. In the experiments,
+we randomly select 15 trajectories as demonstration data.
+The numerical results in Table 1 show that the performance
+of our POfD (0.86) is much better than the expert (0.75).
+The learning curves in Fig 3 also demonstrate that all the
+other baseline methods fail on this task.
+
+7. Conclusion
+We considered the problems of reinforcement learning
+within sparse-reward environments, and proposed a general learning from demonstration method, i.e., POfD to gain
+stronger exploration ability. POfD is compatible with any
+policy gradient methods. We explicitly analyzed how POfD
+improves the policy by leveraging the beneﬁts of demonstration for exploration. A simple dynamic reward reshaping
+based optimization algorithm for POfD was provided that
+connects to the generative adversarial training and can be
+applied efﬁciently. The POfD was shown to be effective in
+encouraging the agent to explore around the nearby region
+of the expert policy and learning better policies, through extensive experimental results. To our best knowledge, POfD
+is the ﬁrst one that can acquire knowledge from few and
+imperfect demonstration data to aid exploration in environments with sparse feedback.
+
+Policy Optimization with Demonstrations
+
+Acknowledgements
+This work was partially supported by NUS startup R-263000-C08-133, MOE Tier-I R-263-000-C21-112, NUS IDS
+R-263-000-C67-646, ECRA R-263-000-C87-133 and MOE
+Tier-II R-263-000-D17-112.
+
+References
+Aravind S. Lakshminarayanan, Sherjil Ozair, Y. B. Reinforcement learning with few expert demonstrations. In
+NIPS workshop, 2016.
+Barto, A. G., Sutton, R. S., and Anderson, C. W. Neuronlike
+adaptive elements that can solve difﬁcult learning control problems. IEEE transactions on systems, man, and
+cybernetics, (5):834–846, 1983.
+Brockman, G., Cheung, V., Pettersson, L., Schneider, J.,
+Schulman, J., Tang, J., and Zaremba, W. Openai gym,
+2016.
+
+Langley, P. Crafting papers on machine learning. In Langley,
+P. (ed.), Proceedings of the 17th International Conference
+on Machine Learning (ICML 2000), pp. 1207–1216, Stanford, CA, 2000. Morgan Kaufmann.
+Li, Y., Song, J., and Ermon, S. Infogail: Interpretable imitation learning from visual demonstrations. In Advances in
+Neural Information Processing Systems, pp. 3815–3825,
+2017.
+Lillicrap, T. P., Hunt, J. J., Pritzel, A., Heess, N., Erez,
+T., Tassa, Y., Silver, D., and Wierstra, D. Continuous
+control with deep reinforcement learning. arXiv preprint
+arXiv:1509.02971, 2015.
+Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness,
+J., Bellemare, M. G., Graves, A., Riedmiller, M., Fidjeland, A. K., Ostrovski, G., et al. Human-level control
+through deep reinforcement learning. Nature, 518(7540):
+529–533, 2015.
+
+Brys, T., Harutyunyan, A., Suay, H. B., Chernova, S., Taylor, M. E., and Nowé, A. Reinforcement learning from
+demonstration through shaping. In IJCAI, pp. 3352–3358,
+2015.
+
+Mnih, V., Badia, A. P., Mirza, M., Graves, A., Lillicrap,
+T., Harley, T., Silver, D., and Kavukcuoglu, K. Asynchronous methods for deep reinforcement learning. In
+International Conference on Machine Learning, pp. 1928–
+1937, 2016.
+
+Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B.,
+Warde-Farley, D., Ozair, S., Courville, A., and Bengio,
+Y. Generative adversarial nets. In Advances in neural
+information processing systems, pp. 2672–2680, 2014.
+
+Moore, A. W. Efﬁcient memory-based learning for robot
+control. 1990.
+
+Hester, T., Vecerik, M., Pietquin, O., Lanctot, M., Schaul,
+T., Piot, B., Sendonaris, A., Dulac-Arnold, G., Osband,
+I., Agapiou, J., et al. Learning from demonstrations
+for real world reinforcement learning. arXiv preprint
+arXiv:1704.03732, 2017.
+Ho, J. and Ermon, S. Generative adversarial imitation learning. In Advances in Neural Information Processing Systems, pp. 4565–4573, 2016.
+Houthooft, R., Chen, X., Duan, Y., Schulman, J., De Turck,
+F., and Abbeel, P. Vime: Variational information maximizing exploration. In Advances in Neural Information
+Processing Systems, pp. 1109–1117, 2016.
+Kakade, S. and Langford, J. Approximately optimal approximate reinforcement learning. In ICML, volume 2, pp.
+267–274, 2002.
+Kakade, S. M. A natural policy gradient. In Advances in
+neural information processing systems, pp. 1531–1538,
+2002.
+Kim, B., Farahmand, A.-m., Pineau, J., and Precup, D.
+Learning from limited demonstrations. In Advances in
+Neural Information Processing Systems, pp. 2859–2867,
+2013.
+
+Nair, A., McGrew, B., Andrychowicz, M., Zaremba, W.,
+and Abbeel, P. Overcoming exploration in reinforcement learning with demonstrations. arXiv preprint
+arXiv:1709.10089, 2017.
+Ng, A. Y., Russell, S. J., et al. Algorithms for inverse
+reinforcement learning. In Icml, pp. 663–670, 2000.
+Pathak, D., Agrawal, P., Efros, A. A., and Darrell, T.
+Curiosity-driven exploration by self-supervised prediction. In International Conference on Machine Learning
+(ICML), volume 2017, 2017.
+Piot, B., Geist, M., and Pietquin, O. Boosted bellman residual minimization handling expert demonstrations. In Joint
+European Conference on Machine Learning and Knowledge Discovery in Databases, pp. 549–564. Springer,
+2014.
+Plappert, M., Houthooft, R., Dhariwal, P., Sidor, S., Chen,
+R. Y., Chen, X., Asfour, T., Abbeel, P., and Andrychowicz, M. Parameter space noise for exploration. arXiv
+preprint arXiv:1706.01905, 2017.
+Schaal, S. Learning from demonstration. In Advances in
+neural information processing systems, pp. 1040–1046,
+1997.
+
+Policy Optimization with Demonstrations
+
+Schaul, T., Quan, J., Antonoglou, I., and Silver, D. Prioritized experience replay. arXiv preprint arXiv:1511.05952,
+2015.
+Schulman, J., Levine, S., Abbeel, P., Jordan, M., and Moritz,
+P. Trust region policy optimization. In Proceedings of
+the 32nd International Conference on Machine Learning
+(ICML-15), pp. 1889–1897, 2015.
+Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and
+Klimov, O. Proximal policy optimization algorithms.
+arXiv preprint arXiv:1707.06347, 2017.
+Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L.,
+Van Den Driessche, G., Schrittwieser, J., Antonoglou, I.,
+Panneershelvam, V., Lanctot, M., et al. Mastering the
+game of go with deep neural networks and tree search.
+nature, 529(7587):484–489, 2016.
+Silver, D., Schrittwieser, J., Simonyan, K., Antonoglou,
+I., Huang, A., Guez, A., Hubert, T., Baker, L., Lai, M.,
+Bolton, A., et al. Mastering the game of go without
+human knowledge. Nature, 550(7676):354, 2017.
+Subramanian, K., Isbell Jr, C. L., and Thomaz, A. L. Exploration from demonstration for interactive reinforcement
+learning. In Proceedings of the 2016 International Conference on Autonomous Agents & Multiagent Systems,
+pp. 447–456. International Foundation for Autonomous
+Agents and Multiagent Systems, 2016.
+Sutton, R. S. and Barto, A. G. Reinforcement learning: An
+introduction, volume 1. MIT press Cambridge, 1998.
+Sutton, R. S., McAllester, D. A., Singh, S. P., and Mansour,
+Y. Policy gradient methods for reinforcement learning
+with function approximation. In Advances in neural information processing systems, pp. 1057–1063, 2000.
+Syed, U. and Schapire, R. E. A game-theoretic approach to
+apprenticeship learning. In Advances in neural information processing systems, pp. 1449–1456, 2008.
+Syed, U., Bowling, M., and Schapire, R. E. Apprenticeship
+learning using linear programming. In Proceedings of the
+25th international conference on Machine learning, pp.
+1032–1039. ACM, 2008.
+Todorov, E., Erez, T., and Tassa, Y. Mujoco: A physics
+engine for model-based control. In Intelligent Robots
+and Systems (IROS), 2012 IEEE/RSJ International Conference on, pp. 5026–5033. IEEE, 2012.
+Van Hasselt, H., Guez, A., and Silver, D. Deep reinforcement learning with double q-learning. In AAAI, volume 16, pp. 2094–2100, 2016.
+
+Večerı́k, M., Hester, T., Scholz, J., Wang, F., Pietquin, O.,
+Piot, B., Heess, N., Rothörl, T., Lampe, T., and Riedmiller,
+M. Leveraging demonstrations for deep reinforcement
+learning on robotics problems with sparse rewards. arXiv
+preprint arXiv:1707.08817, 2017.
+Williams, R. J. Simple statistical gradient-following algorithms for connectionist reinforcement learning. Machine
+learning, 8(3-4):229–256, 1992.
+Zhu, Y., Wang, Z., Merel, J., Rusu, A., Erez, T., Cabi, S.,
+Tunyasuvunakool, S., Kramár, J., Hadsell, R., de Freitas,
+N., et al. Reinforcement and imitation learning for diverse visuomotor skills. arXiv preprint arXiv:1802.09564,
+2018.
+Ziebart, B. D. Modeling purposeful adaptive behavior with
+the principle of maximum causal entropy. Carnegie Mellon University, 2010.
+Ziebart, B. D., Maas, A. L., Bagnell, J. A., and Dey, A. K.
+Maximum entropy inverse reinforcement learning. In
+AAAI, volume 8, pp. 1433–1438. Chicago, IL, USA, 2008.
+
+

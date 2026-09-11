@@ -1,0 +1,33 @@
+# JSRL sweep  N_EP=24/cell, frozen seeds (42/1337/7), dt=30.080000000000002 s.
+# guide = MAX_NOMINAL_GAIN steps 0..h-1; learner = trained e6b063ef greedy.
+# fresh env per cell; no update(), no gradient step.
+
+h= 0 bits=2.848622e+14 J=3.059385e+06 EE= 93110907.973748 sem=  902313.3 ho=0.2799 phi1=0.0556 phi2=0.2243 served=0.9988 beams=67.904 scalar=+0.9033
+h= 1 bits=3.111162e+14 J=3.271451e+06 EE= 95100368.032995 sem= 1057754.7 ho=0.2700 phi1=0.0418 phi2=0.2281 served=0.9963 beams=72.179 scalar=+1.0270
+h= 2 bits=3.080530e+14 J=3.126405e+06 EE= 98532664.675117 sem= 1247163.5 ho=0.3520 phi1=0.0498 phi2=0.3021 served=0.9967 beams=70.050 scalar=+0.8435
+h= 3 bits=3.078087e+14 J=3.089456e+06 EE= 99632009.678822 sem= 1027432.2 ho=0.4267 phi1=0.0583 phi2=0.3683 served=0.9977 beams=69.158 scalar=+0.6357
+h= 4 bits=3.083716e+14 J=3.057799e+06 EE=100847574.628815 sem= 1303673.0 ho=0.4883 phi1=0.0694 phi2=0.4189 served=0.9970 beams=68.242 scalar=+0.4567
+h= 5 bits=3.142595e+14 J=3.067883e+06 EE=102435299.984161 sem= 1379389.7 ho=0.4607 phi1=0.0445 phi2=0.4161 served=0.9978 beams=67.975 scalar=+0.5380
+h= 6 bits=3.116768e+14 J=3.024043e+06 EE=103066272.672001 sem= 1342989.1 ho=0.5366 phi1=0.0550 phi2=0.4816 served=0.9981 beams=66.688 scalar=+0.3229
+h= 7 bits=3.067107e+14 J=2.957484e+06 EE=103706613.225456 sem= 1053361.1 ho=0.6167 phi1=0.0723 phi2=0.5444 served=0.9992 beams=64.796 scalar=+0.0860
+h= 8 bits=3.170671e+14 J=2.942086e+06 EE=107769494.407500 sem= 1036016.9 ho=0.6591 phi1=0.0733 phi2=0.5857 served=0.9975 beams=64.183 scalar=+0.0147
+h= 9 bits=3.273152e+14 J=2.958438e+06 EE=110637828.393409 sem= 1112387.3 ho=0.6465 phi1=0.0565 phi2=0.5900 served=0.9980 beams=64.417 scalar=+0.0958
+h=10 bits=3.266731e+14 J=2.929683e+06 EE=111504571.388934 sem= 1095687.3 ho=0.7120 phi1=0.0573 phi2=0.6546 served=0.9981 beams=63.717 scalar=-0.0885
+
+# coverage: z-scored on h=0 pool (mu/sd over 24000 rows, 5 constant dims set to sd=1)
+#   h       d(h)      d0(h)     R(h)    out95  n_query
+    0     2.7233     2.7233   1.0000   0.0500     2400
+    1     9.1107     5.7010   1.5981   0.6567     2400
+    2    11.9163     5.4103   2.2025   0.7417     2400
+    3     9.6661     4.7390   2.0397   0.7358     2400
+    4     5.9750     4.2742   1.3979   0.3983     2400
+    5     8.6609     5.9527   1.4549   0.2846     2400
+    6    10.5702     5.4637   1.9346   0.3013     2400
+    7     9.5327     4.7063   2.0255   0.3787     2400
+    8     5.9929     4.3260   1.3853   0.4179     2400
+    9     8.5845     5.8597   1.4650   0.3604     2400
+   10        n/a        n/a      n/a      n/a      n/a   (guide-alone: the learner is never handed a state)
+# states dumped to /tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/e9fba164-4724-465f-8afa-7891b4efee90/scratchpad/jsrl_states.npz
+
+# placebo targets (fresh-env, previous round): TRAINED 93110907.97 ho 0.2799 | MAX_NOMINAL_GAIN 111504571.39 ho 0.7120
+# total wall 1105.7 s

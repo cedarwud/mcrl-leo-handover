@@ -1,0 +1,359 @@
+=================== V025-CONTROLLER-FEASIBILITY-2026-09-10.md
+     1	# Feasibility — what would have to be true, checked against what is achieved
+     2	
+     3	**2026-09-10 11:20 UTC. Arithmetic only, on receipts already on disk. No new compute.**
+     4	This calculation had never been done. Roughly 100 controller records and 80 KB of adversarial
+     5	audit contain no error budget, no required-accuracy figure, and no power statement for the
+     6	requirement as it now stands. Every question asked so far has been "what happened when I
+     7	measured X", never "what must be true for this to work at all".
+     8	
+     9	---
+    10	
+    11	## 1. Required accuracy of the heads
+    12	
+    13	The composed score at `|A| = 100` is `sum_i d_i + Psi = +480.113 - 440.079 = +40.034`
+    14	*(`SELECTOR-DIAGNOSIS-2026-09-09.md` §3, normalised score/kappa units)*.
+    15	
+    16	- Worst-case amplification `(|S| + |R|) / |V| = 22.985x`. A **1%** component error becomes up
+    17	  to **23%** error on the quantity actually ranked; **5%** becomes **115%**.
+    18	- The margin that must survive: the best single-user move is `8.02` against a summed term of
+    19	  `200.4` over 82 users *(`CORPUS-IS-SURROGATE` §2)*. So a per-user error above roughly
+    20	  **1.67%** of the summed term can reorder the top pair.
+    21	
+    22	**Required per-user relative accuracy is therefore on the order of 1%, and better where the
+    23	top two catalogue rows are close.**
+    24	
+    25	## 2. Achieved accuracy
+    26	
+    27	`C1REAL`, declared target, exact path, held out:
+    28	
+    29	| | sealed `(8,)` head | flexible model, same inputs | floor |
+    30	|---|---:|---:|---:|
+    31	| LOAO level `R^2` | `-0.2724` | `0.0933` | — |
+    32	| LOWO level `R^2` | — | `-0.0714` | — |
+    33	| top-1 | `0.1711` | `0.1854` | `0.1716` |
+    34	
+    35	**A negative held-out `R^2` means the predictor is worse than the target's own mean.** Its
+    36	relative error exceeds **100%** of the target's spread.
+    37	
+    38	**Required ~1%. Achieved >100%. That is roughly two orders of magnitude, and it is a property
+    39	of the target and the inputs, not of the optimiser.** A schema repair is running; it changes
+    40	effective dimension from 12 to 14. It would have to close two orders of magnitude.
+    41	
+    42	## 3. Detectability of the required contrasts
+    43	
+    44	| source | fact |
+    45	|---|---|
+    46	| contract v1 §, 2026-09-08 | a true **+1%** is **not detectable** with ~160 dates **under any seed count** if the date SD is ~5% |
+    47	| contract v1.1 amendment, 2026-09-09 | measured **three**-contrast conjunction power `0.675` at `delta* = +2%`, 16 seeds, 160 dates |
+    48	| requirement, 2026-09-10 08:55 | **six** contrasts, not three |
+    49	| corrected coordination band | `+0.899%` (8 anchors) / `+1.29%` (20 anchors) |
+    50	| archive erratum, 2026-09-09 | **166** TRAIN dates available against ~160 needed — **1.04x** headroom |
+    51	| `FINDING-ONE-DATE` | the learner has **D = 1** date; "at fixed D, adding seeds drives the contrast variance to `Sigma_date/D` and no further, **so more seeds cannot help**" |
+    52	| `learner.py:40` | the code runs **12** seeds; v1.1 requires **16**. This silently under-powers every conjunction test |
+    53	
+    54	**Arithmetic.** If three contrasts conjoin at power `0.675`, a per-contrast power of
+    55	`0.675^(1/3) = 0.877` gives a six-contrast conjunction of `0.456` **under independence**. The
+    56	six contrasts share arms and are positively correlated, so the true figure is **higher than
+    57	`0.456` and lower than `0.675`** — the exact value is not derivable from the receipts, and I
+    58	do not claim it.
+    59	
+    60	**That approximation is not load-bearing.** The direct statement is: the project's own contract
+    61	says `+1%` is undetectable with this archive **under any seed count**, and the band being
+    62	chased is `+0.899%` to `+1.29%`.
+    63	
+    64	## 4. The conclusion this forces
+    65	
+    66	**Two independent walls, either of which is sufficient:**
+    67	
+    68	1. **Accuracy.** The heads must be ~1% accurate on a per-user quantity they currently predict
+    69	   worse than its own mean.
+    70	2. **Detectability.** Even with perfect heads, an effect in the `+0.9%` to `+1.3%` band cannot
+    71	   be established as significant with 166 dates, by the project's own power analysis — and the
+    72	   learner currently has one date.
+    73	
+    74	**Neither wall is moved by fixing the corpus, repairing the schema, changing the decomposition,
+    75	or training longer.** Wall 1 is about the information in the inputs versus the margin in the
+    76	ranking. Wall 2 is about the archive versus the effect size.
+    77	
+    78	## 5. What this does not say
+    79	
+    80	- It does **not** say the mechanism is absent. The corrected coordination band is positive and
+    81	  measured: `+0.899%` and `+1.29%`.
+    82	- It does **not** say the heads are useless. Ordering `0.5889`, held out, is above chance.
+    83	- It does **not** settle whether a different decomposition has a larger band — but the band is
+    84	  a property of the physics, and the price-of-anarchy reading already put it near one per cent.
+    85	- It does **not** authorise abandoning anything. It states what would have to be true.
+    86	
+    87	## 6. The choices this leaves, stated without preference
+    88	
+    89	1. **Enlarge the effect.** Find a regime or an action space where the coordination band is
+    90	   materially larger than one per cent. The regime map has been swept and was non-monotone and
+    91	   below one per cent everywhere tested, including at 200 users and 80 Mbit/s.
+    92	2. **Enlarge the archive.** Generate more independent dates. `FINDING-ONE-DATE` names world
+    93	   generation as the longest-lead item, and it is blocked on an owner decision open since
+    94	   2026-09-09 that has not been re-raised. **This is the only wall-2 remedy that exists.**
+    95	3. **Change the claim** to one the evidence can carry: the exact ladder with intervals, the
+    96	   learned surrogate as *acceleration* of search against a stated deadline, the set-level
+    97	   correction reported at its measured size, and the negative results as negative results.
+    98	4. **Change the estimand** so the ranked quantity is not a near-cancelling difference. Two
+    99	   candidate decompositions exist; whether either enlarges the band is unmeasured.
+   100	
+   101	**Options 1 and 2 are experiments. Option 3 is a decision. Option 4 is a design change.** None
+   102	of them is training, and training does not become informative until at least one is settled.
+   103	
+   104	---
+   105	
+   106	# ERRATUM to this record — 2026-09-10 11:35 UTC, before it was sent to any reviewer
+   107	
+   108	**Section 1's amplification argument is withdrawn.** It used
+   109	`+480.113 / -440.079 / +40.034` and the `22.985x` figure from
+   110	`SELECTOR-DIAGNOSIS-2026-09-09.md`. `PATH-ARTEFACT-CHECKS-2026-09-10.md`, produced three hours
+   111	before this record, found that exact cancellation to be **inside the sampled mixed-path
+   112	artefact envelope**: over eight sampled anchors `|99*epsilon|` spans `127.2` to `2107.1` kappa,
+   113	`|Psi| = 440.079` sits inside it, and step 16 matches both magnitude (`-440.93`) and sign.
+   114	Its verdict: the `22.99x` conditioning figure is **not established**.
+   115	
+   116	**I recorded that, and then used the same numbers as the basis of a wall three hours later.**
+   117	This is the same failure as the day's other retractions: a finding that was present, correct
+   118	and filed, and not applied.
+   119	
+   120	**What survives, on path-clean evidence only.**
+   121	
+   122	`8.02` (best single-user move), `200.4` (summed surpluses over 82 users) and the `20.5x` ratio
+   123	come from a different probe — `TARGET-DESIGN-2026-09-10.md` — which **explicitly corrected the
+   124	path mixing**: *"I corrected the probe to force both through `evaluate_many`. All numbers below
+   125	are from the corrected run."* It verified its gauge exactly: the target at the base action is
+   126	`0.0` in all 2,400 groups. Those numbers are clean.
+   127	
+   128	**But the strongest form of wall 1 needs no derived arithmetic at all:**
+   129	
+   130	> `C1REAL`: the sealed head's held-out **top-1 accuracy is `0.1711`**; the **constant
+   131	> predictor's floor is `0.1716`**. The flexible high-capacity model on the same inputs reaches
+   132	> `0.1854`.
+   133	
+   134	**A head whose argmax agrees with the truth no more often than a constant predictor cannot
+   135	systematically select better configurations.** That is a direct measurement, path-clean, with
+   136	no conditioning argument, no amplification factor and no cancellation.
+   137	
+   138	**Wall 2 is untouched.** It rests on the project's own power analysis and the archive count,
+   139	neither of which involves the evaluation path.
+   140	
+   141	**Revised statement of the two walls:**
+   142	
+   143	1. **Selection accuracy.** The declared C1 head's argmax is at the constant-predictor floor,
+   144	   and a high-capacity model on the same inputs barely moves it. *(A repaired schema, effective
+   145	   dimension 12 -> 14, is being re-tested.)*
+   146	2. **Detectability.** The contract states `+1%` is undetectable with ~160 dates under any seed
+   147	   count at date SD ~5%; the band being chased is `+0.899%` to `+1.29%`; the archive holds 166
+   148	   dates; the learner has one.
+=================== V025-CONTROLLER-PREDECLARATION-ACCELERATION-ABLATION-2026-09-10.md
+     1	# Pre-declaration — the three-route ablation on the acceleration axis
+     2	
+     3	**2026-09-10 11:40 UTC. Written before the measurement exists.** No sealed constant,
+     4	threshold, sign, seed, horizon, price, guard or acceptance rule is changed. This fixes what
+     5	will be measured and how it will be read, while no number exists to tune against.
+     6	
+     7	---
+     8	
+     9	## 1. Why the axis changes, and why that is not outcome selection
+    10	
+    11	The claim under the current framing is that each route raises pooled EE **above the certified
+    12	unilateral fixed point**. The size of that prize is measured, on the declared full-buffer
+    13	numerator, and it is the ceiling for that claim regardless of how it is partitioned:
+    14	
+    15	| measurement | value | verification |
+    16	|---|---|---|
+    17	| 8 anchors, STRICT, correctly paired, 1.66° | `+0.899421%` | **controller-verified**, `final-strict-one-sided-1.66.json`, `summary.pairings.correct.pooled_relative_ee_gain` = `0.008994207878970206` |
+    18	| 30 TRAIN dates, `MARGIN_Q`, date-paired | mean `+0.717%`, **date SD `0.751%`**, 95% t `[+0.436%, +0.997%]`, **4/30 non-positive** | **controller-verified**, `CEILING30-MARGIN-2026-09-10.md:34` |
+    19	| load/rate regime sweep, 11 points | never above `1%` | reported, not re-verified |
+    20	
+    21	**The owner has stated that a ~1% result is not meaningful.** Partitioning ≤1% three ways
+    22	cannot produce three substantial contributions. That is arithmetic, and it was established
+    23	**before** this pre-declaration and independently of any route's sign.
+    24	
+    25	**The rationale for changing axis is therefore outcome-independent**: the prize on the current
+    26	axis is too small for the claim, whichever way it comes out. It is not "the routes failed here
+    27	so try elsewhere"; the ceiling was measured, and no partition of it can meet the stated bar.
+    28	
+    29	## 2. The axis, and that the contract already names it
+    30	
+    31	**Contract v1 F2, controller-verified:** *"the coordinator's compute budget is **10 s wall** on
+    32	the declared worker count (the rest of the 30.08 s interval reserved for
+    33	sensing/transport/validation/commit); BASE (a⁰) is computed, validated and repaired **before**
+    34	the coordinator starts; the runner enforces the timer (cancel), not the solver; a miss executes
+    35	the validated a⁰."*
+    36	
+    37	**Contract v1 C4, controller-verified:** *"matching S0 at lower compute is an **acceleration
+    38	claim, reported separately**."*
+    39	
+    40	**The measured prize on this axis** (`ANYTIME-UNILATERAL-2026-09-10.md`, `SEALED` pooled curve,
+    41	controller-verified):
+    42	
+    43	| budget | anytime EE (Mbit/J) | fraction of the first-improvement prize |
+    44	|---:|---:|---:|
+    45	| 10 s (the contract's coordinator budget) | **15.336646** | **42.91%** |
+    46	| 30.08 s (the whole anchor interval) | 25.846321 | 81.74% |
+    47	| convergence | **30.786890** | 100% |
+    48	
+    49	**At the contract's own budget the headroom above the anytime incumbent is `+100.7%`**, two
+    50	orders of magnitude larger than the coordination band.
+    51	
+    52	**The receipt's own warning, which this pre-declaration adopts:** the comparator is *"the
+    53	actual anytime incumbent at the same wall-clock budget, not the legal base configuration or a
+    54	convergence certificate time."* Any comparison against `BASE` on this axis is void.
+    55	
+    56	## 3. What is to be measured
+    57	
+    58	For every arm in the sealed inventory — `FULL`, `DROP_C1`, `DROP_C2`, `DROP_C3`,
+    59	`ALL_NEUTRAL_CONTROL` — at the contract's 10 s coordinator budget, on the same anchors, same
+    60	catalogue construction, same guard, same tie-break, same nominal information class (A2: no
+    61	realised fading), reporting on the **declared full-buffer numerator**:
+    62	
+    63	1. **Recovered fraction.** Pooled EE attained, as a fraction of the certified fixed point's
+    64	   pooled EE on the same anchors.
+    65	2. **The contrasts.** `FULL - ALL_NEUTRAL_CONTROL`, and `FULL - DROP_Ci` for each route, on
+    66	   recovered fraction. **`ALL_NEUTRAL_CONTROL` is the reference. `BASE` is not, and is never
+    67	   relabelled as one.**
+    68	3. **The comparator.** The anytime incumbent's recovered fraction at the same 10 s budget,
+    69	   reported beside every arm.
+    70	4. **Deadline misses.** Per contract F2 a miss executes the validated `a⁰`; misses are a
+    71	   co-reported QoS field and their B and E enter the endpoint. Report the miss rate per arm.
+    72	5. **Physics evaluations consumed**, per arm, so "acceleration" has a denominator.
+    73	
+    74	## 4. The reading, fixed now
+    75	
+    76	- **The claim is about recovered fraction under budget, not about EE above the fixed point.**
+    77	  No figure from this measurement may be restated as a coordination gain, and no coordination
+    78	  figure may be restated as an acceleration gain.
+    79	- **`FULL > ALL_NEUTRAL_CONTROL` on recovered fraction is the primary contrast.** If it fails,
+    80	  the learned system does not beat neutral-source training on this axis either, and that is
+    81	  reported as the result.
+    82	- **`FULL > DROP_Ci` for each route is the per-route contrast.** Whatever ordering emerges
+    83	  among the three is reported as measured; **no ordering among routes is required**, because
+    84	  the relative importance of the routes is an empirical fact and not a design target.
+    85	- **A route whose contrast is zero or negative is reported as zero or negative.** One or two
+    86	  small contributors is an outcome, not a failure to be repaired by adjustment.
+    87	- **If the anytime incumbent at the same budget beats every learned arm, that is the result**,
+    88	  and the acceleration claim fails with it.
+    89	- **Three routes are not assumed necessary here.** If a single learned proposer recovers as
+    90	  much as `FULL`, that is a finding about the decomposition and must be reported, not
+    91	  suppressed.
+    92	
+    93	## 5. What this pre-declaration does not do
+    94	
+    95	- It does not authorise training, a panel, contract v2, or a corpus substitution.
+    96	- It does not claim the acceleration axis will succeed. **Nothing on this axis has been
+    97	  measured for any learned arm.**
+    98	- It does not retract the coordination result. `+0.899%` / `+0.717%` stand as measured, with
+    99	  their interval and their 4/30 non-positive dates, and remain reportable as a mechanism-level
+   100	  finding.
+   101	- It does not move any pass mark. The owner's bar — substantial, not ~1% — is unchanged; what
+   102	  changes is which quantity it is applied to, and why.
+=================== V025-CONTROLLER-DECISION-DATE-ALLOCATION-CLOSED-2026-09-10.md
+     1	# Decision — date allocation, closed
+     2	
+     3	**2026-09-10 12:00 UTC. Adopted from the delegated adjudication
+     4	`DATE-ALLOCATION-DECISION-2026-09-10.md` (`/home/sat/mcrl-v025-dates-ws/`), which the owner
+     5	delegated with authority to conclude. No sealed file, margin, arm, physics, checkpoint or
+     6	acceptance rule is altered.**
+     7	
+     8	## The allocation
+     9	
+    10	**166 TRAIN dates → 116 source/development · 48 evaluation-only claim · 2 quarantined claim
+    11	reservations.**
+    12	
+    13	The archive suffices for this allocation and for conditional date-only sizing. It **does not**
+    14	establish adequate power for the learned claim, and it does **not** supply the ~160 fresh claim
+    15	dates the contract's §D1 assumed. This decision prospectively replaces that §D1 allocation and
+    16	resolves the ambiguous phrase "training on the claim panel".
+    17	
+    18	**This item was open from 2026-09-09 and was not re-raised by the controller for over a day.
+    19	It required no owner input; the delegation to adjudicate already existed.**
+    20	
+    21	## The defect it found, which I had been quoting as a guarantee
+    22	
+    23	I repeatedly cited `DATE-VARIANCE:22` — the guard "never compares evaluation dates with
+    24	training-source dates" — as though disjointness were enforced. **It is not.**
+    25	
+    26	The adjudication opened the code: the guard rejects a `CLAIM_PANEL` date accompanied by any
+    27	**other supplied role**, but the mandatory development roles are `PROBE`, `CALIBRATION`,
+    28	`REHEARSAL`, `KAT`, `SYNTHETIC_REAL` and `SMOKE`. **Training-source identities are not among
+    29	them, and manifest construction never reconciles against the source corpus.** So "never
+    30	compares" means *no compulsory comparison against actual training provenance*, and the emitted
+    31	freshness flag is **not proof of source exclusion**.
+    32	
+    33	**Owed repair, added to the register:** enforce claim-panel/training-source disjointness by
+    34	reconciling the claim manifest against the source corpus's actual date provenance, not against
+    35	a role list. Until that exists, any disjointness statement in a receipt is aspirational and
+    36	must be labelled as such.
+    37	
+    38	## What this unblocks and what it does not
+    39	
+    40	- **Unblocks:** world generation, which the 2026-09-09 record named as the longest-lead item
+    41	  and which was blocked on precisely this decision.
+    42	- **Does not unblock:** the first training run. That is blocked on the exact corpus
+    43	  (`EXACTGEN2`, in progress) and on a parameterised training runner, which **does not exist** —
+    44	  `run_c3_panel_smoke.py` is hard-coded to two source epochs (`:612`, `:721`) with `--output`
+    45	  as its only argument and no corpus input. `TRAINRUNNER` was dispatched at 11:56 UTC to build
+    46	  one, with the arm-difference fixture wired in as a start-time gate.
+    47	- **Does not settle power.** The contract's analytic power paragraph was withdrawn and replaced
+    48	  by a calibration table in the v1.1 amendment; the date SD it assumed (5%) is contradicted by
+    49	  the nearest measured analogue (`0.751%`, 30 dates, `CEILING30-MARGIN:34`); and a separate
+    50	  adjudication found the acceptance calibration's injected effect and its checked target differ
+    51	  (`g = 0.02` injected against a population `θ ≈ 0.01867`). **Power remains UNDETERMINED and no
+    52	  panel is sized on it.**
+=================== V025-CONTROLLER-QUEUE-2026-09-10.md
+     1	# Work queue — explicit, because a queued item was lost today
+     2	
+     3	**2026-09-10 12:22 UTC.** `C3REAL` was queued at 10:03 with "SCHEMA2 lands and I add it".
+     4	`SCHEMA2` landed at 10:26. It was not added. Two hours passed. **This file exists so a queued
+     5	item is a written entry rather than something I remember.**
+     6	
+     7	## Running
+     8	
+     9	| job | since | question | blocks the first training run? |
+    10	|---|---|---|---|
+    11	| `TRAINRUNNER` | 11:56 | build a parameterised runner + wire the arm-difference fixture as a start gate; report measured s/epoch/arm | **YES — this is the critical path** |
+    12	| `EXACTGEN2` | 09:54 | exact-path corpus, physics serialised separately from the rebuildable view layer | **YES** |
+    13	| `NEUTRALCHECK` | 12:18 | is neutral-source training distinguishable from knockout, in principle and in practice | **YES — if not, the run's primary contrast is void** |
+    14	| `PANELCEIL` | 12:19 | both oracle ceilings on the training panel, plus the traversal-order gap on that panel | no, but the result is uninterpretable without it |
+    15	| `C2REAL` | 10:03 | is the declared C2 target learnable, v1 schema | no |
+    16	| `C1REALV2` | 10:33 | C1 on the repaired schema — **landed**, see below | no |
+    17	| `OBJMISMATCH` | 04:22 | are the certified endpoints locally optimal under the reported objective | no |
+    18	
+    19	## Queued, with the trigger written down
+    20	
+    21	| job | trigger | why it matters |
+    22	|---|---|---|
+    23	| **`C3REAL`** | when `C2REAL` or `C1REALV2` frees a slot | **C3's target has never been tested for learnability at all.** C1 and C2 have. |
+    24	| **`C2REALV2`** | after `C2REAL` reports | C1's verdict reversed entirely on the repaired schema (`0.1711 -> 0.3381`); C2's v1 result must not be read as final for the same reason |
+    25	| **`SCORER`** | after `TRAINRUNNER` | dual-axis scoring: coordination contrast and acceleration recovered-fraction, from the same checkpoints |
+    26	| **`SIGNFORK` rerun** | when load allows, one cell at a time with peak-RSS measured first | the `RESIDTOGGLE` `+5.62%` vs `C3REACH` `-60%` sign contradiction is still open; the first attempt drove the machine to load 157 |
+    27	
+    28	## Landed today, and what each did to the core quantity
+    29	
+    30	Reporting in three separate categories, never merged.
+    31	
+    32	**(a) Obstruction removed** — does not create value:
+    33	`C3REACH` (C3 is reachable: exact Ψ flips 14/20 anchors, learned 20/20, 0/80 tie-break flips) ·
+    34	`DATEALLOC` (116/48/2; item closed, world generation unblocked) ·
+    35	`PROVFIX` (outcome B, sealed rule stands, closed) ·
+    36	wall 2 (the "+1% undetectable" statement was **withdrawn** by the v1.1 amendment, and its
+    37	assumed 5% date SD is contradicted by a measured `0.751%`) ·
+    38	wall 1 (below).
+    39	
+    40	**(b) New number measured** — not EE:
+    41	`C1REALV2`: on the repaired schema, LOAO top-1 `0.1711 -> 0.3381` against an unchanged floor of
+    42	`0.1716`; level `R^2` `-0.2724 -> +0.0379`; ordering `0.5889 -> 0.7310`, on the same 37
+    43	exact-path anchors. **This falsified a reviewer's own pre-stated test** ("if top-1 is materially
+    44	above `0.25`, this paragraph is wrong and should be withdrawn"), so wall 1 was a defective-schema
+    45	artefact, not an information ceiling.
+    46	
+    47	**(c) Core quantity changed:** **nothing, all day.**
+    48	The coordination-axis oracle ceiling remains `~1%` (`+0.899%` at 8 anchors, `+0.717%` mean over
+    49	30 dates with SD `0.751%` and 4/30 non-positive). The acceleration-axis oracle ceiling remains
+    50	`+100.7%` at the contract's 10 s budget, **with no learned measurement of any kind**.
+    51	
+    52	**Seven items were called good news today; four were retracted within hours; none of the three
+    53	that stand is an EE result.**

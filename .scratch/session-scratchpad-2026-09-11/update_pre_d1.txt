@@ -1,0 +1,45 @@
+    def update(self) -> tuple[float, float, float]:
+        """Sample a batch from replay and update all 3 DQNs.
+
+        Returns per-objective MSE losses (0.0 if replay too small).
+
+        PATCH P-04 (L-2, SDD §3.7 P-3 / §6 G-11): the fail-loud finiteness
+        battery.  Non-finite loss, gradient, or online-network parameter
+        aborts training instead of continuing silently.
+        """
+        cfg = self.config
+        if len(self.replay) < cfg.batch_size:
+            return (0.0, 0.0, 0.0)
+
+        (
+            states, actions, rewards, next_states,
+            _masks, next_masks, dones,
+        ) = self.replay.sample(cfg.batch_size, self._train_rng)
+
+        st = torch.tensor(states, dtype=torch.float32, device=self.device)
+        act = torch.tensor(actions, dtype=torch.long, device=self.device).unsqueeze(1)
+        ns = torch.tensor(next_states, dtype=torch.float32, device=self.device)
+        nm = torch.tensor(next_masks, dtype=torch.bool, device=self.device)
+        dn = torch.tensor(dones, dtype=torch.float32, device=self.device)
+
+        losses: list[float] = []
+        for obj_idx in range(3):
+            r = torch.tensor(
+                rewards[:, obj_idx], dtype=torch.float32, device=self.device
+            )
+
+            # Current Q(s, a)
+            q_current = self.q_nets[obj_idx](st).gather(1, act).squeeze(1)
+
+            # Target: r + gamma * max_a' Q_target(s', a') where a' valid
+            with torch.no_grad():
+                q_next_all = self.target_nets[obj_idx](ns)
+                # Mask invalid next-actions to large negative value
+                q_next_all[~nm] = -1e9
+                q_next_max = q_next_all.max(dim=1).values
+                target = r + cfg.discount_factor * q_next_max * (1.0 - dn)
+
+            loss = self._loss_fn(q_current, target)
+
+            # PATCH P-04 (P-3 / G-11): fail loud, never skip-and-continue.
+            assert_finite_loss(loss, objective=obj_idx)

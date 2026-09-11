@@ -1,0 +1,255 @@
+=================== V025-CONTROLLER-CONSOLIDATED-2026-09-10-0950Z.md
+     1	# Consolidated position — 2026-09-10 09:50 UTC
+     2	
+     3	**Every number below carries four fields: reference / information class / estimand /
+     4	numerator. A number that cannot carry all four is not reported.** This rule exists because
+     5	all six of today's retractions were numbers reported without them.
+     6	
+     7	---
+     8	
+     9	## 1. What stands
+    10	
+    11	**C1's declared target is weakly learnable for ordering, and not for level or choice; the
+    12	ceiling looks informational.** `C1REAL`, exact declared target `c1_difference_surplus` built
+    13	on the dormant exact branch (flag set on the imported module object, file unedited).
+    14	
+    15	| statistic | sealed `(8,)` head | flexible nonlinear, same 16 slots | floor |
+    16	|---|---:|---:|---:|
+    17	| LOAO ordering | `0.5889` `[0.5658, 0.6115]` | `0.6197` | `0.5` |
+    18	| LOAO level `R^2` | **`-0.2724`** `[-0.5750, -0.0435]` | `0.0933` | — |
+    19	| top-1 accuracy | `0.1711` | `0.1854` | **`0.1716`** |
+    20	| LOWO level `R^2` | — | **`-0.0714`** | — |
+    21	
+    22	*ref: held-out anchors and worlds · info: nominal, decision-time only · estimand: declared
+    23	`c1_difference_surplus` · numerator: n/a, this is prediction quality not EE.*
+    24	
+    25	A high-capacity model on the same inputs also fails, and widths 32 and 128 do not improve
+    26	reliably. **The binding constraint is the information in the 16 slots, not the architecture,
+    27	the epoch count or the seed.** Consistent with `PREFLIGHT-DATA-CENSUS`: two slots are exactly
+    28	constant, slots 4 and 12 are exact indicators of 3 and 11, the design matrix has rank 14, the
+    29	effective input dimension is 12, and **there is no elevation feature at all**.
+    30	
+    31	**The only measured contrast between the learned routes and neutral-source training is
+    32	negative.** `FULL - ALL_NEUTRAL_CONTROL = -0.01745324091886997`, identically under both
+    33	provisioning rules. *ref: `ALL_NEUTRAL_CONTROL` · info: as-run panel smoke · estimand: relative
+    34	pooled-EE marginal · numerator: pooled EE.* Confirmed by digest-checked read of
+    35	`.scratch/c3-panel-smoke-r8/smoke.json` by two independent reviewers and one receipt-only check.
+    36	
+    37	**The corrected coordination span.** `+1.29%` (20 anchors) and `+0.899%` (8 anchors).
+    38	*ref: correctly-paired unilateral fixed point · info: nominal, strict clearance · estimand:
+    39	exact set residual · numerator: pooled EE.* The 30-date interval `[+0.436%, +0.997%]` is
+    40	**old-pairing** and must never be cited as this span's interval.
+    41	
+    42	**Clean negatives.** Occupancy floor `-7.66x`; ladder floor `+6.36% -> +0.51%`.
+    43	
+    44	**Structural facts.** All 176,223 shipped source rows carry `kappa*tanh(log ratio)`
+    45	surrogates, not the declared targets. The sealed checkpoint format admits five learned arms,
+    46	2,000 epochs, cadence 100, round-trip verified, resume bit-exact. `MARGIN_Q` was never
+    47	engaged by the panel bridge. Scalar `evaluate` and dense `evaluate_many` disagree; global
+    48	authority `UNDETERMINED`.
+    49	
+    50	---
+    51	
+    52	## 2. What is retracted or not established
+    53	
+    54	| | status |
+    55	|---|---|
+    56	| `FULLSPAN` `+17.03%` / `+10.80%` | **retracted** — reference vacuous, selector clairvoyant |
+    57	| `FACTORIAL` "4 of 6 pass" | **retracted** — its C1/C2/C3 are not the contract's routes |
+    58	| `RESIDTOGGLE` `+5.62%` vs the 10%/5% screens | **retracted** — same construction |
+    59	| `9.8698%` multi-start | **retracted** — order statistic, defective rule |
+    60	| `+78.02%` causal mode selection | **retracted** — carrier base `3.89` Mbit/J, does not transfer |
+    61	| `+119%` / `+134%` control law | **retracted** — non-causal, best-known, undeflated |
+    62	| `22.99x` conditioning, `+480/-440/+40` | **not established** — inside the mixed-path artefact envelope: sampled `abs(99*epsilon)` spans `127.2` to `2107.1` kappa, and `abs(Psi) = 440.079` sits inside it, with step 16 matching both magnitude (`-440.93`) and sign |
+    63	| "an exact marginal upper-bounds a learned one" | **false** — my own `PARAMETRISATION` record shows replacing either learned half by its exact counterpart **worsens** selection regret, `3.618 -> 9.043` / `9.647`; contract v1.2 item 3 explicitly permits it |
+    64	
+    65	---
+    66	
+    67	## 3. What this means
+    68	
+    69	The three-route conjunction has **never** been measured against neutral-source training
+    70	except once, and that once is `-1.75%`. Everything else measured today used the carrier
+    71	incumbent as reference, and `repair_reference` gives every arm the same exact-surplus seed, so
+    72	that reference cannot separate arms at all.
+    73	
+    74	Separately, the first route's declared target is not usefully learnable from the declared
+    75	features. That is a **feature** finding, not an architecture finding, and no amount of
+    76	training changes it.
+    77	
+    78	**Both audits independently ranked the same item first.** They were run in parallel, in
+    79	separate workspaces, neither shown the other's output.
+    80	
+    81	---
+    82	
+    83	## 4. Where the work goes
+    84	
+    85	1. **The contrast that has never been run**: routes versus neutral-source training, at a
+    86	   reference that can separate arms. Nothing else settles the claim.
+    87	2. **The feature schema** is the binding constraint on C1. Two dead slots, rank 14, no
+    88	   elevation. This is on the owed-repair register and has been since 07:00.
+    89	3. **`D1` cannot be decided on conditioning** now that `22.99x` is not established. The
+    90	   bake-off's pre-declared metrics stand, but its premise needs re-deriving on a
+    91	   path-consistent basis.
+    92	4. **The training gate must be rewritten** without the ceiling premise.
+    93	
+    94	`OBJMISMATCH` is the only job still running, at 5h41m.
+=================== V025-CONTROLLER-PREDECLARATION-C3-SCREEN-2026-09-10.md
+     1	# Pre-declaration — the §C3 screening run, fixed before the harness finished and before any contrast existed
+     2	Recorded 2026-09-10. The protocol below was written into the dispatch prompt before the run and is recorded here so it survives independently of the server. `DIAGNOSTIC_NOT_CLAIM`, and additionally **`SCREEN_NOT_CONFIRMATORY`**: no result from this run may be reported as the answer to the owner's requirement.
+     3	
+     4	## What is being run, and why it matters
+     5	Contract §C3 — the source-training contrast — **for the first time**. For each of three learned routes, that route's training source is replaced by a neutral one while **all heads are retained, updated and deployed**. Neutral never means removing a head.
+     6	
+     7	## The arms: the complete factorial, plus one external reference
+     8	Eight learned arms, being all eight cells of {informative, neutral} over three routes:
+     9	
+    10	| arm | first | second | third |
+    11	|---|:-:|:-:|:-:|
+    12	| full | I | I | I |
+    13	| leave-one-out ×3 | N/I/I | I/N/I | I/I/N |
+    14	| single-informative ×3 | I/N/N | N/I/N | N/N/I |
+    15	| all-neutral control | N | N | N |
+    16	
+    17	Plus the external geometry-only baseline, which has no learner at all. The sealed panel contains five of these eight cells; the three single-informative arms are the addition the owner's requirement needs, and without them the leave-one-in half of that requirement cannot be evaluated at all.
+    18	
+    19	## Fixed before the run
+    20	- **Both provisioning rules.** A result under the sealed rule alone would be measured on a model crediting nothing on three quarters of its transmissions; under the corrected rule alone it would prejudge a decision the owner has not taken.
+    21	- **Sealed learning rates and architectures, untouched**: first route 1.0e-2 with one hidden layer of eight and ReLU; second 1.0e-3 with 100-50-50 and tanh; third 1.0e-3 with 64-64 and ReLU; Adam at the sealed betas and epsilon; one deterministic full-batch update per route per source epoch. **If a route fails to train, that is the finding.**
+    22	- **Two learner seeds**, reported seedwise, supporting no distributional claim.
+    23	- **Nine thousand source epochs. Checkpoints every 100. Full panel evaluation at exactly 500, 1000, 2000, 4000 and 9000. The contrast is reported at 9000**; the four earlier evaluations are trajectory and none may be reported as the outcome.
+    24	
+    25	The separation matters: training an epoch and saving a checkpoint are nearly free, while evaluating the panel across arms, anchors and forty-eight boundaries is the expensive operation. **The budget therefore controls evaluation count, not epoch count** — which is why the horizon is nine thousand rather than the two thousand I first proposed. The owner made that point and it was correct.
+    26	
+    27	- **A cost-driven early stop is legitimate** at whichever declared evaluation point was reached, with the measured figures that forced it. A stop chosen because a point looked favourable is not, and the distinction must be visible.
+    28	
+    29	## Convergence rule, declared now
+    30	- validation objective still falling at the end → **under-trained**; the remedy is more epochs, **not** a different learning rate;
+    31	- oscillating without settling → **that route's rate is too high**;
+    32	- flat early and high → rate too low, or capacity or features are the limit, needing diagnosis rather than a rate change.
+    33	
+    34	This exists so that the learning rates are not adjusted on the basis of the contrast they produce.
+    35	
+    36	## Why a declared reporting point at all
+    37	A previous pilot moved from −2.4 % at 200 epochs, through −1.6 % at 1000, to +15.6 % at 2000. Choosing among those after the fact would bias everything downstream. Looking early is fine and is the point of the trajectory; **choosing afterwards is not**.
+    38	
+    39	## The primary deliverable is not the contrast
+    40	It is the **training curves per route per arm**. Whether the routes converge, oscillate or are still climbing determines whether anything about the budget or the rates needs attention before a confirmatory run. A contrast from a route that never converged is not informative about that route.
+    41	
+    42	## Reading rule
+    43	The degeneracy screen pre-declared earlier applies unchanged: below-reference by exact sign against the head-independent certified fixed point, with every contrast reported both over all anchors and over the subset where every arm in that contrast is at or above reference.
+    44	
+    45	## Audit
+    46	Two independent pre-run audits of the harness were dispatched in parallel with the screen rather than before it, so that the audits read the code while the screen exercises it. If either reports a blocking defect the screen is stopped and re-run. The machine was idle, so the expected cost of parallelism is lower than the cost of serialising a thirty-minute audit in front of a multi-hour run.
+=================== V025-CONTROLLER-TERMINOLOGY-2026-09-10.md
+     1	# Controller note — what to call the thing the third route predicts, and why "coordination" was the wrong word
+     2	Recorded 2026-09-10 after the owner said they had understood the design as three independent components and asked why coordination kept appearing. The confusion was mine to fix: I used one word for three different things all day. `DIAGNOSTIC_NOT_CLAIM`.
+     3	
+     4	## The structural fact the owner needed
+     5	The three routes are **not three parallel, same-shaped things**:
+     6	
+     7	- the first and second are **per-user** — they score each user's candidate action on its own, and the reference proposal is a per-user argmax over their sum;
+     8	- the third predicts **Ψ = ΔF(A) − Σ dᵢ**, which is *defined* as what is left over after the per-user terms are summed.
+     9	
+    10	**If users were independent, Ψ would be identically zero and the third route would have nothing to predict.** So the interaction is not an extra component bolted on — it is that route's entire job description.
+    11	
+    12	## The three things I called "coordination"
+    13	1. the third route itself, which predicts the interaction residual;
+    14	2. joint multi-user moves against one-at-a-time moves, which is a property of the **search**, not of any component;
+    15	3. the ranking rule that combines the three heads' outputs.
+    16	
+    17	These are different objects. Using one word for all three is why the owner could not tell whether coordination was part of the design or something I had introduced.
+    18	
+    19	## Better names, by layer
+    20	**The estimand — what the third route predicts.** *Interaction term* is the general-purpose name and fits our eight arms exactly, since they are the complete 2³ factorial. In cooperative game theory the same object is the **Harsanyi dividend**, the Möbius transform coefficient, and for coalitions of size three or more our Ψ is the sum of all Möbius coefficients above first order. Information theory calls the positive case **synergy**. Economics and networking call the cross-user part an **externality** — which our own target-design review already used, as *cross-user externality*.
+    21	
+    22	**The mechanism — why interaction exists here.** **Inter-user coupling**, and it has two concrete sources in this system: equal-airtime sharing inside a beam, where one more occupant raises the required spectral efficiency for *everyone* in that beam; and co-channel interference between beams through the cross-gain matrix. The solver is literally a **coupled power fixed point**. This name is better than "coordination" because it names the cause rather than the response.
+    23	
+    24	**The comparison — joint against unilateral.** The unilateral certified endpoint is a **Nash equilibrium** of the association game: no single user wishes to deviate alone. The bounded joint optimum is the coordinated optimum over that candidate family. The gap between them is an instance of the **price of anarchy**.
+    25	
+    26	That framing also explains the magnitude we measured rather than excusing it. Gaps of a few per cent between a converged equilibrium and the coordinated optimum are **typical** for association and load-balancing games. Our corrected span of roughly one per cent is what that literature would predict, and the load-regime sweep's failure to enlarge it — even pushed to two hundred users and a rate target that reaches 3.36 against a table maximum of 3.71 — is consistent with it being a property of the problem class rather than of our operating point.
+    27	
+    28	**The architecture.** A **permutation-invariant set head**, in the Deep Sets and Set Transformer line, which is the literature the decomposition-conditioning round already cited.
+    29	
+    30	## Recommended usage
+    31	| what is meant | say |
+    32	|---|---|
+    33	| the quantity the third route predicts | **interaction term**, noting it generalises the Harsanyi dividend |
+    34	| why interaction exists | **inter-user coupling** — shared airtime within a beam, co-channel interference between beams |
+    35	| the joint-versus-unilateral gap | the efficiency gap between the unilateral (Nash) fixed point and the coordinated optimum, an instance of the price of anarchy |
+    36	| the third head's architecture | permutation-invariant set head |
+    37	
+    38	"Coordination" is not wrong, but it is ambiguous across all four rows, and I used it that way for a full day.
+=================== V025-CONTROLLER-OBSERVATION-C1-IS-SEARCH-GUIDANCE-2026-09-10.md
+     1	# Controller observation — the first route already predicts what the 451 % search needs at every step
+     2	Recorded 2026-09-10, arising from the owner asking why learning cannot approach the improvement a classical search achieves. This is **reasoning from measured facts, not a measurement**, and it is recorded as a candidate direction rather than a proposal. `DIAGNOSTIC_NOT_CLAIM`.
+     3	
+     4	## The structural observation
+     5	The first route's target is `d_i = F(a_i, a⁰_{-i}) − F(a⁰)` — the surplus from user *i* deviating alone from the reference.
+     6	
+     7	The iterated best-response search that produces the entire improvement over the geometric baseline asks, at **every step**, which single-user move helps most. That is the argmax of exactly that quantity, recomputed at the current configuration.
+     8	
+     9	**The search that delivers the improvement computes this route's label at every one of its steps.** It makes about seventy-eight committed moves over four and a half passes, scanning every legal alternative each time — roughly twelve thousand evaluations per anchor — which is precisely why it takes about sixty-five seconds.
+    10	
+    11	So the first route is not ill-suited to its target. **It is attached to the wrong consumer**: its label is native to guiding a search, and it is currently used to rank perturbations of that search's *output*.
+    12	
+    13	## Where the improvement actually comes from
+    14	| arm | pooled efficiency, corrected rule |
+    15	|---|---:|
+    16	| geometry-only baseline | 7.93 |
+    17	| **iterated unilateral, not learned** | **43.71** |
+    18	| bounded joint search, exact evaluation | 44.27 |
+    19	
+    20	The learned layer sits downstream of the second row. It **inherits** that improvement and was never asked to produce it; its entire working range is the third row's margin over the second, about one per cent. That ceiling is an architectural consequence, not a property of the problem — the problem has the larger margin, and it was assigned to a component that does not learn.
+    21	
+    22	## Whether the three-route design would survive a reattachment
+    23	The roles map naturally onto search guidance: which user to move now, whether that move persists, and when a single move is insufficient so several must go together. The mechanistic separation already measured would carry over — today's probe found the third route changing **zero** proposed assignments while the first two change twelve to twenty-six and twenty-nine to sixty-nine, so they already enter through different paths.
+    24	
+    25	Two things would **not** survive:
+    26	- the contract's identity fixing the sum of the first and third routes to the joint objective change, which exists to make coalition scores exact and is unnecessary for guidance;
+    27	- the label distribution, because the target would be evaluated at every configuration the search visits rather than at an anchor's reference. **Whether the first route predicts well on that distribution has never been measured.**
+    28	
+    29	## The nearest precedent
+    30	This is the learning-to-branch pattern that the external round already cited: learn a cheap surrogate for an expensive expert decision so the existing search runs faster, rather than replacing the search. Applied here it would let a learned component stand legitimately on the large margin, by producing it sooner rather than by improving on it.
+    31	
+    32	## Why nothing is being proposed
+    33	Three reasons to measure before moving. The screening run will separate the cases: if all three routes show positive contributions where they are, nothing needs changing; if the **first** route alone shows nothing, that is evidence *for* this observation rather than against the route; if none of the three shows anything, the problem lies elsewhere and reattachment would not help.
+    34	
+    35	The screen is cheap and those three outcomes point to three different next steps. And a reattachment is a larger change than the one I declined earlier today for removing the three-route structure — it would rewrite the targets, the heads and three contract sections. It is not something to start on an argument.
+=================== V025-CONTROLLER-STRATEGIC-ENERGY-IS-IN-THE-CONTROL-LAW-2026-09-10.md
+     1	# Controller strategic observation — the energy is in the control law, not in the association
+     2	Recorded 2026-09-10 after the owner said plainly that a one per cent improvement is not a meaningful result and asked for a direction that genuinely raises efficiency. This is **reasoning over today's measurements, not a new measurement**, and it is recorded as a direction to be decided, not started. `DIAGNOSTIC_NOT_CLAIM`.
+     3	
+     4	## The arithmetic that settles where the leverage is
+     5	The power amplifier accounts for **94.8 %** of consumed power, and its draw is set by the **power and mode control law** — not by which user is attached to which beam.
+     6	
+     7	| what moved | pooled efficiency |
+     8	|---|---|
+     9	| **correcting one defect in the control law** | **28.47 → 43.71, about +53 %** |
+    10	| everything the association layer can contend for — coordination, joint search, all three learned routes | **about +1 %** |
+    11	
+    12	**The largest efficiency movement measured today came from a control-law repair, not from any association decision.** And that repair only removed a defect; nobody has asked whether the law is well designed.
+    13	
+    14	## Why the association layer is limited to about one per cent
+    15	It is not a weakness of the algorithm. Association decisions simply do not move much energy. Two local optima of the association search differ by about eight per cent; the coordinated optimum sits about one per cent above the certified fixed point. Both are small because they rearrange *who attaches where* while the energy is spent on *how much power each beam radiates and in which mode*.
+    16	
+    17	**The project has been looking for energy where the energy is not.**
+    18	
+    19	## This was predicted this morning and I did not act on it
+    20	The strategic review's closing section asked whether the occupancy-induced blackout should exist at all, proposed comparing a service-aware power and mode policy against the existing law, and said: *if much of the coordination gain disappears, the contribution becomes a diagnosis of the control law and its remedy — possibly more useful than teaching three networks to compensate for it.*
+    21	
+    22	**That condition came true.** Correcting the provisioning took the coordination gain from 6.36 % to about 1 %. I spent the remaining hours pursuing the one per cent.
+    23	
+    24	## The option, stated with its costs
+    25	The three-route structure survives a change of decision object. Pointed at the control law rather than the association, the roles map directly: the surplus of changing a beam's power and mode setting; whether that setting persists; and the interaction between beams' settings. **The interaction is stronger there**, because power settings couple directly through interference rather than indirectly through shared airtime, so the third route would have more to predict, not less.
+    26	
+    27	Three honest qualifications:
+    28	1. **The +53 % was a defect repair, not an algorithmic gain.** It demonstrates that the control law has high leverage — a single defect there cost more than the entire association layer can win — but it is **not** fifty-three per cent sitting available.
+    29	2. **The control law's improvable margin has never been measured**, exactly as the association layer's one per cent had never been measured before today.
+    30	3. **It is a large pivot**: targets, heads and three contract sections would be rewritten.
+    31	
+    32	## What should happen before any decision
+    33	The screening run is already committed and its cost already spent. It answers whether the three-head architecture functions at all, and that knowledge transfers to any decision object.
+    34	
+    35	Beside it, one measurement would answer the owner's question directly: **how far is the current power and mode control law from the best achievable, on the same panels?** That is the control-law analogue of the multi-start ceiling now being measured for the association layer, and nobody has ever asked it.
+    36	
+    37	**Proposed, not started.** The owner was told the reason it is necessary rather than merely interesting, and the decision is theirs.

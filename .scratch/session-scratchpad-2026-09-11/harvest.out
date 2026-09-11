@@ -1,0 +1,41 @@
+== episode counts: {'B0': 500, 'UNFIXED': 500, 'FROZEN[0:500]': 500}
+
+== stability (every episode) ==
+B0             all finite=True  loss max per head=[ 0.294   0.4806 37.142 ]  loss mean ep400-500=[0.2561 0.1589 5.683 ]  loss mean ep0-100=[ 0.1069  0.0752 10.2998]
+               last100/first100 loss ratio per head=[2.4  2.11 0.55]  max single-episode loss / median per head=[1.7 3.3 5.8]
+UNFIXED        all finite=True  loss max per head=[0.4324 0.3796 0.0571]  loss mean ep400-500=[0.3864 0.0791 0.0477]  loss mean ep0-100=[0.1128 0.0811 0.0182]
+               last100/first100 loss ratio per head=[3.42 0.97 2.62]  max single-episode loss / median per head=[2.  4.5 1.8]
+FROZEN[0:500]  all finite=True  loss max per head=[0.4324 0.3796 0.0571]  loss mean ep400-500=[0.3864 0.0791 0.0477]  loss mean ep0-100=[0.1128 0.0811 0.0182]
+               last100/first100 loss ratio per head=[3.42 0.97 2.62]  max single-episode loss / median per head=[2.  4.5 1.8]
+
+== training-time windows (epsilon-greedy, NOT greedy) ==
+arm               window eps_end |     r1c      r2c      r3c | scalar_cal | ho/user-step | losses
+B0                0-100   0.9510 |  2.7041  -8.3184 -12.5138 |    -3.6462 |       0.8661 | [ 0.1069  0.0752 10.2998]
+B0              100-200   0.9015 |  2.7822  -8.1015 -11.6891 |    -3.3771 |       0.8571 | [0.1273 0.1002 6.8226]
+B0              200-300   0.8520 |  2.9300  -7.9373 -11.3470 |    -3.1856 |       0.8451 | [0.1742 0.1455 6.4236]
+B0              300-400   0.8025 |  3.0165  -7.7487 -11.0480 |    -3.0259 |       0.8325 | [0.2222 0.1661 5.8736]
+B0              400-500   0.7530 |  3.1089  -7.4907 -10.5045 |    -2.7936 |       0.8128 | [0.2561 0.1589 5.683 ]
+
+UNFIXED           0-100   0.9510 |  2.7021  -7.7015  -2.2640 |    -1.4122 |       0.8661 | [0.1128 0.0811 0.0182]
+UNFIXED         100-200   0.9015 |  2.7931  -7.5162  -2.2772 |    -1.3137 |       0.8558 | [0.158  0.0688 0.0212]
+UNFIXED         200-300   0.8520 |  2.9137  -7.3614  -2.2983 |    -1.2112 |       0.8445 | [0.2205 0.099  0.0319]
+UNFIXED         300-400   0.8025 |  3.0211  -7.1960  -2.3269 |    -1.1136 |       0.8303 | [0.3068 0.091  0.0396]
+UNFIXED         400-500   0.7530 |  3.1282  -6.9927  -2.3617 |    -1.0060 |       0.8114 | [0.3864 0.0791 0.0477]
+
+FROZEN[0:500]     0-100   0.9510 |  2.7021  -7.7015  -2.2640 |    -1.4122 |       0.8661 | [0.1128 0.0811 0.0182]
+FROZEN[0:500]   100-200   0.9015 |  2.7931  -7.5162  -2.2772 |    -1.3137 |       0.8558 | [0.158  0.0688 0.0212]
+FROZEN[0:500]   200-300   0.8520 |  2.9137  -7.3614  -2.2983 |    -1.2112 |       0.8445 | [0.2205 0.099  0.0319]
+FROZEN[0:500]   300-400   0.8025 |  3.0211  -7.1960  -2.3269 |    -1.1136 |       0.8303 | [0.3068 0.091  0.0396]
+FROZEN[0:500]   400-500   0.7530 |  3.1282  -6.9927  -2.3617 |    -1.0060 |       0.8114 | [0.3864 0.0791 0.0477]
+
+== D-3: headline curves over eps 400-500 ==
+B0             calibrated=-2.7936  uncalibrated(deprecated)=3.154381e+06  0.5*r1_raw=3.154396e+06  (unc-0.5*r1)/unc=-4.71e-06
+UNFIXED        calibrated=-1.0060  uncalibrated(deprecated)=3.173913e+06  0.5*r1_raw=3.173918e+06  (unc-0.5*r1)/unc=-1.55e-06
+FROZEN[0:500]  calibrated=-1.0060  uncalibrated(deprecated)=3.173913e+06  0.5*r1_raw=3.173918e+06  (unc-0.5*r1)/unc=-1.55e-06
+
+== UNFIXED vs FROZEN episode logs: reproduction check ==
+first episode with any EXACT difference on ['r1_mean', 'r2_mean', 'r3_mean', 'total_handovers', 'replay_size', 'epsilon']: None
+first episode differing beyond rel 1e-6: None
+   eps400-500 r1_mean_calibrated: UNFIXED 3.1282 vs FROZEN 3.1282  diff +0.0000
+   eps400-500 r2_mean_calibrated: UNFIXED -6.9927 vs FROZEN -6.9927  diff +0.0000
+   eps400-500 r3_mean_calibrated: UNFIXED -2.3617 vs FROZEN -2.3617  diff +0.0000

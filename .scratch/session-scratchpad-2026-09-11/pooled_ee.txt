@@ -1,0 +1,21 @@
+# N_EP=24/arm, frozen seeds (42/1337/7), dt=30.080000000000002 s, no update() call. Estimand = sum(bits)/sum(joules), divided once.
+# numerator: full-buffer Shannon eq.(3.14), NO demand cap (link_budget.py:590-615, step.py:964-970); no rate setpoint exists in this env, so rate attainment has no referent.
+# trained arm loads /home/u24/papers/mcrl-leo-handover/artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt (sha256 e6b063ef...1b09c28b), greedy eps=0.
+
+arm                               pooled bits  pooled joules  pooled EE bit/J  served      ho    scalar
+RANDOM_MASKED (harness check)    1.842866e+14   3.473162e+06  53060175.561473  0.9360  0.8680   -1.4104
+MAX_NOMINAL_GAIN                 3.267020e+14   2.928666e+06 111553182.845841  0.9981  0.7117   -0.0867
+GREEDY_SCALARIZED                2.614246e+14   3.473047e+06  75272421.209612  0.9961  0.1502    0.8649
+GREEDY_R1R2                      2.612398e+14   3.445650e+06  75817283.466681  0.9960  0.1413    0.8743
+TRAINED e6b063ef (greedy)        2.850357e+14   3.060363e+06  93137893.020321  0.9988  0.2796    0.9063
+
+# per-episode pooled EE spread (each episode's own bits/joules), for a resolvability read only:
+#   RANDOM_MASKED (harness check)  mean 53045171.9463  sd 1932371.5925  sem 394443.6996
+#   MAX_NOMINAL_GAIN               mean 111558594.9990  sd 5221058.7780  sem 1065744.1603
+#   GREEDY_SCALARIZED              mean 75253969.1030  sd 3433511.0407  sem 700862.5063
+#   GREEDY_R1R2                    mean 75810852.8062  sd 3241135.7306  sem 661594.0606
+#   TRAINED e6b063ef (greedy)      mean 93081610.8261  sd 4445489.8763  sem 907431.8211
+
+# MAX_NOMINAL_GAIN pooled EE 111553182.845841 vs TRAINED 93137893.020321 -> ratio 1.1977, delta +18415289.825520 bit/J
+
+# total wall 474.4 s

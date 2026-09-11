@@ -1,0 +1,456 @@
+CDRL: Catfish-Based Deep Reinforcement Learning
+ for Energy-Efficient Joint Switching of RF Chains
+and Reflecting Elements in RIS-Aided 6G Networks
+                                                Yuh-Shyan Chen and Bo-Han Ke
+         Department of Computer Science and Information Engineering, National Taipei University, Taiwan, R.O.C.
+                                          E-mail: yschen@mail.ntpu.edu.tw
+
+
+   Abstract— This thesis proposes a Catfish-Based Deep Rein-          fective signal reflection, selectively activating and deactivating
+forcement Learning (CDRL) for energy-efficient joint Switching        reflecting elements can optimize RIS energy usage [2].
+of RF chains and reflecting elements in RIS-assisted 6G networks.        To address these issues, we propose a novel Catfish-Based
+To address the challenges of high-power consumption and hybrid        Deep Reinforcement Learning (CDRL) algorithm for energy-
+discrete-continuous control introduced by active/passive RIS          efficient joint Switching of RF chains and reflecting elements
+in millimeter-wave downlink MU-MISO systems. This thesis              in RIS-assisted 6G networks, as illustrated in Fig. 1. We design
+develops a CDRL architecture that optimizes both the switching        two task-oriented agents, where the Catfish Agent provides
+states and beamforming of RF chains and RIS elements, aiming to       differentiated experiences to effectively stimulate the Main
+maximize energy efficiency (EE). The CDRL framework consists          Agent to explore better policies, thereby avoiding local optima.
+of two agents: a catfish agent and a main agent. The catfish
+                                                                      In summary, our contributions are as follows:
+agent focuses on collecting high-reward experiences filtered by
+an EE threshold, guided by a higher discount factor (0.99)               • To the best of our knowledge, the proposed Catfish-Based
+and a competitive reward mechanism. In contrast, the main                   Deep Reinforcement Learning (CDRL) framework is the
+agent handles general scenarios and, during random intervention             first to address the integration of active RIS with element
+phases, absorbs long-term knowledge from the catfish agent                  switching control using DRL. It employs two competing
+via a dual-critic structure, enabling experience-level knowledge            DRL agents to optimize communication performance
+transfer and improving sample efficiency. This dual-agent, dual-            while ensuring convergence toward a globally optimal
+replay design advances DRL-based EE optimization for RIS                    solution.
+systems with joint switching control, and effectively mitigates          • In the proposed CDRL approach, we design three core
+policy stagnation issues often observed in single-agent settings.           mechanisms: all experiences are separated based on an
+Simulation results demonstrate that CDRL outperforms base-                  energy efficiency (EE) threshold, the two DRL agents
+line DRL, the analytical method BPOF, and Teacher-Student                   are assigned different discount factors to focus on distinct
+frameworks in both active and passive RIS scenarios. It achieves            objectives, and the catfish agent is provided with an addi-
+significant power savings under rate constraints, validating the            tional reward mechanism to promote mutual competition
+feasibility of integrating the catfish effect with DRL for wireless         between the agents.
+resource allocation.
+                                                                         • In this study, we evaluate our method against a base-
+   Index Terms— 6G Mobile Network, Deep Learning, Reconfig-                 line DRL approach, an analytical solution under the
+urable Intelligent Surfaces (RIS), Energy Efficiency, Beamform-             same communication environment, and a teacher-student
+ing, Phase Shift.                                                           framework. Experimental results demonstrate that our
+                                                                            method outperforms both the mathematical solution and
+                       I. I NTRODUCTION                                     teacher-student models under the same conditions, vali-
+                                                                            dating the superiority of our approach.
+   To accommodate the massive transmission demands of 6G,
+millimeter-wave (mmWave) massive multiple-input single-                  The rest of the paper is organized as follows. Section II de-
+output/multiple-input multiple-output (Massive MISO/MIMO)             scribes related work and motivation. Section III introduces the
+technology has become a popular research direction and prac-          problem formulation. Section IV describes the CDRL scheme.
+tical strategy in this field [1]-[13]. Due to the susceptibility of   Section V shows the simulation results. Finally, Section VI
+millimeter-wave (mmWave) communications to environmental              concludes the paper.
+blockages such as walls and trees, which cause severe penetra-
+tion loss, reconfigurable intelligent surfaces (RIS) have been                             II. R ELATED WORK
+proposed to assist hybrid beamforming (HBF) [9].                         Previous research on network transmission rate or energy
+   In general, conventional RIS consists of a large number            efficiency has often relied on mathematical optimization. Un-
+of passive elements, each capable of independently adjusting          der the passive RIS setting, Dejonghe et al. [1] proposed a
+the phase of the incident electromagnetic wave to redirect the        practical, low-cost, and high-performance RIS system design
+signal toward the target receiver [13]. In contrast, active RIS       based on semi-definite programming (SDP). In the domain
+is a new type of RIS that can simultaneously adjust the phase         of artificial intelligence–based approaches, Huang et al. [7]
+shift and amplify the received signal [2]. Although this enables      investigated the joint design of BS transmit beamforming and
+active RIS to provide better communication performance under          RIS phase shifts to maximize the sum rate of a multi-user
+weak signal power conditions, it often results in high power          downlink MISO system using DRL. The multiplicative fading
+consumption. Since RIS requires power supply to enable ef-            effect limits the capacity gains of passive RIS in wireless
+                                           Fig. 1.   System model of the proposed CDRL scheme.
+
+communication environments, which has led to increasing                direct link to enhance or extend the system’s communication
+research interest in active RIS architectures [4]-[6]. Previously,     capability.
+Xie et al. [2] studied and analyzed the switching mechanism of
+RIS elements and evaluated its impact on EE performance in             III.I Signal transmission model for passive and active RIS:
+both passive and active RIS-assisted communication networks.              The system considers three communication channel matri-
+Chen et al. [3] proposed the BPOF scheme, which demon-                 ces: the direct channel between the BS and the k-th UE is
+strates a beamforming and phase-shift optimization strategy            denoted as gk , the channel between the BS and the RIS is
+based on RF chain and reflecting element switching control,            denoted as Q, and the channel between the RIS and the k-th
+applied to EE-optimized RIS-assisted wireless systems.                 UE is denoted as hk . B and A represent the reflection matrices
+                                                                       of the RIS under passive and active modes, respectively, while
+   The components required for active RIS, such as radio
+                                                                       xk denotes the transmit signal matrix of the base station.
+frequency (RF) amplifiers, introduce additional power con-
+                                                                       Therefore, the received transmission signal at the k-th user can
+sumption, which may prevent the overall EE of the system
+                                                                       be expressed under the passive and active modes, respectively,
+from improving. To address this issue, recent studies have be-
+                                                                       as follows:
+gun exploring the design of active RIS systems incorporating
+element switching control mechanisms. By selectively activat-               (
+ing or deactivating certain RIS elements, unnecessary power                     ykpas = (gk + hk BQ)xk + nk
+consumption can be reduced, thereby enhancing EE. Never-                                                                                  (1)
+                                                                                ykact = (gk + hk AQ)xk + hk Az + nk
+theless, most existing research relies on mathematical opti-
+mization techniques, such as alternating optimization (AO), or            Here, nk ∼ CN (0, δ 2 ) denotes the additive white Gaussian
+successive convex approximation (SCA)[M9][M10]. Although               noise (AWGN) at the receiver of the k-th user.                    z ∼
+these methods are theoretically sound, they face challenges in         CN (0, σ 2 ) represents the thermal noise introduced by the
+implementation and computational complexity when applied               active RIS, which arises due to the signal amplification process
+to dynamic channel environments or high-dimensional control            performed by the active RIS.
+scenarios. On the other hand, deep reinforcement learning                 Consider the RIS structure in this system composed of three
+(DRL) has been proven effective in addressing RIS element              component matrices. The first is the diagonal phase
+control, phase adjustment, and beamforming without requiring                                                                     shift ma-
+                                                                       trix ΘRIS = diag ejθ1 , . . . , ejθn , . . . , ejθ√NRIS
+                                                                                                                                 , where the
+precise channel models [12]. However, current applications of
+DRL in RIS systems remain limited to passive architectures             phase shift coefficient θn ∈ [0, 2π), j = −1. The second
+[10][11], and research on DRL-based optimization for active            is the power amplification (PA) diagonal matrix specific to
+RIS combined with element switching control has yet to                 active RIS, denoted as ΛRIS = diag(ρ1 , . . . , ρj , . . . , ρNRIS ),
+emerge. Therefore, this study aims to fill this research gap           where 1 ≤ n ≤ NRIS              and ρn ≥ 0. Finally, the RIS
+by proposing a DRL-based optimization framework for active             element switch controller is represented by a binary diago-
+RIS, which jointly considers RIS element switching control             nal matrix CRIS = diag(cRIS                  RIS         RIS
+                                                                                                      1 , . . . , cn , . . . , cNRIS ), where
+and transmit beamforming design to effectively improve en-             cRIS
+                                                                        n    ∈ {0, 1}, indicating   that the   n-th RIS element   is activated
+ergy efficiency and operational flexibility of the system.             when set to 1 and deactivated otherwise, with 1 ≤ n ≤
+                                                                       NRIS . Therefore, the reflection matrix of the reconfigurable
+                III. P ROBLEM F ORMULATION                             intelligent surface can be expressed under the passive and
+                                                                       active modes, respectively, as follows: B ≜ ΘRIS CRIS ; A ≜
+   Consider a downlink communication system assisted by a              ΘRIS ΛRIS CRIS
+hybrid active/passive reconfigurable intelligent surface (RIS)            Consider a hybrid beamforming architecture at the base
+in a multi-user multiple-input single-output (MU-MISO) set-            station, which combines a baseband digital precoder and
+ting. In this system, NUE single-antenna users are served by           an RF analog beamformer. The BS in this system consists
+a base station equipped with Nt transmit antennas and NRF              of three components: the RF analog beamformer FRF ; the
+switchable radio frequency (RF) chains, where NRF ≤ Nt .               baseband digital precoder FBB      k ; and finally, the RF-chain
+The base station adopts a hybrid beamforming architecture.             switch controller represented by a binary diagonal matrix
+Additionally, the communication environment is supported by            CRF = diag(cRF               RF           RF              RF
+                                                                                       1 , . . . , cn , . . . , cNRF ), where cn ∈ {0, 1}
+an active or passive RIS composed of NRIS switchable reflect-          and 1 ≤ n ≤ NRF . Therefore, the transmit matrix of the BS
+ing elements, providing an indirect link that complements the          for the k-th UE can be expressed as: xk = FRF CRF FBB            k sk .
+                                                                                       PNUE                       2           2
+Here, sk denotes the data symbol transmitted by the base                  expressed as k=1    AQFRF CRF FBB   k  F
+                                                                                                                     + σ 2 ∥A∥F , must
+station to the k-th user. It is assumed that E |sk |2 = 1.                                                        max
+                                                                           remain below the predefined threshold PP IS .
+The signal-to-interference-plus-noise ratio (SINR) for the k-
+th UE can be expressed under the passive and active modes,                                   IV. T HE CDRL S CHEME
+respectively, as follows:                                                  IV.I Prepare Training Data:
+                                                                              The data pre-generation flow is illustrated in Fig. 2. Its
+
+               |(gk + hk BQ)xk |
+                                 2                                         purpose is to provide diverse training datasets for Catfish-
+γ pas = PNUE                                                              based deep reinforcement learning models, enabling them
+
+
+   k                               2  2
+          k′ =1 |(gk + hk BQ)xk | + δ
+
+
+
+                               ′                                          to more effectively leverage the distinctive characteristics of
+               k′ ̸=k                                                      different discount factors. In this phase, random channel data
+                                                   2
+                     |(gk + hk AQ)xk |                                     are generated, and experience samples with two distinct EE
+  γ act
+    k = PN
+
+
+                                                                           thresholds are stored into the memory of the general agent
+                                           
+                                 2   2    2     2
+         k′ =1 |(gk + hk AQ)xk | + σ ∥hk A∥F + δ
+          UE
+                               ′
+                                                                          and the Catfish agent, respectively. To generate pretraining
+               k′ ̸=k
+                                                                           data, this thesis models the channel matrices Q,hk and gk
+                                                                     (2)   corresponding to the BS–RIS, RIS–UE, and BS–UE links,
+   Here, ∥ · ∥F denotes the Frobenius norm. The term σ 2                   using Rician fading [6].
+represents the AWGN power at the receiver. Under the active
+RIS mode, the active elements introduce additional amplified                        r
+                                                                                         β BR
+                                                                                                         r
+                                                                                                           β BR KBR
+                                         2
+thermal noise, represented by σ 2 ∥hk A∥F . According to Shan-                Q =               QNLoS +             QLoS
+                                                                              
+                                                                              
+                                                                                      K BR +  1           KBR + 1
+non’s theorem, the spectral efficiency (SE) of the base station
+                                                                              
+                                                                              
+                                                                              
+                                                                                    r                     r
+for the k-th UE under the passive and active modes is given                           β RU,k KRU             β RU,k
+by: Rkpas = log2 (1 + γ pas      act              act                           hk =              hLoS,k +            hNLoS,k              (5)
+                        k ) ; Rk = log2 (1 + γ k )                            
+                                                                                       KRU + 1              KRU + 1
+                                                                              
+III.II Power model:                                                           
+                                                                              
+                                                                              
+                                                                                     r
+                                                                                       β BU,k KBU
+                                                                                                           r
+                                                                                                              β BU,k
+   The transmission power consumption can also be divided
+                                                                              
+                                                                              g k =
+                                                                                                 gLoS,k +            gNLoS,k
+into two parts, with the base station’s contribution expressed                          KBU + 1              KBU + 1
+                             PNUE                     2
+as: P BS = CRF 0 P RF + k=1           FRF CRF FBB k   F
+                                                        . Here,
+P R F denotes the fixed power consumption of a single RF                      Here, LoS and NLoS represent the line-of-sight and non-
+chain. ∥ · ∥0 represents the L0 norm, which is defined as                  line-of-sight components, respectively. For the NLoS compo-
+the number of non-zero elements in a vector. The power                     nents of Q,hk and gk , i.e.QNLoS ∼ CN (0, 1), hNLoS,k ∼
+consumption of the reconfigurable intelligent surface is ex-               CN (0, 1), gNLoS,k ∼ CN (0, 1), they are assumed to be
+pressed under the passive and active modes, respectively, as               independently and identically distributed (i.i.d.) complex cir-
+                                                                           cularly symmetric Gaussian random variables with zero mean
+follows: P pas = CRIS 0 PC ; P act = CRIS 0 (PC +
+          N
+                                                                           and unit variance. β BR denotes the large-scale path loss
+           UE
+          X                         2            2                         coefficient for the BS–RIS link; β RU,k and β BU,k are the large-
+PDC ) +         AQFRF CRF FBB  k    F
+                                      + σ 2 ∥A∥F . Here, PC                scale path loss coefficients for the RIS–UE and BS–UE links
+          k=1                                                              for the k-th UE, respectively. KBR ,KRU and KBU denote the
+denotes the power consumption of a single RIS element, and
+                                                                           corresponding Rician K-factors.
+PDC represents the DC bias power consumption. With the
+power consumption of the base station and RIS defined, the
+total energy consumption of the passive/active RIS-assisted
+                                 pas
+system can be expressed as: PTot     = Pstatic + P BS + P pas ;
+  act
+PTot  = Pstatic + P BS + P act .
+III.III Problem formulation:
+   Considering the environment where the BS serves all UEs
+with the assistance of a passive / active RIS, the system energy
+efficiency optimization problem can be defined as [3]:
+                                                  PNUE   pas
+                                                   k=1 Rk
+     (P0 ) :                 max                     pas             (3)
+                 {FBB
+                   k ,F
+                       RF , CRF , ΘRIS , CRIS }     PTot
+                                                        PNUE   act
+                                                         k=1 Rk
+    (P1 ) :                    max                         act       (4)
+                {FBB
+                  k ,F
+                      RF , CRF , ΛRIS , ΘRIS , CRIS }     PTot
+
+   C1 : When the BS serves the k-th UE, the transmission rate
+Rkpas ; Rkact must be maintained above the predefined threshold                        Fig. 2.   The flowchart of prepare training data.
+Rmin to ensure user experience. C2 : The total transmission                IV.II Training a Reinforcement Learning Agent:
+power when the base station serves the k-th user, expressed                  Since the energy efficiency (EE) problem discussed in
+               RF RF BB 2
+   PNUE
+as    k=1 F      C Fk F , must remain below the power                      Chapter 3 is a non-convex optimization problem, it is well-
+          max
+budget PBS . C3 : When the RIS serves the k-th UE, the total               suited to be addressed using deep reinforcement learning
+power radiated by active RIS elements and their amplifiers,                (DRL). Compared to traditional alternating optimization (AO)
+methods, DRL can optimize complex and dynamic problems                     minimizing the mean squared error (MSE) loss. Then, gradient
+without requiring prior mathematical relaxation [8]. The core              descent is used to update the critic’s parameters Φ as follows:
+of reinforcement learning lies in the interaction between the
+agent and the environment, where the agent iteratively adjusts
+its policy based on received rewards, aiming to maximize the                    Φ = Φ − β∇Φ L(Φ),            L(Φ) = δ 2t                      (7)
+cumulative reward. To solve for the optimal EE parameters                     Here, β denotes the learning rate, and ∇Φ L(Φ) represents
+using DRL, this section defines the state, action, and reward              the gradient of the loss function L with respect to Φ.
+components [10].                                                              The actor learns via policy gradient. Then, the actor’s
+    State: Represents the current condition of all system com-             parameters θ are updated via gradient ascent as follows:
+ponents
+PNUE in         the environment.
+                             PNUE It actincludes the total rate Rpas =
+            pas       act
+    k=1   R k    ;  R     =      k=1 R k the total power consumption
+                                                                                                            h                                   i
+PTpas
+    ot  ;  P act
+             T ot , and   the  matrices   FkBB ,F RF ,C RF ,ΛRIS ,ΘRIS     θ = θ+α∇θ J,        ∇θ J = Est ∼B ∇a Q(st , a) a=π (st ) ∇θ π θ (st )
+                                                                                                                                    θ
+
+hand C
+          RIS
+               . The state at time t is denotedi as: spas         t    =                                                                      (8)
+    pas        pas      BB      RF     RF     RIS     RIS        act
+  P       , R t , Fk , F , C , Θ , C                         ; st      =
+ Tot,t
+    act
+                                                                            Here, B denotes the batch. Its gradient update rule given
+  PTot,t  , Rtact , FBBk   , F RF
+                                   , C RF
+                                          , Λ RIS
+                                                  , Θ RIS
+                                                          , CRIS
+                                                                   .       by ∇θ J. α denotes the learning rate, and ∇ represents the
+    Action: Represents the operations executed by each compo-              gradient with respect to θ of the loss function J.
+nent in the current   environment.      The action at time t is denoted
+as: apas              ∆FBB           RF
+                                        , ∆CRF , ∆ΘRIS , ∆CRIS ;
+                                                                          IV.III Training a Catfish-Based Deep Reinforcement
+        t  =              k , ∆F                                          Learning Agent:
+aact
+  t    = ∆FBB    k , ∆F
+                             RF
+                                , ∆CRF , ∆ΛRIS , ∆ΘRIS , ∆CRIS .              This section continues the work of Section IV.II by describ-
+Here, ∆ represents the adjustments made by the agent.                      ing the dedicated mechanisms of the Catfish Agent and its
+    Reward: Represents the feedback from the environment in                collaboration with the Main Agent to achieve the dual goals
+response to at . The reward at time t is denoted as: rtpas = Rtpas         of “stimulating the main agent’s exploration” and “experience-
+; rtact = Rtact .                                                          level knowledge transfer,” as illustrated in Fig. 11. The core
+                                                                           design of the Catfish Agent includes three components, all
+                                                                           aimed at ensuring its policy outperforms that of the Main
+                                                                           Agent: First, during the data pre-generation phase in Section
+                                                                           IV.I, all experiences are split according to energy efficiency
+                                                                           (EE) thresholds. Higher EE experiences are stored in the cat-
+                                                                           fish replay memory, while general EE experiences are stored
+                                                                           in the main replay memory, enabling the Catfish Agent to
+                                                                           focus on “high-quality experiences” from the start of training.
+                                                                           Second, the discount factor for the Catfish Agent is set to
+                                                                           0.99, emphasizing long-term return estimation by using a
+                                                                           larger discount factor. Third, an additional reward mechanism
+                                                                           is designed for the Catfish Agent, providing extra incentives
+                Fig. 3.   The flowchart of the main agent.                 when surpassing the Main Agent’s scores. This encourages
+   The CDRL framework is built upon the actor–critic architec-             the Catfish Agent to maintain its leading advantage while
+ture, which consists of two neural networks. Critic Network:               generating high-quality trajectories for subsequent knowledge
+The critic network takes the current state and action as input             transfer to the Main Agent.
+and outputs Q-value, denoted as Q(st , at ), where ϕ represents               The third component, the additional reward mechanism,
+the parameters of the value network. Actor Network: The                    is a competitive reward function (CRF), similar to the Self-
+actor network receives the current state of the environment as             Adaptive Success Rate Sampling (SASR) proposed by Shen
+input and, based on a policy function, determines the action               et al. [15]. The enhanced reward function of the CRF in this
+to take. The policy is represented as π θ (st ), where θ denotes           thesis is expressed as: rCR = r + ηrS . Here, r denotes the
+the parameters of the policy network, which guides the agent’s             original EE reward from the environment, rs represents the
+action selection, as illustrated in Fig. 3. The critic evaluates the       additional shaped reward, and η is a coefficient controlling
+value of the actions taken by the actor and provides correction            the weight of the additional reward. When η → 0 , the model
+                                                                                                                                              s
+signals. This is typically measured using temporal difference              degenerates to the original reward. The shaped reward
+                                                                                                        S             catfish    actor
+                                                                                                                                        rS at
+(TD) error δ, defined as:                                                  time t is expressed as: r0,t = tanh r0,t          − r0,t     ; r1,t =
+                                                                                    catfish    actor
+                                                                           tanh r1,t        − r1,t    . Here, tanh(·) denotes the hyperbolic
+                                                                           tangent function used to normalize the difference, preventing
+     δ t = rt + γQ(st+1 , π θ (st+1 )) − Q(st , at )                (6)                                                            actor     actor
+                                                                           training instability caused by large differences. r0,t         ; r1,t
+   Here, γ is the discount factor, which determines the im-                represent the rewards (energy efficiency) achieved by the Main
+portance of the future Q-value Q(st+1 , π θ (st+1 )), typically            Agent under passive/active RIS communication systems, re-
+                                                                                                catfish    catfish
+ranging between 0.9 and 0.99. In this study, the discount                  spectively, while r0,t       ; r1,t     denote the rewards obtained
+factor of the main agent is set to 0.95, making it relatively              by the Catfish Agent under the same conditions. The smaller
+more short-sighted compared to the catfish agent, which uses               the difference, the less additional reward the Catfish Agent
+a value of 0.99. The intention is for the main agent to focus              receives, thereby reinforcing the competitive dynamics.
+on learning policies under general conditions; further details                As illustrated in Fig. 4, after establishing the Catfish Agent,
+are provided in Section IV.III.                                            this study designs two training modes. Under normal training
+   The critic uses a neural network to approximate the Q-value             conditions, the Main Agent and Catfish Agent maintain inde-
+function Q(st , at ), and updates the network parameters by                pendent memories, discount factors, and reward mechanisms,
+                                                     Fig. 4.   General training phase of CDRL.
+
+training without mutual interference. After a random period,               the implementation of reinforcement learning algorithms. All
+the system enters the intervention training mode, where 70%                training and evaluation processes are performed using an
+of the batch is sampled from the main memory and 30%                       NVIDIA GeForce RTX 2080 Ti GPU to ensure computational
+from the catfish memory to form a mixed batch Bmix , which                 efficiency [16][17].
+is then fed into both agents, as illustrated in Fig. 5. Each                  The environment of the downlink communication system is
+agent generates actions according to its respective policy based           considered and configured following the settings in [3]. The
+on prior training results, and all generated experiences are               BS is located at coordinates (0, 0) meters, while the RIS is po-
+stored back into the main memory. Subsequently, a dual-critic              sitioned at (50, 10) meters. Two UEs are randomly distributed
+guidance (main + catfish) is employed to update the main                   on a circle centered at (50, 0) meters with a radius of 3 meters.
+policy network, enabling knowledge transfer. The main policy               The BS is equipped with 8 antennas and 6 RF chains, the RIS
+Q-value calculation formula, as incorporated in Equation (8),              comprises 6 reflecting elements, and each UE is equipped with
+is as follows:                                                             a single antenna. Other system parameters are configured as
+                                                                                        max
+                                                                           follows: PBS      ∈ [10, 20] dBm, Rmin = 1 bits/Hz, σ 2 =
+                                                                           −70 dBm, δ 2 = −80 dBm, PC = −10 dBm, PDC =
+    Qmix (st , a) = ωQmain (st , a) + (1 − ω)Qcatfish (st , a) (9)
+                                                                           −5 dBm, P s = 10 dBm, γ main = 0.95, γ catf ish = 0.99.
+   Here, the weight ω, where 0 ≤ ω ≤ 1, is set to 0.7 in this                 To effectively evaluate the performance of the proposed
+study.                                                                     reinforcement learning model in terms of energy efficiency,
+                                                                           this thesis introduces three baseline methods for comparison.
+                                                                           The first baseline is a basic actor-critic reinforcement learning
+                                                                           model [7], serving as the comparative benchmark for this
+                                                                           study. The second baseline is the mathematical analytical
+                                                                           solution from BPOF [3], which models and optimizes the
+                                                                           same RIS architecture as in this thesis. The third baseline is
+                                                                           the teacher-student learning framework [14], aimed at com-
+                                                                           paring different knowledge transfer mechanisms within dual-
+                                                                           agent architectures. In addition to comparing the proposed
+                                                                           BPOF method with the three aforementioned baselines, the
+                                                                           experiments also include fully active and fully passive RIS
+                                                                           configurations as reference benchmarks. Fully active refers
+                                                                           to all reflecting elements on the active RIS being enabled,
+                                                                           whereas fully passive indicates that all elements on the passive
+                                                                           RIS are activated. This approach aims to further evaluate the
+                                                                           energy efficiency performance of the proposed method under
+                                                                           different levels of RIS control.
+             Fig. 5.   CDRL intervention training phase.                      Fig. 6 and Fig. 7 illustrate the experimental results of en-
+                                                                           ergy efficiency (EE) under varying maximum transmit power
+                 V. E XPERIMENTAL RESULT                                   constraints at the base station. It can be observed that, com-
+   This chapter details the environment setup used for training            pared to existing methods, the proposed CDRL framework
+the proposed model. The experiments are conducted on a                     consistently achieves slightly higher energy efficiency across
+system running Windows 10 as the underlying operating                      different transmit power limits. This advantage primarily stems
+system. The programming environment is built using Python                  from the Catfish Agent’s effective stimulation of the Main
+3.8.16, with NumPy 1.26.4 and PyTorch 2.3.1 to support                     Agent’s policy exploration, enabling the learning of improved
+beamforming strategies and communication component con-                  Main Agent toward better policies and avoid local optima.
+figurations. In the Teacher-Student (TS) model, the teacher is           Simulation results show that CDRL outperforms baseline
+set as BPOF, making it difficult for the Main Agent to surpass           DRL, analytical methods, and teacher-student models under
+the energy efficiency achieved by BPOF; however, the Main                both active and passive RIS settings. Future work may explore
+Agent still demonstrates strong robustness. Overall, energy              extending the framework to more practical or large-scale
+efficiency improves for all algorithms as the transmit power             scenarios.
+constraints are relaxed. On the other hand, in experiments
+involving both active and passive RIS, while fully activating                             ACKNOWLEDGEMENT
+all elements provides higher transmission gains, the additional            This work was supported by the National Science and
+power consumption leads to a decrease in overall energy                  Technology Council (NSTC) of Taiwan under Grant NSTC
+efficiency.                                                              113-2221-E-305-012 -.
+                                                                                                      R EFERENCES
+                                                                         [1]    A. Dejonghe, Z. Altman, F. de Pellegrini and E. Altman, ”Design and
+                                                                                Cross-Layer Optimization of Low Cost RIS-Assisted Communication
+                                                                                Systems,” in IEEE Transactions on Wireless Communications, vol. 23,
+                                                                                no. 10, pp. 13752-13765, Oct. 2024.
+                                                                         [2]    H. Xie and D. Li, ”To Reflect or Not to Reflect: On–Off Control and
+                                                                                Number Configuration for Reflecting Elements in RIS-Aided Wireless
+                                                                                Systems,” in IEEE Transactions on Communications, vol. 71, no. 12,
+                                                                                pp. 7409-7424, Dec. 2023.
+                                                                         [3]    Yuh-Shyan Chen, Jung-Chen Lee, and Bo-Han Li, ”Hybrid Beam-
+                                                                                forming and Phase Shift Optimization for Energy Efficiency with On-
+                                                                                Off Control of RF Chain and Reflecting Elements in 6G RIS-Aided
+                                                                                Communications,” Physical Communication, 2025. (accepted)
+                                                                         [4]    R. K. Fotock, A. Zappone and M. D. Renzo, ”Energy Efficiency
+                                                                                Optimization in RIS-Aided Wireless Networks: Active Versus Nearly-
+                                                                                Passive RIS With Global Reflection Constraints,” in IEEE Transactions
+                                                                                on Communications, vol. 72, no. 1, pp. 257-272, Jan. 2024.
+                                                                         [5]    B. Wang, C. Pan, H. Ren, G. Zhou, W. Liu and Z. Yu, ”Transmission
+                                                                                Design for Double Cooperative Active RIS-Aided Communication,”
+                                                                                2024 IEEE Wireless Communications and Networking Conference
+                                                                                (WCNC), Dubai, United Arab Emirates, 2024.
+                                                                         [6]    W. de Souza Junior and T. Abrão, ”Phase-Amplitude Design for
+                                                                                Energy-Efficient Active RIS-aided Massive MIMO System,” 2025
+                                                                                IEEE Wireless Communications and Networking Conference (WCNC),
+Fig. 6.    The performance comparison of active RIS in terms of energy          Milan, Italy, 2025.
+efficiency vs. transmission power consumption.                           [7]    C. Huang, R. Mo and C. Yuen, ”Reconfigurable Intelligent Surface
+                                                                                Assisted Multiuser MISO Systems Exploiting Deep Reinforcement
+                                                                                Learning,” in IEEE Journal on Selected Areas in Communications, vol.
+                                                                                38, no. 8, pp. 1839-1850, Aug. 2020.
+                                                                         [8]    B. Banerjee, R. C. Elliott, W. A. Krzymień and M. Medra, ”Hybrid
+                                                                                Beamforming for mmWave Massive MIMO Systems Using Conditional
+                                                                                Generative Adversarial Networks,” in IEEE Transactions on Vehicular
+                                                                                Technology, vol. 73, no. 10, pp. 15803-15808, Oct. 2024.
+                                                                         [9]    X. He, L. Huang, J. Wang and Y. Gong, ”Learn to Optimize RIS
+                                                                                Aided Hybrid Beamforming With Out-of-Distribution Generalization,”
+                                                                                in IEEE Transactions on Vehicular Technology, vol. 73, no. 7, pp.
+                                                                                10783-10787, July 2024.
+                                                                         [10]   A. Faisal, I. Al-Nahhal, O. A. Dobre and T. M. N. Ngatched, ”On
+                                                                                Discrete Phase Shifts Optimization of RIS-Aided FD Systems: Are All
+                                                                                RIS Elements Needed?,” ICC 2023 - IEEE International Conference on
+                                                                                Communications, Rome, Italy, 2023.
+                                                                         [11]   K. Cao and Q. Tang, ”Energy Efficiency Maximization for RIS-
+                                                                                Assisted MISO Symbiotic Radio Systems Based on Deep Reinforce-
+                                                                                ment Learning,” in IEEE Communications Letters, vol. 28, no. 1, pp.
+                                                                                88-92, Jan. 2024.
+                                                                         [12]   V. Sharma, A. Paul, S. K. Singh, K. Singh and S. Biswas, ”Robust
+                                                                                Transmission for Energy-Efficient Sub-Connected Active RIS-Assisted
+                                                                                Wireless Networks: DRL Versus Traditional Optimization,” in IEEE
+                                                                                Transactions on Green Communications and Networking, vol. 8, no. 4,
+                                                                                pp. 1902-1916, Dec. 2024.
+                                                                         [13]   H. Yang et al., ”Codebook Configuration for RIS-Aided Systems
+Fig. 7. The performance comparison of passive RIS in terms of energy            via Implicit Neural Representations,” ICC 2024 - IEEE International
+efficiency vs. transmission power consumption.                                  Conference on Communications, Denver, CO, USA, 2024.
+                                                                         [14]   Y. Zheng et al., ”Enabling Robust DRL-Driven Networking Systems
+                    VI. C ONCLUSIONS                                            via Teacher-Student Learning,” in IEEE Journal on Selected Areas in
+                                                                                Communications, vol. 40, no. 1, pp. 376-392, Jan. 2022.
+  This thesis proposes a Catfish-Based Deep Reinforcement                [15]   MA, Haozhe, et al. Highly efficient self-adaptive reward shaping for
+Learning (CDRL) framework for energy-efficient joint Switch-                    reinforcement learning. arXiv preprint arXiv:2408.03029, 2024.
+ing of RF chains and RIS reflecting elements in 6G networks.             [16]   https://www.python.org/downloads/
+A dual-agent design enables the Catfish Agent to guide the               [17]   https://pytorch.org/
+

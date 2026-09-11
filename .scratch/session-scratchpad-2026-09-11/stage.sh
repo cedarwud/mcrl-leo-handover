@@ -1,0 +1,7 @@
+set -e
+cd /home/u24/papers/mcrl-leo-handover-cf3
+C=$(git rev-parse --short=8 HEAD)
+git archive --format=tar --prefix=tree/ HEAD src scripts/cf3_common.py scripts/cf3_premeasure.py scripts/run_cf3_pilot.py scripts/cf3_eval.py scripts/cf3_diag100.py scripts/cf3_de_diag.py scripts/cf3_report.py scripts/cf3_launch.py scripts/cf3_memtest.py scripts/cf3_pools.py scripts/cf3_proctest.py docs/cf3-pilot scripts/b0_pooled_ee_eval.py tests/test_cf_ratio.py tests/conftest.py pyproject.toml artifacts/CORRECTED-PROBE-PROTOCOL-2026-08-25.json artifacts/PREREG-FROZEN-2026-08-23.json artifacts/PREREG-FROZEN-2026-08-24.json artifacts/PREREG-FROZEN-2026-08-25-R2.json artifacts/PREREG-FROZEN-2026-08-25.json artifacts/probes-2026-08-25-rerun01 artifacts/training-2026-08-25-rerun01/main/final-checkpoint.pt | gzip > /tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/e9fba164-4724-465f-8afa-7891b4efee90/scratchpad/cf3-tree-$C.tgz
+L=$(sha256sum /tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/e9fba164-4724-465f-8afa-7891b4efee90/scratchpad/cf3-tree-$C.tgz | cut -d' ' -f1)
+scp -q /tmp/claude-1000/-home-u24-papers-mcrl-leo-handover/e9fba164-4724-465f-8afa-7891b4efee90/scratchpad/cf3-tree-$C.tgz sat:/home/sat/mcrl-v025-cf3-pilot-ws/
+ssh sat "cd /home/sat/mcrl-v025-cf3-pilot-ws && R=\$(sha256sum cf3-tree-$C.tgz | cut -d' ' -f1) && [ \$R = $L ] && rm -rf tree && tar xzf cf3-tree-$C.tgz && echo $C > tree/COMMIT && echo staged $C \$R"

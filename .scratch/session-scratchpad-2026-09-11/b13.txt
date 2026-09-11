@@ -1,0 +1,353 @@
+=================== V025-CONTROLLER-CORRECTIONS-PREEXECUTION-2026-09-10.md
+     1	# Corrections to the plan, before execution
+     2	
+     3	**2026-09-10 13:50 UTC. Every correction below is to a document I wrote today, and none of the
+     4	affected measurements has run.** Cost of fixing now: a paragraph each. Cost of fixing after the
+     5	run: the run.
+     6	
+     7	Source: `PIPEAUDIT-ASTRA-2026-09-10.md`, an audit of the pipeline design — the one thing about
+     8	this project that had never been audited.
+     9	
+    10	---
+    11	
+    12	## C1 — two different denominators were being called the same thing
+    13	
+    14	**Verified by reading both definitions.**
+    15	
+    16	| formula | name | value at 10 s, SEALED |
+    17	|---|---|---|
+    18	| `(EE_t - EE_base) / (EE_fixed - EE_base)` | **incremental prize** — the anytime receipt's definition | **42.9081%** |
+    19	| `EE_t / EE_fixed` | **absolute fraction of fixed-point EE** — my acceleration pre-declaration and the scorer | **49.8155%** |
+    20	
+    21	**I have been quoting `42.91%` as "the fraction recovered" while my own axis is defined as the
+    22	absolute fraction.** Those are different quantities and they differ by seven percentage points
+    23	here.
+    24	
+    25	The `+100.7%` headroom is unaffected: it is `EE_fixed / EE_10 - 1` and is neither of the above.
+    26	
+    27	**Correction.** F1 and F8 state which formula they use, in the axis label. `42.91%` may never
+    28	appear on an axis labelled absolute fraction. The scorer already computes the absolute form;
+    29	the figure plan and the acceleration pre-declaration are amended to say so explicitly.
+    30	
+    31	## C2 — the two axes, as specified, are one axis
+    32	
+    33	**Derived from the scorer's own arithmetic.** Both axes reuse the same arm pools, and axis B
+    34	divides by one fixed positive `EE_fixed`, so
+    35	
+    36	```
+    37	fraction_FULL - fraction_DROP = (EE_FULL - EE_DROP) / EE_fixed
+    38	```
+    39	
+    40	**Signs and ties must therefore match. No learned action is recomputed under a budget.**
+    41	
+    42	So "one run, two axes" — my amendment 1 — does not produce two measurements. It produces one
+    43	measurement and a rescaling of it. **Reporting them as independent evidence would be double
+    44	counting.**
+    45	
+    46	**Correction.** Until timed execution exists, the two are reported as **an offline EE contrast
+    47	and its normalised display**, in one table, never as two axes. A genuine acceleration result
+    48	requires arms to execute under the budget, with real cancellation and real fallback — which
+    49	`SELECTOR-LATENCY-2026-09-10.md` shows the current path cannot do (median `12.014 s`, 65% miss
+    50	rate, `_catalogue_with_census` at `8.299 s` median). **The acceleration axis is therefore not
+    51	available from the first run and is not claimed from it.**
+    52	
+    53	## C3 — the continuation rule mishandles a non-monotone trajectory
+    54	
+    55	My rule equates monotone movement with non-convergence. A relative-contrast sequence
+    56	`0, +2, -1, +3, -2%` is neither monotone nor flat; `0, 0, 0, +1, +1%` is a stepwise plateau;
+    57	and strictly monotone changes of vanishing size are already practically flat.
+    58	
+    59	**Correction.** 500 remains the default stop under the existing "only if" rule. A moving but
+    60	non-monotone trajectory is labelled **"unresolved at the planned horizon"** — neither converged
+    61	nor unusable. Before any number exists, the following are fixed: strict versus non-strict
+    62	monotonicity, a practical tolerance on the EE scale, the seed aggregate, the extension length
+    63	and an absolute cap. **The rule remains blind to sign.**
+    64	
+    65	## C4 — "flat zero" says less than I claimed
+    66	
+    67	I wrote that a flat-zero contrast means the heads learned nothing usable. **It does not.**
+    68	`FULL` and neutral can both improve identically (`10, 12, 14, 16, 18` for each) leaving the
+    69	contrast at zero throughout; continuous score changes may never cross the catalogue's argmax
+    70	boundary; opposing per-anchor effects may cancel in pooled `B/E`; or every arm may execute
+    71	`a0` on a deadline miss.
+    72	
+    73	**Correction.** The reading becomes: **"no observed incremental pooled EE advantage on this
+    74	fixed panel at the sampled checkpoints."** Before concluding anything about learning, report
+    75	absolute per-arm trajectories, assignment turnover, per-anchor `B/E`, and executed fallbacks.
+    76	**No inference from loss is permitted in either direction.**
+    77	
+    78	## C5 — EE and service can move in opposite directions, and I gave no joint reading
+    79	
+    80	Derived example: neutral delivers `100` bit at `10` J (`10` bit/J); `FULL` delivers `90` bit at
+    81	`6` J (`15` bit/J). **EE rises 50% while delivered bits fall 10%.** Both statements are true.
+    82	
+    83	**Correction.** The signed EE contrast is retained and is called an **efficiency/service
+    84	trade-off**, not an unconditional improvement. A breach of the existing service guard is an
+    85	invalid deployment; a deterioration within the guard is a co-metric cost. **If no operational
+    86	acceptance rule is stated before the outcome, overall preference is left explicitly
+    87	unresolved** rather than decided afterwards.
+    88	
+    89	## C6 — the knockout requirement was stated too strongly
+    90	
+    91	Amendment 2 required decision-level separation between `ALL_NEUTRAL_CONTROL` and knockout
+    92	before the primary number may be reported. **Separation is necessary for that label, not
+    93	sufficient as causal validation** — and a well-fitted zero-target head becoming
+    94	decision-identical to knockout is a plausible success of its own objective, not a defect.
+    95	
+    96	**Correction.** Keep the knockout label where equality holds. **Do not discard the trained
+    97	contrast, and do not seek a deliberately worse neutral fit in order to manufacture
+    98	separation.** Attribute the contrast to **informed-target versus exact-zero-target training,
+    99	finite horizon included**, and report the deployed knockout separately.
+   100	
+   101	---
+   102	
+   103	## What is now blocked that I had thought was not
+   104	
+   105	The first training run can still produce **axis A** — an offline EE contrast against
+   106	`ALL_NEUTRAL_CONTROL` on the declared full-buffer numerator. That stands.
+   107	
+   108	**It cannot produce an acceleration result.** That needs timed execution under the 10 s budget,
+   109	and the deployed path currently misses it on 65% of anchors with catalogue construction
+   110	dominating. **The acceleration claim's prerequisite is an engineering task with a measured
+   111	target — the catalogue stage must fit the `3.648–6.738 s` residual — not a scoring choice.**
+   112	
+   113	## The rule I am imposing on myself
+   114	
+   115	**No new specification document until the corrected ones have been checked against each
+   116	other.** I wrote the pipeline contract, the figure plan, three amendments and the acceleration
+   117	pre-declaration within about two hours, and an audit found two structural errors in them. I was
+   118	generating specification faster than it could be verified. That is a rate problem and it is
+   119	mine.
+=================== V025-CONTROLLER-WHAT-IS-ACTUALLY-SEALED-2026-09-10.md
+     1	# What is actually sealed, and what I have been wrongly treating as sealed
+     2	
+     3	**2026-09-10 14:10 UTC. Verified mechanically by grepping the contract
+     4	(`V025-STAGES-6-8-CONTRACT-v1` and amendments) and every priority declaration v1.0-v1.9.**
+     5	
+     6	Prompted by the owner pointing out that the learning rate is not a sealed value and that its
+     7	appropriateness is a **convergence** question, not a tuning question. The check then generalised.
+     8	
+     9	---
+    10	
+    11	## The audit
+    12	
+    13	| constant | in contract or a declaration? | where it actually lives |
+    14	|---|---|---|
+    15	| `learning_rate` | **NO** | `learner.py:48, :53, :58`, plus an inconsistent default `0.02` at `:334` |
+    16	| `gauge_beta` | **NO** | `learner.py:44-62` |
+    17	| hidden layer sizes | **NO** | `learner.py:44-62` |
+    18	| activation | **NO** | `learner.py:44-62` |
+    19	| Adam betas | **NO** | `learner.py:44-62` |
+    20	| checkpoint cadence | **NO** | `learner.py`, `CHECKPOINT_EVERY_SOURCE_EPOCHS` |
+    21	| **epoch cap 2000** | **NO** | an implementation guard in `learner.py` |
+    22	| catalogue caps (8,192 / 1,500 rows) | **NO** | probe/engine literals |
+    23	| seed count 16 | **YES** (2 docs) | v1.1 amendment |
+    24	| **10 s coordinator budget** | **YES** (2 docs) | contract v1 §F2 |
+    25	| decision margin `+0.5%` | **YES** (6 docs) | contract v1 |
+    26	| three forecast offsets | **YES** (1 doc) | contract §C2 |
+    27	
+    28	## What I got wrong, and how often
+    29	
+    30	I have written **"the sealed head literals, unchanged"** into most worker prompts today. The
+    31	head literals are **not sealed**. They are implementation defaults, and the file even
+    32	contradicts itself: three per-route values plus a fourth default of `0.02`.
+    33	
+    34	I have also written that the **"sealed checkpoint format rejects more than 2,000 epochs"**, and
+    35	used it to conclude that a 9,000-epoch protocol **"cannot be expressed"**. That bound is an
+    36	implementation guard, not a sealed protocol. It can be changed by changing code, with the
+    37	consequences that follow — it is not a scientific constraint.
+    38	
+    39	**This is the same error three times today in a different guise:** treating a question of
+    40	**instrument validity or implementation** as a question of **scientific sealing**. The other
+    41	two were the training gate G1 (which asked me to predict a measurement before permitting it)
+    42	and the feasibility wall built on a figure I had myself recorded as not established.
+    43	
+    44	## The distinction I had been collapsing
+    45	
+    46	- **Scientific sealing** — the objective, the numerator, the fading-quantile scoring
+    47	  convention, the service guard, the decision margin, the arm inventory's meaning. Changing
+    48	  these requires a **declared policy change** with a rationale independent of any result.
+    49	- **Compatibility pinning** — parameter shapes that a checkpoint schema digest depends on,
+    50	  values that earlier receipts were produced under. Changing these requires a **new version**
+    51	  and re-running affected comparisons. It is bookkeeping, not adjudication.
+    52	- **Implementation defaults** — learning rate, activation, layer widths, cadences, caps.
+    53	  Changing these requires only that the change be **declared before the measurement that
+    54	  judges it**, and that the selection criterion be stated and outcome-independent.
+    55	
+    56	**A learning rate that diverges makes a measurement invalid.** Checking it is mandatory, not
+    57	permitted. `LRSWEEP` was dispatched at 14:02 on that basis: seven points per route across three
+    58	orders of magnitude, **selected by convergence only, with no EE quantity computed in that job
+    59	at all.**
+    60	
+    61	## One genuinely sealed thing with an undefined term
+    62	
+    63	Contract v1 §F2 seals the **10 s** budget — *"on the declared worker count"*. **A grep finds
+    64	no declaration of that worker count anywhere in the contract or any amendment.**
+    65	
+    66	`SELECTOR-LATENCY-2026-09-10.md` measured the deployed path on **one worker on a machine at
+    67	load ~15**, and found median `12.014 s` with a 65% miss rate. **Against an undefined worker
+    68	count, that measurement cannot be compared to the budget as a compliance verdict** — it
+    69	establishes that one contended worker does not suffice, and that `_catalogue_with_census`
+    70	(median `8.299 s`) dominates.
+    71	
+    72	**Owed:** the declared worker count must be named before any deadline-compliance claim is made
+    73	in either direction. Until it is, latency results are reported as measured configurations, not
+    74	as passes or failures against §F2.
+    75	
+    76	## What this does not license
+    77	
+    78	It does not license changing anything to make a result come out. Every one of the unsealed
+    79	values above still obeys the same rule: **declare the change and its selection criterion before
+    80	the measurement that judges it, and make the criterion independent of the outcome.** The
+    81	difference is only in what kind of declaration is required, and from whom.
+=================== V025-CONTROLLER-DESIGN-PHASE-2026-09-10.md
+     1	# The project is in design phase, and I have been running it as if it were in confirmation
+     2	
+     3	**2026-09-10 14:25 UTC. This supersedes the framing of every record I wrote today, without
+     4	retracting any measurement in them.**
+     5	
+     6	The owner: *"演算法還在設計的階段，你太早就把太多參數講成是為了要結果好而不能去調整的，這樣是要
+     7	怎麼設計?"*
+     8	
+     9	He is right, and this is the most systematic error I made today — larger than any individual
+    10	number.
+    11	
+    12	---
+    13	
+    14	## The category error
+    15	
+    16	**Pre-registration discipline exists to stop a design being adjusted until a confirmatory test
+    17	passes. It does not apply to choosing the design in the first place.** I applied confirmation-
+    18	phase rules to design-phase work, so every parameter acquired language like "must not be
+    19	selected by outcome" — and under those rules **no design can be chosen at all.**
+    20	
+    21	## The structure that already exists and that I failed to use
+    22	
+    23	`DATE-ALLOCATION-DECISION-2026-09-10.md`, adopted at 12:00 today, allocates the 166 TRAIN
+    24	dates as **116 source/development · 48 evaluation-only claim · 2 quarantined reservations**.
+    25	
+    26	**That is already a design/confirmation split.** The 48 evaluation-only dates have never been
+    27	touched.
+    28	
+    29	**The protection against fooling ourselves is untouched data, not frozen parameters.** With 48
+    30	dates held aside, exploration on the other 116 costs nothing epistemically. I had that in hand
+    31	two and a half hours ago and kept freezing parameters instead.
+    32	
+    33	## The two phases, stated
+    34	
+    35	**Phase 1 — design. Now.**
+    36	- Sweep freely: beam width, learning rate, epochs, checkpoint cadence, catalogue construction
+    37	  and caps, head architecture, and the decomposition itself.
+    38	- On the **116 development dates** and the development anchors only.
+    39	- **Nothing produced here is a claim.** Every artefact is labelled exploration.
+    40	- Purpose: find a design in which the three routes actually do something.
+    41	
+    42	**Phase 2 — confirmation. After the design is fixed.**
+    43	- Freeze the design, declare it in full, run once on the **48 untouched dates**.
+    44	- Report whatever comes, in the same detail either way.
+    45	
+    46	## What I withdraw
+    47	
+    48	| what I said | correct in design phase |
+    49	|---|---|
+    50	| beam width "may not be promoted by outcome" | **sweep it.** `1.66°` gives `+0.899%`; `3.32°` gives `+8.16%` — that is a design finding, not a violation |
+    51	| learning rate "is a sealed literal" | **false, and it should be swept** — already dispatched as a convergence question, which was still too narrow a framing |
+    52	| "the sealed checkpoint format rejects more than 2,000 epochs" | an implementation guard; change it if the design needs it |
+    53	| catalogue caps, layer widths, cadence, activation | design parameters |
+    54	| the training gate G1 | asked me to predict a measurement before permitting it; void |
+    55	
+    56	**No measurement is retracted by this record.** What changes is what the numbers are *for*:
+    57	they are design evidence, not claim evidence.
+    58	
+    59	## What still holds, and why
+    60	
+    61	- **The 48 evaluation dates stay untouched.** This is the whole basis on which free exploration
+    62	  is safe. Nothing in phase 1 may read them.
+    63	- **Four-field reporting** — reference, information class, estimand, numerator — still applies.
+    64	  It prevents mislabelling, which is a hazard in every phase.
+    65	- **Genuine sealing still applies to the objective, the numerator, the fading-quantile scoring
+    66	  convention, the service guard and the decision margin.** Changing those is still a declared
+    67	  policy change, because they define what is being measured rather than how the design is
+    68	  chosen.
+    69	- **Loss values are still never evidence about EE.**
+    70	
+    71	## Immediate consequences for the work in flight
+    72	
+    73	- The training run started at 13:55 (v1 schema, unswept lr, 12-anchor panel) is **phase-1
+    74	  exploration**, not a confirmatory run. It does not need the heavy caveats I attached to it.
+    75	  It is the first end-to-end exercise of a chain that had never run.
+    76	- `LRSWEEP` was dispatched as a convergence-validity check. **Widen it: in design phase the
+    77	  question is which learning rate produces the best-behaved training, not merely which ones
+    78	  fail to diverge.**
+    79	- The next work is **sweeping**, not more validation: beam width, epochs, and the two candidate
+    80	  decompositions.
+    81	- `PANELCEIL` has changed what a sweep should target. On the actual 12-anchor training panel
+    82	  the coordination ceiling is `+1.944795%` and the **acceleration ceiling is `+1.045609%`** —
+    83	  not the `+100.7%` I had been quoting from a different panel. **On this panel both axes are
+    84	  about one to two per cent.** A design sweep must therefore look for a regime where either
+    85	  ceiling is materially larger, because at this operating point no learned method can be
+    86	  substantial on either axis.
+=================== V025-CONTROLLER-OUTCOME-PLAN-2026-09-10.md
+     1	# What each training outcome means, and what is already dispatched against it
+     2	
+     3	**2026-09-10 14:35 UTC. Written while both runs are in flight and no contrast exists.**
+     4	Design phase: these are exploration branches, not acceptance rules.
+     5	
+     6	Two runs are live on the same 22-anchor physics, same arms, same epochs, same seeds. **The
+     7	only difference is the Q1 representation** — v1 (defective) versus v2 (off-axis repaired,
+     8	elevation added, duplicate indicators dropped).
+     9	
+    10	---
+    11	
+    12	## The outcome space for `FULL - ALL_NEUTRAL_CONTROL`
+    13	
+    14	| # | outcome | what it means | response | prepared? |
+    15	|---|---|---|---|---|
+    16	| 1 | **positive on v2, ~0 on v1** | the representation was the binding constraint | repair Q2 as well and retest; representation is the design direction | **`Q2REPAIR` dispatched** |
+    17	| 2 | **~0 on both, flat across checkpoints** | heads learned nothing usable | `LRSWEEP` discriminates: bad learning rate vs unlearnable target vs arms that cannot differ in the selector | **`LRSWEEP` running** |
+    18	| 3 | **~0 on both, but moving** | 500 epochs too few | extend. The 2,000 bound is an implementation guard (`learner.py`), **not sealed** — changeable if the design needs it | trivial, no prep needed |
+    19	| 4 | **negative** | informed heads are *worse* than neutral | points at scale, not information: `C3REACH` measured the learned interaction head at `2,518-11,205` against an additive spread of `107-264` — one to two orders too large. Response is calibration of the head's output scale, not more training | diagnosis already in hand |
+    20	| 5 | **positive but under ~1%** | consistent with the panel's own ceilings and therefore **not a learning problem** | find an operating point where the ceiling is materially larger | **`BEAMSWEEP` dispatched** |
+    21	
+    22	**Outcome 5 deserves emphasis.** `PANELCEIL` measured, on this exact 12-anchor panel:
+    23	coordination ceiling `+1.944795%`, **acceleration ceiling `+1.045609%`** (`13.291278 ->
+    24	13.430253` Mbit/J), traversal-order gap `+0.905261%`. **At this operating point no learned
+    25	method can be substantial on either axis, however good it is.** So a result of `+0.5%` would
+    26	not be a failure of learning; it would be a correct reading of a small ceiling.
+    27	
+    28	## The per-route outcome space for `FULL - DROP_Ci`
+    29	
+    30	| outcome | meaning | response |
+    31	|---|---|---|
+    32	| C1 carries everything, C2 and C3 ~0 | the three-route claim is really a one-route claim | either repair C2/C3's targets, or change the decomposition — two candidates already specified |
+    33	| C3 ~0 | consistent with `93.06%` of its training support being `\|A\| = 2` while the deployed catalogue contains size-100 rows; a head trained on pairs is extrapolating | enlarge the coalition support, or change what route 3 predicts |
+    34	| C2 ~0 | expected: declaration v1.9 §5 already states C2's set-level marginal is **zero by construction**, and its 22 inputs were **never repaired** | `Q2REPAIR` |
+    35	
+    36	## Dispatched now, because they have the longest lead
+    37	
+    38	**`BEAMSWEEP`** — rebuild physics at a wider beam and recompute both panel ceilings with
+    39	`PANELCEIL`'s construction. This is the largest measured lever on the thing that actually
+    40	binds: `+0.899%` at the sealed `1.66°` versus `+8.16%` at `3.32°`. **It needs new physics
+    41	(~1.5 h) and is therefore started before it is known to be needed.**
+    42	
+    43	**`Q2REPAIR`** — repair the 22-slot `q2_state` the way Q1 was repaired. `C2REALV2` verified
+    44	that **none of the 22 slots changed** under the Q1 repair: `off_axis_angle` and
+    45	`focal_link_elevation` do not enter C2's inputs, slot 9 `missing_incumbent` is still constant
+    46	zero, and slot 6 still carries an indicator whose Q1 copy was dropped. **C2 has never been
+    47	tested on a repaired representation**, and its verdict cannot be read as final until it has.
+    48	
+    49	## Held, with the trigger written down
+    50	
+    51	- **The decomposition bake-off** — needed only if the routes are individually dead after the
+    52	  representation is repaired. Both candidates' targets derive from the same physics layer, so
+    53	  it costs no new physics. Trigger: both runs report and at least one route is ~0 on the
+    54	  repaired representation.
+    55	- **Extending past 500 epochs** — trigger: outcome 3.
+    56	- **Head output-scale calibration** — trigger: outcome 4.
+    57	
+    58	## What no outcome licenses
+    59	
+    60	None of these branches is chosen by whether it improves a contrast. Each is triggered by a
+    61	**diagnosis** — flat versus moving, representation-bound versus ceiling-bound, scale versus
+    62	information — and each diagnosis is stated here before any number exists. The 48 evaluation
+    63	dates remain untouched by every branch above.

@@ -1,0 +1,366 @@
+=================== V025-CONTROLLER-PREDECLARATION-DECOMPOSITION-BAKEOFF-2026-09-10.md
+     1	# Pre-declaration — head-to-head screen of the two candidate decompositions
+     2	
+     3	**2026-09-10, written BEFORE any exact-path row exists.** `EXACTGEN` is generating the
+     4	corpus and has produced nothing yet. No sealed artefact, constant, threshold, sign, seed,
+     5	horizon, price, guard or acceptance rule is changed. This fixes the comparison metrics while
+     6	no data exists to tune them against.
+     7	
+     8	## The two candidates
+     9	
+    10	| | Partitions | Three routes | Cost to the claim |
+    11	|---|---|---|---|
+    12	| **F** (fable) | the **physical quantity** | credited bits under the candidate's occupancy; resource energy under the candidate's activation; continuation | **forfeits coordination as a named ablatable route** |
+    13	| **A** (astra) | the **information** | local-link innovation; temporal innovation; relational innovation — successive increments of `E[Y \| I0, X_J]` where `Y = B - eta_ref*E` | keeps three named routes; **ablation must propagate through the whole computation**, not zero an output |
+    14	
+    15	They partition different axes, so they are not variants of one another and **neither is a
+    16	special case of the other**.
+    17	
+    18	## What can and cannot run in parallel
+    19	
+    20	**Can, and should:**
+    21	- Both derive every target from the same coupled-physics quantities — whole-network bits and
+    22	  joules, per-user attribution, the three sealed offsets. `EXACTGEN` produces those once and
+    23	  both consume them. **The expensive part is shared.**
+    24	- Both can be screened **offline, with no training and no policy run**, by computing their
+    25	  targets on the same rows and measuring the quantities below.
+    26	- The mode-selection change (`R2`/`R3` stale-CQI) sits in the control law, not the route
+    27	  layer, and is orthogonal to both.
+    28	
+    29	**Cannot:**
+    30	- A contract v2 declaration names **one** set of three route identities. The choice is
+    31	  exclusive **at declaration time**, not at measurement time.
+    32	- Full training of both to endpoint would double the panel cost. This screen deliberately
+    33	  stops before that.
+    34	
+    35	## Metrics, fixed now
+    36	
+    37	Computed for **F**, for **A**, and for the **incumbent** `Psi = Delta F(A) - sum d_i`, on the
+    38	same rows, same anchors, same catalogue:
+    39	
+    40	1. **Pointwise conditioning.** Parts-to-total ratio `(sum |parts|) / |total|` at each
+    41	   coalition size, and its growth in size. The incumbent's measured values are 1.57x at pairs
+    42	   and 22.99x at the grand row; report every candidate on that same scale. Report the
+    43	   **pointwise** figure for all three. A population RMS bound may be reported **alongside**
+    44	   but never in place of it, and never compared directly against a pointwise number.
+    45	2. **Reachability.** Fraction of anchors at which the third route's term changes the catalogue
+    46	   argmax, computed **exactly** (with the exact term, not a learned head), plus the share of
+    47	   catalogue rows the term can never reorder.
+    48	3. **Learnability of each route, separately.** Held-out `R^2`, within-group pairwise ordering,
+    49	   and top-1 argmax agreement, under leave-one-anchor-out and leave-one-world-out, against a
+    50	   linear model, a constant predictor, and a high-capacity model on the same inputs. A
+    51	   high-capacity failure means the ceiling is **informational**, not architectural.
+    52	4. **Distinctness.** Pairwise correlation between the three routes' targets, and the `R^2` of
+    53	   each route regressed on the other two. A route that is a function of the others is not a
+    54	   separate source, whatever it is named.
+    55	5. **Cost.** Wall time to produce each route's target per anchor, so the panel can be costed
+    56	   before it is funded.
+    57	
+    58	## Reading rule, fixed now
+    59	
+    60	- **No winner is declared on conditioning alone.** Conditioning is necessary, not sufficient:
+    61	  a perfectly conditioned decomposition whose routes are not separately learnable, or not
+    62	  distinct, fails.
+    63	- **A candidate that fails (2) — its third route cannot change the argmax — is rejected for
+    64	  the three-route claim**, regardless of how well it scores elsewhere. It may still be
+    65	  reported as a better total-score predictor.
+    66	- **If both pass every metric**, the choice is **the owner's**, because the deciding question
+    67	  is what the paper claims — whether "coordination" survives as a named ablatable route — and
+    68	  that is not a measurement.
+    69	- **If both fail**, that is reported plainly, with the incumbent's numbers beside them, and
+    70	  no third candidate is invented to rescue the outcome in the same breath.
+    71	- Nothing here is an EE claim. None of these metrics is pooled EE, and none may be reported
+    72	  as one. Committed pooled EE is measured only on a declared panel, later, if one is funded.
+    73	
+    74	## What this pre-declaration is not
+    75	
+    76	It does not authorise contract v2, a corpus substitution, a panel, or any training. It fixes
+    77	how two proposals will be compared, before either has a number attached.
+=================== V025-CONTROLLER-REQUIREMENT-CHANGE-2026-09-10.md
+     1	# Requirement change — the bar moves from three individual gains to the joint span
+     2	
+     3	**2026-09-10, ~07:00 UTC. Recorded by the controller. This is an owner decision about what
+     4	the paper claims, not a change to any estimand, formula, sign, threshold, seed, horizon,
+     5	price, guard or acceptance rule. Nothing sealed is modified.**
+     6	
+     7	## The owner's words
+     8	
+     9	> "應該是說3個加起來要有明顯的提升，如果真的有1、2個是提升的比較少也只能接受，最好是只有1個
+    10	> 或沒有，但是不能3個加起來還提升很少，那就感覺沒什麼意義了"
+    11	
+    12	**The bar is now `FULL - BASELINE` substantial.** One or two routes contributing little is
+    13	acceptable; ideally at most one does. What is not acceptable is all three together amounting
+    14	to very little.
+    15	
+    16	## The sequence, recorded in full because the timing matters
+    17	
+    18	| When | Bar |
+    19	|---|---|
+    20	| earlier | each of C1, C2, C3 must individually raise EE; a "C3 negative result" is not acceptable |
+    21	| then | the **ordering**: baseline + each of C1/C2/C3 individually positive, and FULL > any pair > control |
+    22	| then | "如果只能提升1% 那就沒有什麼意義" — 1% is not a meaningful result |
+    23	| then | "不用超過古典搜尋也沒關係" — the full system need not beat classical search |
+    24	| **now** | **the three together must be substantial; individual positivity is preferred, not required** |
+    25	
+    26	**This change was made after `RESIDTOGGLE` reported.** The owner had the residual-ceiling
+    27	number, `+5.62%` demand-capped, in hand. I record that plainly.
+    28	
+    29	It is nonetheless not outcome-selection in the sense the non-negotiables forbid, and the
+    30	distinction is worth stating precisely:
+    31	
+    32	- **What is forbidden** is tuning a formula, sign, threshold, seed, horizon, price or
+    33	  acceptance rule against an observed result, or selecting a rerun by its outcome. None of
+    34	  those has happened. No estimand has changed; every measurement already taken stands exactly
+    35	  as reported, under the reading rule declared before it ran.
+    36	- **What changed** is which claim the paper makes. That is the owner's to set, and it was set
+    37	  by narrowing an ambition, not by moving a pass mark on a fixed test. The pre-declared 10%
+    38	  and 5% screens for the residual **still stand as stated**, and `RESIDTOGGLE` is still
+    39	  reported against them: `+5.62%`, below astra's 10%, above fable's 5%, with fable's second
+    40	  half still pending.
+    41	
+    42	I am recording the timing because a reader is entitled to it, not because I think the change
+    43	is improper.
+    44	
+    45	## What this changes in the work
+    46	
+    47	**Load-bearing before, much less so now:**
+    48	- Whether C3 alone clears a screen. It is now a component of a span, not a gate.
+    49	- Whether each route can independently change a committed decision. Still worth knowing —
+    50	  `C3REACH` continues — but no longer decisive.
+    51	- The panel spine's move set (erratum 16). Still a real design defect that must be re-declared
+    52	  before any panel, but it no longer determines whether the claim survives.
+    53	
+    54	**Load-bearing now:**
+    55	- **`FULL - BASELINE` on the reported numerator.** Not measured. `FULLSPAN` dispatched at
+    56	  07:01 UTC to measure it on `RESIDTOGGLE`'s own catalogue, anchors, guard, tie-break,
+    57	  provisioning and pooling, adding only the committed nearest-eligible incumbent as a third
+    58	  selector, so the span decomposes as
+    59	  `BASELINE -> ADDITIVE_ONLY -> WITH_RESIDUAL`.
+    60	- The **exact/oracle-to-learned gap**. Every span measured this way is a **ceiling**: it hands
+    61	  the selector exact terms rather than predictions. What learned heads recover from that
+    62	  ceiling is a separate measurement and must never be conflated with it.
+    63	- Whether the corpus can carry the declared targets at all (`EXACTGEN`, `C1REAL`).
+    64	
+    65	**Unchanged:**
+    66	- `ALL_NEUTRAL_CONTROL` is never relabelled `BASELINE`. The span's reference is the committed
+    67	  nearest-eligible incumbent; the all-neutral arm is a different object and keeps its name.
+    68	- No TEST split. No tuning against results. No outcome-selected rerun. Sealed artefacts and
+    69	  frozen manifests are not rewritten.
+    70	- Every finding recorded today stands unchanged, including the ones that make the work harder.
+=================== V025-CONTROLLER-OPEN-CONTRADICTION-RESIDUAL-SIGN-2026-09-10.md
+     1	# Open contradiction — the residual's sign flips between two measurements
+     2	
+     3	**2026-09-10. `DIAGNOSTIC_NOT_CLAIM`. Recorded while unresolved, deliberately. No sealed
+     4	artefact, constant, threshold, sign, seed, horizon, price, guard or acceptance rule is
+     5	changed. This record exists so the contradiction cannot later be quietly resolved in whichever
+     6	direction turns out to be convenient.**
+     7	
+     8	**Two receipts, both complete, disagree on the sign of the exact set residual's effect on
+     9	pooled reported EE. `RESIDTOGGLE` reports `+5.62%`. `C3REACH` reports `-60%`. Neither is
+    10	being preferred here.**
+    11	
+    12	## The two receipts
+    13	
+    14	| | `RESIDTOGGLE` | `C3REACH` |
+    15	|---|---|---|
+    16	| report | `ORACLE-RESIDUAL-TOGGLE-2026-09-10.md` | `C3-ARGMAX-REACHABILITY-2026-09-10.md` |
+    17	| worlds | `V025_PROBE_R2/world/1`, `/2` | `V025_PROBE/world/3` |
+    18	| anchors | 8 | 20 (x 4 lineages = 80 decisions) |
+    19	| catalogue | purpose-built, 8,192 cap, singletons + bundles + evacuations + rung controls | pilot's deployed `_build_anchor_rows(full_legal_actions=True)` + `_catalogue_with_census`, 948-1000 rows |
+    20	| **price / objective** | **exact-Fraction Dinkelbach, one common price across all eight anchors, per numerator** | **the pilot's own score: additive + interaction, boundary-0 `F = B - eta_ref*E` in kappa units** |
+    21	| exact residual effect, demand-capped | **+5.62%** (`8.548697 -> 9.029226` Mbit/J) | **30.82 -> 12.30 Mbit/J** over the 48 changed decisions |
+    22	| mechanism visible in the receipt | served `486 -> 503`, target attained `181 -> 192` | capped bits `6.219e12 -> 4.825e12`, **energy `201,800 -> 392,255 J`** |
+    23	
+    24	## What both agree on
+    25	
+    26	- **The residual is reachable.** `RESIDTOGGLE`: the two selectors differ at **8/8** anchors.
+    27	  `C3REACH`: exact `Psi` changes the argmax at **14/20** anchors, learned `Psi` at **20/20**.
+    28	  The earlier "C3 is structurally inert" reading is dead by two independent routes, and
+    29	  erratum 15 and erratum 16 are confirmed rather than merely argued.
+    30	- **Tie-breaks are not doing the work.** `C3REACH`: 0/80 final-ranking tie-break flips, and
+    31	  the top two rows were within 1 ULP in 0/80 rankings under every scoring variant.
+    32	- **The learned head is badly scaled.** Learned `Psi` spans 2,518-11,205 against an additive
+    33	  score spread of 107-264 at the same anchor - one to two orders of magnitude. It dominates
+    34	  the ranking rather than adjusting it. This independently confirms a worker's report that
+    35	  the learned head is "off by two orders of magnitude at the grand row" and reaches the
+    36	  decision "destructively".
+    37	- **`contexts.get(...)` is `None` on 79.164%** of pooled legal rows, so the residual can only
+    38	  reorder about a fifth of any catalogue. It still flips 70% of anchors within that fifth.
+    39	
+    40	## Candidate explanations, none established
+    41	
+    42	1. **Objective mismatch.** `RESIDTOGGLE` selects under a price solved to target pooled EE;
+    43	   `C3REACH` selects under the pilot's boundary-0 `F`. If the pilot's selection objective is
+    44	   misaligned with the reported numerator, a large-magnitude term would **amplify** that
+    45	   misalignment - which is consistent with energy nearly doubling in `C3REACH`. **`OBJMISMATCH`
+    46	   is measuring exactly this and has not reported.**
+    47	2. **Different worlds.** `world/3` versus `world/1` and `/2`.
+    48	3. **Different catalogues.** A purpose-built catalogue with evacuations and bundles versus the
+    49	   pilot's deployed catalogue.
+    50	4. **Different residual object.** `RESIDTOGGLE` adds `joint - sum(singletons)` reconstructing
+    51	   the candidate surplus exactly; `C3REACH` adds `_exact_interactions` under the production
+    52	   `contexts` gate, which is absent on 79% of rows. **These may not be the same quantity.**
+    53	
+    54	Explanation 1 would mean the fault is in the **scoring objective**, not in the route - and
+    55	would be repairable without touching any of the three routes. Explanation 4 would mean the two
+    56	jobs measured **different things** and neither is wrong. I have evidence for neither.
+    57	
+    58	## The rule I am binding myself to
+    59	
+    60	- **Neither receipt is preferred, cited alone, or quietly dropped.** Any later statement about
+    61	  the residual's value must carry both numbers until the contradiction is resolved by
+    62	  measurement.
+    63	- The resolution must come from a measurement that **discriminates** between the candidates
+    64	  above - at minimum, running both scoring treatments on the **same** world, anchors and
+    65	  catalogue. That measurement is to be declared before it runs.
+    66	- **`RESIDTOGGLE`'s `+5.62%` remains reported against the pre-declared 10% and 5% screens**
+    67	  exactly as it was, and the pre-declared reading rule for it is unchanged. This record does
+    68	  not retract it; it records that a second measurement disagrees.
+    69	- If the contradiction resolves in the direction that makes the work harder, it is reported
+    70	  the same way and in the same detail as if it had gone the other way.
+=================== V025-CONTROLLER-STATE-2026-09-10-0745Z.md
+     1	# Controller state — 2026-09-10 07:45 UTC
+     2	
+     3	`DIAGNOSTIC_NOT_CLAIM` throughout. Nothing sealed was modified today. Every number below is
+     4	from a receipt on the server; every ceiling is labelled as one.
+     5	
+     6	## The bar, as it now stands
+     7	
+     8	`FULL - BASELINE` must be substantial. One or two routes contributing little is acceptable;
+     9	all three together amounting to little is not. Recorded with its timing in
+    10	`V025-CONTROLLER-REQUIREMENT-CHANGE-2026-09-10.md`, including that it was set after
+    11	`RESIDTOGGLE` reported `+5.62%`.
+    12	
+    13	## Against that bar
+    14	
+    15	**`FULLSPAN`, demand-capped, 8 anchors, worlds 1 and 2, exact terms:**
+    16	
+    17	| contrast | gain |
+    18	|---|---:|
+    19	| `BASELINE -> ADDITIVE_ONLY` | **+10.80%** |
+    20	| `ADDITIVE_ONLY -> WITH_RESIDUAL` | **+5.62%** |
+    21	| **`BASELINE -> WITH_RESIDUAL`** | **+17.03%** |
+    22	
+    23	Positive at 8/8 anchors, `+13.60%` to `+28.44%`. Served `452 -> 503`, attained `174 -> 192`.
+    24	Span decomposition: `81.04%` extra credited bits, `18.96%` reduced energy.
+    25	
+    26	**This is a ceiling.** It hands the selector exact terms, not predictions. What learned heads
+    27	recover from it is unmeasured, and the one measurement of a learned head's scale
+    28	(`C3REACH`) found it one to two orders of magnitude too large.
+    29	
+    30	**The additive component does not depend on the open contradiction below.** Even if the
+    31	residual is worth nothing, `+10.80%` stands.
+    32	
+    33	## Open contradiction, unresolved
+    34	
+    35	`RESIDTOGGLE`/`FULLSPAN` put the exact residual at `+5.62%` demand-capped. `C3REACH` puts it
+    36	at `30.82 -> 12.30 Mbit/J` on world 3 with energy nearly doubling. Both receipts are complete.
+    37	Four candidate explanations are on record; none established. `SIGNFORK` (dispatched 07:28,
+    38	pre-declared) runs a 2x2 over price and the `contexts` gate on one fixed world, anchor set and
+    39	catalogue to discriminate. `OBJMISMATCH` is independent evidence on the price half.
+    40	
+    41	**Rule bound in `V025-CONTROLLER-OPEN-CONTRADICTION-RESIDUAL-SIGN-2026-09-10.md`: both numbers
+    42	travel together until a discriminating measurement resolves it.**
+    43	
+    44	## Settled today
+    45	
+    46	- **C3 is reachable.** `RESIDTOGGLE` 8/8 anchors differ; `C3REACH` exact `Psi` flips 14/20,
+    47	  learned 20/20, with 0/80 tie-break flips and 0/80 top-two within 1 ULP. The
+    48	  structural-inertness reading is dead by two independent routes.
+    49	- **The shipped corpus carries surrogate labels.** All 176,223 rows; the declared path is
+    50	  unreachable as sealed but executable. `EXACTGEN` is calibrating and generating.
+    51	- **The learned interaction head is badly scaled** — 2,518-11,205 against an additive spread
+    52	  of 107-264 at the same anchor.
+    53	- **`contexts` is `None` on 79.164%** of legal rows, so the residual can reorder about a fifth
+    54	  of a catalogue.
+    55	- **Assignment headroom survives the reporting numerator**: `9.8698%` (`SEALED`),
+    56	  `3.5590%` (`MARGIN_Q`), 768 replayed fields with 0 above 1 ULP.
+    57	- **Causal mode selection**: `+78.02%` demand-capped at `0 dB` stale-CQI, `+76.64%` at `-1 dB`
+    58	  with decode failure `25.79% -> 13.46%`, net of failures, identical joules to the bit.
+    59	- **Sealed checkpoint format admits** five learned arms, 2,000 epochs, cadence 100,
+    60	  round-trip verified; resume is bit-exact. 3,000/9,000 and eight arms fail.
+    61	- **Two reviewers converged** on a better-conditioned decomposition existing, from opposite
+    62	  starting positions, and both withdrew their earlier impossibility arguments after erratum 15.
+    63	
+    64	## Errata raised today against my own work
+    65	
+    66	15 — I gave both reviewers the wrong selector.
+    67	16 — my own panel spine specified a move set that would have sterilised C3.
+    68	Plus: the replay parity gate I wrote demanded bit-exactness that floating-point summation
+    69	cannot deliver; and a non-regression invariant I asserted to `FULLSPAN` was checked and found
+    70	false (39 of 800 user-anchors decrease).
+    71	
+    72	## Running
+    73	
+    74	`OBJMISMATCH` 3h45m · `CTRLCEIL` 3h58m (report already in hand, still working) ·
+    75	`C1REAL` 1h58m · `EXACTGEN` 53m · `CTRLCAP` 45m · `SIGNFORK` 16m
+    76	
+    77	## Not authorised by anything today
+    78	
+    79	Contract v2, corpus substitution, a panel, or any training run.
+=================== V025-CONTROLLER-PREDECLARATION-TRAINING-GATE-2026-09-10.md
+     1	# Pre-declaration — the gate that must pass before any training run
+     2	
+     3	**2026-09-10, written BEFORE `FACTORIAL` and `C1REAL` report.** No sealed artefact, constant,
+     4	threshold, sign, seed, horizon, price, guard or acceptance rule is changed. This fixes the
+     5	condition for starting training while the deciding numbers do not yet exist.
+     6	
+     7	## The wrong gate, and why I nearly used it
+     8	
+     9	Earlier today I framed the training gate as: the corpus is real, and the sealed checkpoint
+    10	format can express the protocol. Both matter, but **neither is the gate.** The format
+    11	question is "can we write it down"; it says nothing about whether writing it down is worth
+    12	anything.
+    13	
+    14	**The gate is the exact ceiling.** Every route's exact marginal is an upper bound on what a
+    15	learned head predicting that route can deliver: the exact term hands the selector the true
+    16	value, a head hands it an estimate. A route worth `x%` with exact terms is worth **at most**
+    17	`x%` with a head, and strictly less whenever the head errs.
+    18	
+    19	Training before the exact marginals are known would measure a shortfall against an unknown
+    20	bound. That is the failure mode recorded earlier today — building a component before building
+    21	the contrast that gives it meaning.
+    22	
+    23	## The gate
+    24	
+    25	Training may be proposed only when **both** hold, and each is reported before the proposal:
+    26	
+    27	**G1 — the exact marginals justify it.** `FACTORIAL` (dispatched 08:26 UTC) completes the
+    28	`2^3` factorial with exact terms on `FULLSPAN`'s catalogue, anchors, guard, tie-break,
+    29	provisioning, price and pooling, reporting `C1_ONLY`, `C2_ONLY`, `C3_ONLY`, the three `DROP`
+    30	arms, `FULL` and `BASELINE`, demand-capped. Against the owner's current bar — the three
+    31	together substantial, one or two contributing little acceptable — G1 passes when the joint
+    32	span is substantial **and** the report states plainly which single-route marginals are
+    33	positive and which are not. **No numerical pass mark is invented here; the magnitudes are
+    34	reported and the bar is the owner's.**
+    35	
+    36	**G2 — the target is learnable.** `C1REAL` must show the ceiling on the declared target is
+    37	**architectural, not informational**. If a high-capacity model on the same 16 inputs also
+    38	fails, the limit is in the information, and no architecture, epoch count or seed repairs it.
+    39	**That conclusion is reachable without training and would make training pointless.**
+    40	
+    41	## What happens under each outcome
+    42	
+    43	- **G1 and G2 both pass** — propose five production arms, 500 epochs, cadence 100, on the
+    44	  exact corpus. That protocol is round-trip verified in the sealed format and resume is
+    45	  bit-exact. Its purpose is the one quantity nothing has measured: **how much of the exact
+    46	  ceiling a learned head recovers.** It is not the claim.
+    47	- **G1 passes, G2 fails** — do not train this decomposition. The targets change first; the two
+    48	  candidate replacements are already specified and their comparison metrics are pre-declared
+    49	  in `V025-CONTROLLER-PREDECLARATION-DECOMPOSITION-BAKEOFF-2026-09-10.md`.
+    50	- **G1 fails** — do not train. A ceiling that does not justify a head is not repaired by
+    51	  fitting one.
+    52	- **The residual-sign contradiction still unresolved when G1 reports** — `FACTORIAL`'s `C3`
+    53	  marginals are reported with both `RESIDTOGGLE`'s `+5.62%` and `C3REACH`'s `-60%` beside
+    54	  them, per the binding rule in
+    55	  `V025-CONTROLLER-OPEN-CONTRADICTION-RESIDUAL-SIGN-2026-09-10.md`. `SIGNFORK` is the
+    56	  discriminating measurement.
+    57	
+    58	## What this gate is not
+    59	
+    60	It is not a new scientific gate on any claim. It governs **whether to spend compute**, not
+    61	whether any hypothesis is accepted or rejected. No acceptance rule, threshold, sign or
+    62	estimand is created, moved or removed by it.
+    63	
+    64	It also does not authorise contract v2, corpus substitution, or a panel. Those remain
+    65	separate and unauthorised.

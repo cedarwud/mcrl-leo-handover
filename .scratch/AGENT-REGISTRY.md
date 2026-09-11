@@ -1,5 +1,8 @@
 # Agent registry — resume after any interruption
 
+> **New session? Read `.scratch/HANDOFF-2026-09-11.md` first.** At handoff (~11:20 UTC) the only live agent is
+> CF3PILOT (`a6a39605fae28be63`), which a new session cannot message; see HANDOFF §1 for how to take over.
+
 Last updated: 2026-09-11 ~09:35Z UTC (after the THIRD usage-limit reset; all four agents resumed). **Read this first after a session restart, a usage limit, or a crash.**
 
 ## FIRST THING AFTER A RESTART — the four live agents and their ready-to-send resume messages
@@ -127,7 +130,7 @@ at C=50 is **52.042303**; and **41.28 is a mean active-beam count, not an EE**.
 
 | name | how it runs | resume |
 |---|---|---|
-| **CF3-AGY-2** | agy Gemini 3.8 Flash (High), cwd `.scratch/reviews/cf3-agy-2` | reviews diff `e8a04ccf..f297334e` (must-fixes + Amendment 3); **gates the launch**. Not resumable — if `CF3-AGY-REVIEW-2.md` is absent, re-run `agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 60m </dev/null` in that dir |
+| **CF3-AGY-2** | agy Gemini 3.8 Flash (High), cwd `.scratch/reviews/cf3-agy-2` | **COMPLETED: 0 INVALIDATES, 0 BIASES → GO given ~11:15 UTC.** Reviewed diff `e8a04ccf..f297334e`. Not resumable — if `CF3-AGY-REVIEW-2.md` is absent, re-run `agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 60m </dev/null` in that dir |
 | **CF3-AGY** | agy Gemini 3.8 Flash (High) | **COMPLETED** — `.scratch/reviews/cf3-agy/CF3-AGY-REVIEW.md`: 0 INVALIDATES, 0 BIASES |
 | XBLIND-ASTRA | codex `gpt-6-astra` ultra, server, `run_resumable2.sh`; ws `/home/sat/mcrl-v025-xblind-astra-ws` | **auto** — the runner resumes its codex session on failure; check `chain.log` |
 | XADV-ASTRA | same; ws `/home/sat/mcrl-v025-xadv-astra-ws` | auto |

@@ -1,0 +1,3228 @@
+{
+  "digest": "d35ddaffda580c8c109f758372956d41aa947b9eb3915d742f3f5f9b7aaecf08",
+  "holdout": {
+    "digest": "b9fa64909f81b70ec7460406770b866f5f7217aaeee3b58c4cfdd729db13dcb6",
+    "salt": "mcrl-leo-handover-2026-08-22"
+  },
+  "schema": "mcrl-prereg-v1",
+  "sections": {
+    "action_and_state": {
+      "actions": 28,
+      "activation": "tanh",
+      "beam_activation": "z = 1{U > 0}, derived",
+      "beam_slots": 7,
+      "contract_block_dim_ablation_only": 13,
+      "contract_block_enabled": false,
+      "hidden_layers": [
+        100,
+        50,
+        50
+      ],
+      "satellite_slots": 4,
+      "state_dim": 112
+    },
+    "antenna_and_link_budget": {
+      "atmosphere_model": "TR 38.811 (6.6-8): A_zenith / sin(elevation)",
+      "bandwidth_hz": 500000000.0,
+      "baseband_power_per_satellite_w": 0.2,
+      "beam_bandwidth_hz": 166666666.66666666,
+      "beam_count_ceiling": null,
+      "beam_power_max_w": 1.65,
+      "beam_to_rf_chain_is_sourced": false,
+      "bessel_series_max_abs_x": 34.0,
+      "carrier_hz": 20000000000.0,
+      "circuit_power_per_beam_w": 0.338,
+      "clutter_loss": "excluded: NLOS only; this terminal is a fixed LOS VSAT",
+      "g0_linear": 2000.0,
+      "half_angle_convention": "pattern receives theta_3dB / 2",
+      "ionospheric_scintillation": "excluded: TR 38.811 §6.6.6.1 considers it below 6 GHz only",
+      "pa_max_efficiency": 0.35,
+      "pa_output_backoff_db": 5.0,
+      "pa_saturation_power_w": 5.217758139277826,
+      "rician_k_factor_db": 20.0,
+      "rx_envelope": "32 - 25*log10(theta_deg), clipped to [-10, 35]",
+      "rx_envelope_min_deg": 2.498270483333333,
+      "rx_envelope_min_provenance": "theta^R_min = max(1 deg, 100*lambda/D) per ITU-R S.465-6, derived from the named terminal diameter and the carrier -- 2.498 deg at 0.6 m and 20 GHz.  SDD's 2.05 deg is VOID: it implies D = 0.731 m, and the terminal cannot be 0.6 m for its gain and 0.731 m for its angular floor.  P5 measures the fraction of interference evaluations below it",
+      "rx_gain_max_dbi": 35.0,
+      "rx_terminal_diameter_m": 0.6,
+      "satellite_power_ceiling": null,
+      "scintillation_loss_db_by_elevation": {
+        "10.0": 1.08,
+        "20.0": 0.48,
+        "30.0": 0.3,
+        "40.0": 0.22,
+        "50.0": 0.17,
+        "60.0": 0.13,
+        "70.0": 0.12,
+        "80.0": 0.12,
+        "90.0": 0.12
+      },
+      "scintillation_model": "TR 38.811 Table 6.6.6.2.1-1, 20 GHz tropospheric, linearly interpolated in elevation, held below 10 deg",
+      "segment_start_power_w": 0.825,
+      "shadow_fading_model": "zero-mean dB Gaussian, sigma from TR 38.811 Table 6.6.2-3 (Ka band, LOS), linearly interpolated in elevation",
+      "shadow_fading_sigma_db_by_elevation": {
+        "10.0": 1.9,
+        "20.0": 1.6,
+        "30.0": 1.9,
+        "40.0": 2.3,
+        "50.0": 2.7,
+        "60.0": 3.1,
+        "70.0": 3.0,
+        "80.0": 3.6,
+        "90.0": 0.4
+      },
+      "stochastic_terms": [
+        "shadow_fading_db (L_s)",
+        "rician_fading_gain (K_R)"
+      ],
+      "system_temperature_k": 242.29445418135805,
+      "theta_3db_deg_full_hpbw": 3.32,
+      "zenith_gaseous_loss_db": 0.25
+    },
+    "d2": {
+      "baseline_uses": "candidate-side only (D2-2 / D2-4)",
+      "event": "3GPP-TS-38.331-D2",
+      "hysteresis_km": 50.0,
+      "min_altitude_km": 300.0,
+      "ml2_definition": "slant range UE to satellite",
+      "thresh1_km": 1500.0,
+      "thresh2_km": 1100.0,
+      "thresh2_sweep_km": [
+        900.0,
+        1000.0,
+        1100.0,
+        1200.0,
+        1300.0
+      ],
+      "ttt_seconds": 1.28,
+      "ttt_steps": 2,
+      "warmup_steps": 2
+    },
+    "data_integrity": {
+      "cell_grid_radius_basis": "h * tan(theta_3dB / 2)",
+      "cell_theta_3db_deg": 3.32,
+      "max_malformed_tle_record_fraction": 0.001
+    },
+    "dwell": {
+      "candidates": [
+        2,
+        3,
+        4
+      ],
+      "phase": "normalised to [0, 1), zero on a boundary",
+      "service_window_basis": "pass duration at >= 10 deg elevation",
+      "steps": 4
+    },
+    "ephemeris": {
+      "archive": {
+        "calendar_span_days": 390,
+        "date_first": "2025-07-27",
+        "date_last": "2026-08-20",
+        "file_count": 373,
+        "missing_dates": [
+          "2025-08-02",
+          "2025-08-07",
+          "2025-08-22",
+          "2025-09-17",
+          "2025-10-18",
+          "2025-10-25",
+          "2025-11-09",
+          "2026-01-12",
+          "2026-02-25",
+          "2026-03-04",
+          "2026-03-14",
+          "2026-03-15",
+          "2026-06-17",
+          "2026-06-21",
+          "2026-06-30",
+          "2026-07-25",
+          "2026-08-04"
+        ]
+      },
+      "config": {
+        "epoch_search_days": 1,
+        "gravity_model": "wgs72",
+        "max_tle_age_h": 24.0,
+        "min_elevation_deg": 10.0,
+        "time_step_s": 30.080000000000002,
+        "tle_root": "/home/u24/demo/tle_data/starlink/tle"
+      },
+      "file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "frozen_files": [
+        {
+          "date": "2025-07-27",
+          "file": "starlink_20250727.tle",
+          "quarantined": "0",
+          "records": "7996",
+          "sha256": "852ab61b233b4677bd32535e3094b7fe518646f5b2dca7b8a42d5874b196fd45"
+        },
+        {
+          "date": "2025-07-28",
+          "file": "starlink_20250728.tle",
+          "quarantined": "0",
+          "records": "7995",
+          "sha256": "2173f1a030ba6b9a4fcf5f532b08cf076084048392a0f653b7e90165af828c1d"
+        },
+        {
+          "date": "2025-07-29",
+          "file": "starlink_20250729.tle",
+          "quarantined": "0",
+          "records": "7995",
+          "sha256": "9a4b2628dd92ae2d6c177a26b0354b70e15324d264d297f20a0a3f34c481158d"
+        },
+        {
+          "date": "2025-07-30",
+          "file": "starlink_20250730.tle",
+          "quarantined": "0",
+          "records": "7992",
+          "sha256": "4a45685b7e51da39e3a2a3a3ef805e3a9c9484bbefada473ff99255f2fcf9e4d"
+        },
+        {
+          "date": "2025-07-31",
+          "file": "starlink_20250731.tle",
+          "quarantined": "0",
+          "records": "8044",
+          "sha256": "8c30e8e06cebd450b67a62802da1beb006e688065d3ad060caed7fe8f13ca48c"
+        },
+        {
+          "date": "2025-08-01",
+          "file": "starlink_20250801.tle",
+          "quarantined": "0",
+          "records": "8044",
+          "sha256": "48dc68a6abedf3d2260092853d91240b99c5115891e1ee5d7668fcad90c9d544"
+        },
+        {
+          "date": "2025-08-03",
+          "file": "starlink_20250803.tle",
+          "quarantined": "0",
+          "records": "8044",
+          "sha256": "1ccf24397b743a2fe3ab59f2b9d8e43ce95b576a93244d7ac87d8c56b10e0a4b"
+        },
+        {
+          "date": "2025-08-04",
+          "file": "starlink_20250804.tle",
+          "quarantined": "0",
+          "records": "8042",
+          "sha256": "a39ce0dfa51faa9f5f30beafe8bdfc4fe06d36597eb3f1262815d1fdb441496c"
+        },
+        {
+          "date": "2025-08-05",
+          "file": "starlink_20250805.tle",
+          "quarantined": "0",
+          "records": "8040",
+          "sha256": "111a4c48282fe68012569f5ff82bbd0072a22278f7989d2715e988cf670242cc"
+        },
+        {
+          "date": "2025-08-06",
+          "file": "starlink_20250806.tle",
+          "quarantined": "0",
+          "records": "8040",
+          "sha256": "b438a024609087ce22e0a9ddd671fa089ee59c947c45feaf37d76e8e7003fae9"
+        },
+        {
+          "date": "2025-08-08",
+          "file": "starlink_20250808.tle",
+          "quarantined": "0",
+          "records": "8039",
+          "sha256": "fea01e9ec639bf1e0f0a0634990f38190b448fc03b94201525252c093f5f2c54"
+        },
+        {
+          "date": "2025-08-09",
+          "file": "starlink_20250809.tle",
+          "quarantined": "0",
+          "records": "8064",
+          "sha256": "09678231197105375879cade6490d30bd7c53695eb8745bf706e8d42499cae5d"
+        },
+        {
+          "date": "2025-08-10",
+          "file": "starlink_20250810.tle",
+          "quarantined": "0",
+          "records": "8064",
+          "sha256": "89de9ca9889d4a2ebbfa141606bc0d35bd626df58b0b573e752681499064c971"
+        },
+        {
+          "date": "2025-08-11",
+          "file": "starlink_20250811.tle",
+          "quarantined": "0",
+          "records": "8064",
+          "sha256": "3ac488021f6482a38f374981b9f45fe8092e374f04c2a26ef95941b8a7162bf1"
+        },
+        {
+          "date": "2025-08-12",
+          "file": "starlink_20250812.tle",
+          "quarantined": "0",
+          "records": "8084",
+          "sha256": "3b257c2309a1f132123d2a65e5243da8c8ca77bea3b1d603bbdf96e2559de833"
+        },
+        {
+          "date": "2025-08-13",
+          "file": "starlink_20250813.tle",
+          "quarantined": "0",
+          "records": "8086",
+          "sha256": "87d131fa0e2fe284a9f1af01ba8bce931ff4d5dc1fc84b08df3ffbd7450f8919"
+        },
+        {
+          "date": "2025-08-14",
+          "file": "starlink_20250814.tle",
+          "quarantined": "0",
+          "records": "8085",
+          "sha256": "51251f7ffd933d5cbe6ab05b79299ae671437d3516e669cfe8a66342709eafb0"
+        },
+        {
+          "date": "2025-08-15",
+          "file": "starlink_20250815.tle",
+          "quarantined": "0",
+          "records": "8084",
+          "sha256": "6a0fea59b4199ed1e8193d83ac0ecbacdde2cd23a22c3c74f541aa53991cf8f7"
+        },
+        {
+          "date": "2025-08-16",
+          "file": "starlink_20250816.tle",
+          "quarantined": "0",
+          "records": "8084",
+          "sha256": "34903815f9840709386a8431c0eff974f67ab66a034f1aed2d6786d4255d8be3"
+        },
+        {
+          "date": "2025-08-17",
+          "file": "starlink_20250817.tle",
+          "quarantined": "0",
+          "records": "8080",
+          "sha256": "89e993c864e2b4c8860ecf074a45089093d63e97abdf9070233e9ae11c8b1578"
+        },
+        {
+          "date": "2025-08-18",
+          "file": "starlink_20250818.tle",
+          "quarantined": "0",
+          "records": "8080",
+          "sha256": "59aed39d1d641bc422453d6c7d07d7757cff5e944f18f8189f2158eeb25180cc"
+        },
+        {
+          "date": "2025-08-19",
+          "file": "starlink_20250819.tle",
+          "quarantined": "0",
+          "records": "8080",
+          "sha256": "08ac78910f0ef431dee3261d0774ab381d4b0091bbc4d3312c7c9091eef64a00"
+        },
+        {
+          "date": "2025-08-20",
+          "file": "starlink_20250820.tle",
+          "quarantined": "0",
+          "records": "8079",
+          "sha256": "5977680cc5e84c95a15417e7bf701b8724db71d2abbe7ecebdfdf53fb16feb44"
+        },
+        {
+          "date": "2025-08-21",
+          "file": "starlink_20250821.tle",
+          "quarantined": "0",
+          "records": "8128",
+          "sha256": "e138929c92ac8e9ef195c5026466695cb338477a4644128a0ad5fd388ae9e3df"
+        },
+        {
+          "date": "2025-08-23",
+          "file": "starlink_20250823.tle",
+          "quarantined": "0",
+          "records": "8125",
+          "sha256": "9d98cfea8f2756b58ac4853ab1ab4ffd05b0aff2cf811fd52efe2918013d05c9"
+        },
+        {
+          "date": "2025-08-24",
+          "file": "starlink_20250824.tle",
+          "quarantined": "0",
+          "records": "8123",
+          "sha256": "7e0c24a351834e25ffa361c2f3ce4b292e1dccf7c18074d2a8b68fcbc2247a54"
+        },
+        {
+          "date": "2025-08-25",
+          "file": "starlink_20250825.tle",
+          "quarantined": "0",
+          "records": "8123",
+          "sha256": "2d1bd2b2a37f2a87f0f4eb3713ba918e46dc28b16b51a16738811da4f2363231"
+        },
+        {
+          "date": "2025-08-26",
+          "file": "starlink_20250826.tle",
+          "quarantined": "0",
+          "records": "8123",
+          "sha256": "7cfe8146901fc9737e5f6a589bd2c6a64e3718018059223e7b4c9a5e8a2b50b3"
+        },
+        {
+          "date": "2025-08-27",
+          "file": "starlink_20250827.tle",
+          "quarantined": "0",
+          "records": "8123",
+          "sha256": "fb3ace20be97658247db18f2efc31a28c5a6bdac6840bf5d525f9948ad70c0e4"
+        },
+        {
+          "date": "2025-08-28",
+          "file": "starlink_20250828.tle",
+          "quarantined": "0",
+          "records": "8145",
+          "sha256": "ac5d542db3035078cb38e8c6289c7795e70c7149e3d25102b49217f71f254010"
+        },
+        {
+          "date": "2025-08-29",
+          "file": "starlink_20250829.tle",
+          "quarantined": "0",
+          "records": "8145",
+          "sha256": "201c83b0983827f8f5019d5c5ecb3ceddbeefc64ff82adfd8b0e966d75813e9c"
+        },
+        {
+          "date": "2025-08-30",
+          "file": "starlink_20250830.tle",
+          "quarantined": "0",
+          "records": "8145",
+          "sha256": "60381f7ef44554441898010a3b1685299f177d13ebe99e5b7f0d86ba4a7243f5"
+        },
+        {
+          "date": "2025-08-31",
+          "file": "starlink_20250831.tle",
+          "quarantined": "0",
+          "records": "8145",
+          "sha256": "b9b68970b8bb5898f1f9978ea06fa9f7edb512c976150b89719cee2db871cf09"
+        },
+        {
+          "date": "2025-09-01",
+          "file": "starlink_20250901.tle",
+          "quarantined": "0",
+          "records": "8140",
+          "sha256": "8dfe73c11c10caf970155547d20a26918a296e4402cfa53b000aa664a7ccd386"
+        },
+        {
+          "date": "2025-09-02",
+          "file": "starlink_20250902.tle",
+          "quarantined": "0",
+          "records": "8140",
+          "sha256": "fb2c3c16159ff7ab51bdb4e142be8e2ea563f08e85e83e174985becc21af3347"
+        },
+        {
+          "date": "2025-09-03",
+          "file": "starlink_20250903.tle",
+          "quarantined": "0",
+          "records": "8138",
+          "sha256": "d30a452a52a7d98672633904009024cc9c002d6c200dc98b71c7c2ea969d13b2"
+        },
+        {
+          "date": "2025-09-04",
+          "file": "starlink_20250904.tle",
+          "quarantined": "0",
+          "records": "8137",
+          "sha256": "dedd2a2406bef7f8c41400c10cf8ed37ebabaebfb9fa0a75bf2b450649f1499b"
+        },
+        {
+          "date": "2025-09-05",
+          "file": "starlink_20250905.tle",
+          "quarantined": "0",
+          "records": "8137",
+          "sha256": "09e29e63c5c53f4a10e87ef0e5a452af7319adc2c96b813b4bcd85c9fd7fcbb3"
+        },
+        {
+          "date": "2025-09-06",
+          "file": "starlink_20250906.tle",
+          "quarantined": "0",
+          "records": "8189",
+          "sha256": "81b724c963fb062c435562b88b935333757cfce3c8be4c1942875e255d5f0da4"
+        },
+        {
+          "date": "2025-09-07",
+          "file": "starlink_20250907.tle",
+          "quarantined": "0",
+          "records": "8189",
+          "sha256": "aec80066e121983bf7e1538c80b75ab044164acfef55da20ff351113b7a9a8ed"
+        },
+        {
+          "date": "2025-09-08",
+          "file": "starlink_20250908.tle",
+          "quarantined": "0",
+          "records": "8186",
+          "sha256": "654871f6552aaff851ea1d46aec8c4448d42b1f6070b3d04c10d33cb50351451"
+        },
+        {
+          "date": "2025-09-09",
+          "file": "starlink_20250909.tle",
+          "quarantined": "0",
+          "records": "8183",
+          "sha256": "5a60a2c57e567f593839e70a169e170103b4735f1d4ce03070f0d969beed8cef"
+        },
+        {
+          "date": "2025-09-10",
+          "file": "starlink_20250910.tle",
+          "quarantined": "0",
+          "records": "8182",
+          "sha256": "fd3e599613f9e1a64fc0e866356fdc23492e03e71cc0b5e0efa899fea46a10a1"
+        },
+        {
+          "date": "2025-09-11",
+          "file": "starlink_20250911.tle",
+          "quarantined": "0",
+          "records": "8182",
+          "sha256": "952c1d5f61bdbc2152ca11e31eb350589029d4915fdda24e5dc7197c705c5f79"
+        },
+        {
+          "date": "2025-09-12",
+          "file": "starlink_20250912.tle",
+          "quarantined": "0",
+          "records": "8178",
+          "sha256": "e5bc231d6f2dc5bb62bfb201b2a38a6322b001d2707cdfc0340356a4b5a705e9"
+        },
+        {
+          "date": "2025-09-13",
+          "file": "starlink_20250913.tle",
+          "quarantined": "0",
+          "records": "8275",
+          "sha256": "2d87f9a3867bcfb7d6888501d7ea5fe0aa217dfe299b013a31c7aa0f63d6abab"
+        },
+        {
+          "date": "2025-09-14",
+          "file": "starlink_20250914.tle",
+          "quarantined": "0",
+          "records": "8285",
+          "sha256": "78c2355f0aedd2b88a1736e3e7e1f836116bf85e2ef209dc71f18e90ed77ad10"
+        },
+        {
+          "date": "2025-09-15",
+          "file": "starlink_20250915.tle",
+          "quarantined": "0",
+          "records": "8284",
+          "sha256": "1bdc4623b301aa907b1717d5de3d82cce3bb01789fb55a38aa412d330a94a3a5"
+        },
+        {
+          "date": "2025-09-16",
+          "file": "starlink_20250916.tle",
+          "quarantined": "0",
+          "records": "8281",
+          "sha256": "45a4b7c88389a45a9da84a907bcf13f7dae906bd1a1aaa065387bb5d35284a07"
+        },
+        {
+          "date": "2025-09-18",
+          "file": "starlink_20250918.tle",
+          "quarantined": "0",
+          "records": "8303",
+          "sha256": "34453b71a55f87da3ee7ed4768cc72d46b5f0c4c93812e6cf9ef1c7ee3529b48"
+        },
+        {
+          "date": "2025-09-19",
+          "file": "starlink_20250919.tle",
+          "quarantined": "0",
+          "records": "8303",
+          "sha256": "6f6cd91e7d7715b2dce10769a8824709999e47320d24432ad317d0d4a52c7281"
+        },
+        {
+          "date": "2025-09-20",
+          "file": "starlink_20250920.tle",
+          "quarantined": "0",
+          "records": "8325",
+          "sha256": "cce5e4cd1f1d9fead44fae42e779dd747fb078f62b2729e3b9b30d78063b33df"
+        },
+        {
+          "date": "2025-09-21",
+          "file": "starlink_20250921.tle",
+          "quarantined": "0",
+          "records": "8325",
+          "sha256": "27533947be8939ecb5b74e07d6717f067c1c3b96d30d8dc1e85a8f0e9a582c89"
+        },
+        {
+          "date": "2025-09-22",
+          "file": "starlink_20250922.tle",
+          "quarantined": "0",
+          "records": "8325",
+          "sha256": "7a5d2dcfe99232e024ee543e23b3b31f4a6cc039ba9c2b422f4fd7e0a77d5bca"
+        },
+        {
+          "date": "2025-09-23",
+          "file": "starlink_20250923.tle",
+          "quarantined": "0",
+          "records": "8325",
+          "sha256": "27a44cf63efdc9cafa5d346606ed0a0f6563945ebb44fef248cd51a928fc23ba"
+        },
+        {
+          "date": "2025-09-24",
+          "file": "starlink_20250924.tle",
+          "quarantined": "0",
+          "records": "8344",
+          "sha256": "a9cd4599dbc4a867d7cd761b72c71261aa71bea768a816987c89485f9bd3c60f"
+        },
+        {
+          "date": "2025-09-25",
+          "file": "starlink_20250925.tle",
+          "quarantined": "0",
+          "records": "8344",
+          "sha256": "5d0dd49e6185b1d5cd44d6725232860f3e5a3cd41001cb8aecadc10ac478386a"
+        },
+        {
+          "date": "2025-09-26",
+          "file": "starlink_20250926.tle",
+          "quarantined": "0",
+          "records": "8338",
+          "sha256": "eb06309da48a22b3b8a6915a828360e75bf6d95909211a0efb3242df6e0e921c"
+        },
+        {
+          "date": "2025-09-27",
+          "file": "starlink_20250927.tle",
+          "quarantined": "0",
+          "records": "8390",
+          "sha256": "a3204a56c9066409a565fc017b68e2fd3db3e64c555cf9e7e61564e15d688d59"
+        },
+        {
+          "date": "2025-09-28",
+          "file": "starlink_20250928.tle",
+          "quarantined": "0",
+          "records": "8389",
+          "sha256": "080cbf2754fbdc42b8106fb003f244386e0b01def2a060b1c65e852dcb4af937"
+        },
+        {
+          "date": "2025-09-29",
+          "file": "starlink_20250929.tle",
+          "quarantined": "0",
+          "records": "8389",
+          "sha256": "f39404a1c1e73952fffe87cc3eff02240016bdaffb79e41f51353b5bb90cd634"
+        },
+        {
+          "date": "2025-09-30",
+          "file": "starlink_20250930.tle",
+          "quarantined": "0",
+          "records": "8390",
+          "sha256": "97ae7ece81cb9cccc1c34bf7508d1ee97c7e037fdb27368baa5a0553bee2dd25"
+        },
+        {
+          "date": "2025-10-01",
+          "file": "starlink_20251001.tle",
+          "quarantined": "0",
+          "records": "8389",
+          "sha256": "763f40fce15e1589c9c88b612e7765b98bf23f370b69ca663238efd05be58700"
+        },
+        {
+          "date": "2025-10-02",
+          "file": "starlink_20251002.tle",
+          "quarantined": "0",
+          "records": "8388",
+          "sha256": "ca0219484a0440f3fbed28f6fc9c6423c48c15e286d1aa394332e1d42113dd24"
+        },
+        {
+          "date": "2025-10-03",
+          "file": "starlink_20251003.tle",
+          "quarantined": "0",
+          "records": "8385",
+          "sha256": "78766527783fd5ad72d4a2e8176ee7f4dc86a36e70da9ed9345a16fd39408ee0"
+        },
+        {
+          "date": "2025-10-04",
+          "file": "starlink_20251004.tle",
+          "quarantined": "0",
+          "records": "8385",
+          "sha256": "27034a0bcf94c69470b3e9a46ca20296beaa11d9f63fa8807137b43882d86bb5"
+        },
+        {
+          "date": "2025-10-05",
+          "file": "starlink_20251005.tle",
+          "quarantined": "0",
+          "records": "8380",
+          "sha256": "e98c79e5e9e3ac0985fbefec6dd6337fabca353305646703886d3b0ddcfefc55"
+        },
+        {
+          "date": "2025-10-06",
+          "file": "starlink_20251006.tle",
+          "quarantined": "0",
+          "records": "8380",
+          "sha256": "b6bf8d7f0cb7bded930613e074b840112de87c03da78df599a8d5f3ef60b34a2"
+        },
+        {
+          "date": "2025-10-07",
+          "file": "starlink_20251007.tle",
+          "quarantined": "0",
+          "records": "8396",
+          "sha256": "99406bc4f8a0522d23d71f7a324dc550020b87032d0ecb570bc413350b318061"
+        },
+        {
+          "date": "2025-10-08",
+          "file": "starlink_20251008.tle",
+          "quarantined": "0",
+          "records": "8451",
+          "sha256": "235e0a48d4464089b27e57b6fb121de2c6a522865f5fed0a5f55de914ad44f94"
+        },
+        {
+          "date": "2025-10-09",
+          "file": "starlink_20251009.tle",
+          "quarantined": "0",
+          "records": "8445",
+          "sha256": "38c2f78b03ed47e900301746149acdcb17e0743cf89333901b0131c5ca6afbcc"
+        },
+        {
+          "date": "2025-10-10",
+          "file": "starlink_20251010.tle",
+          "quarantined": "0",
+          "records": "8473",
+          "sha256": "27be5323931a7ca68df72767b0c05c1f7c17d12ff16ef3647aafefcffae13dfb"
+        },
+        {
+          "date": "2025-10-11",
+          "file": "starlink_20251011.tle",
+          "quarantined": "0",
+          "records": "8472",
+          "sha256": "cd554b98e865060046b9ca954f30d08e73d4d489c197c33526611284897f271e"
+        },
+        {
+          "date": "2025-10-12",
+          "file": "starlink_20251012.tle",
+          "quarantined": "0",
+          "records": "8471",
+          "sha256": "6dee330f9502c151c3f4b7d2cc642c2032a35272bcbec83f09745a0250fd190d"
+        },
+        {
+          "date": "2025-10-13",
+          "file": "starlink_20251013.tle",
+          "quarantined": "0",
+          "records": "8471",
+          "sha256": "448aeee8615cd6a7682d5d1350d627bdb5f124b528b3eb210acdd01fd0a2e4cd"
+        },
+        {
+          "date": "2025-10-14",
+          "file": "starlink_20251014.tle",
+          "quarantined": "0",
+          "records": "8470",
+          "sha256": "8b1a4aa3aadf244c91e9338d1b43aefe4ca1689ceec22f2877e2f0136a4a3123"
+        },
+        {
+          "date": "2025-10-15",
+          "file": "starlink_20251015.tle",
+          "quarantined": "0",
+          "records": "8524",
+          "sha256": "07b91eb167a5bc351cca96c551673eecc53108f28a5607ba15f9c1e60c5cd33b"
+        },
+        {
+          "date": "2025-10-16",
+          "file": "starlink_20251016.tle",
+          "quarantined": "0",
+          "records": "8524",
+          "sha256": "06509316da9570b9151851f7cbb5142bf66ecbdb5b50f2de5edda5294fc91c57"
+        },
+        {
+          "date": "2025-10-17",
+          "file": "starlink_20251017.tle",
+          "quarantined": "0",
+          "records": "8523",
+          "sha256": "f646afe723f8625ddd425a273dbc817affd50398eeb571e025b7b910f080c232"
+        },
+        {
+          "date": "2025-10-19",
+          "file": "starlink_20251019.tle",
+          "quarantined": "0",
+          "records": "8521",
+          "sha256": "c9d822f70963b76cb431ab679b793c8a895bed1e9d69e555a1eab632f8d52b22"
+        },
+        {
+          "date": "2025-10-20",
+          "file": "starlink_20251020.tle",
+          "quarantined": "0",
+          "records": "8518",
+          "sha256": "ab02619ae783e1eb5a29a59962542688ca0beca6b0e00a71d24fd1c2cc5d66c0"
+        },
+        {
+          "date": "2025-10-21",
+          "file": "starlink_20251021.tle",
+          "quarantined": "0",
+          "records": "8573",
+          "sha256": "9af41d9baa6c2108ecb6e7e706e2d66870b04d44c3ceb7d14b8030ad337f49ba"
+        },
+        {
+          "date": "2025-10-22",
+          "file": "starlink_20251022.tle",
+          "quarantined": "0",
+          "records": "8573",
+          "sha256": "53ff81e4df69c9584e918a20e63c80c5031c837a255eccf6bdfc659f010c19c6"
+        },
+        {
+          "date": "2025-10-23",
+          "file": "starlink_20251023.tle",
+          "quarantined": "0",
+          "records": "8571",
+          "sha256": "bdb94564829e69a2368e9460d9c3d0536de39966c7391cb43e4ea943fa3d2786"
+        },
+        {
+          "date": "2025-10-24",
+          "file": "starlink_20251024.tle",
+          "quarantined": "0",
+          "records": "8571",
+          "sha256": "bc7bfceab442f7082d99648242126515f115e6355bf7c407b0c49e186935718a"
+        },
+        {
+          "date": "2025-10-26",
+          "file": "starlink_20251026.tle",
+          "quarantined": "0",
+          "records": "8570",
+          "sha256": "16e1c1dcc0b38ffc3b2839aafb0dc7f440260425dcf47009c7b87df9df7149d4"
+        },
+        {
+          "date": "2025-10-27",
+          "file": "starlink_20251027.tle",
+          "quarantined": "0",
+          "records": "8570",
+          "sha256": "9fadaef0f0c5fedd6b3281ee769ae0a1dbedb841f4c43e245493cae3f9cb07b6"
+        },
+        {
+          "date": "2025-10-28",
+          "file": "starlink_20251028.tle",
+          "quarantined": "0",
+          "records": "8569",
+          "sha256": "6f3745f5545c48c748efce164896f0c0388eb6ab0851e4dded3ef0fc9fad017b"
+        },
+        {
+          "date": "2025-10-29",
+          "file": "starlink_20251029.tle",
+          "quarantined": "0",
+          "records": "8569",
+          "sha256": "7c442a49b454099bf021fc1b713f2e92d0d77ae0b2d351c4361ea92cdf064c0d"
+        },
+        {
+          "date": "2025-10-30",
+          "file": "starlink_20251030.tle",
+          "quarantined": "0",
+          "records": "8568",
+          "sha256": "695a860deaf724a2b7802eb204ba47a007cfb27c471ef53b851cc1a77efd1f18"
+        },
+        {
+          "date": "2025-10-31",
+          "file": "starlink_20251031.tle",
+          "quarantined": "0",
+          "records": "8649",
+          "sha256": "2216cbf522a5ca9ee652394332d0ace9651bfe7c793d23a1c4667df4fff844d9"
+        },
+        {
+          "date": "2025-11-01",
+          "file": "starlink_20251101.tle",
+          "quarantined": "0",
+          "records": "8649",
+          "sha256": "2c52eb6085e3eacc5e6a09967ca9f562606a5e32654c32a9e117afb1a47ba0c8"
+        },
+        {
+          "date": "2025-11-02",
+          "file": "starlink_20251102.tle",
+          "quarantined": "0",
+          "records": "8647",
+          "sha256": "02f9404d165700db48c074c86b9d52f94afc455dedc66b36b12d869ad05fb413"
+        },
+        {
+          "date": "2025-11-03",
+          "file": "starlink_20251103.tle",
+          "quarantined": "0",
+          "records": "8645",
+          "sha256": "e8ec70fd78783ebd44d8f469f807a45d5a5ea3feed3fe0b64044c4afe8a032f7"
+        },
+        {
+          "date": "2025-11-04",
+          "file": "starlink_20251104.tle",
+          "quarantined": "0",
+          "records": "8645",
+          "sha256": "cea26a02e1375183f2aa04a4b526b6cc7f9ad3e2792279d4efb646e9bbe8b289"
+        },
+        {
+          "date": "2025-11-05",
+          "file": "starlink_20251105.tle",
+          "quarantined": "0",
+          "records": "8728",
+          "sha256": "36a21fe81d480ac71174feb9c52e3367bc4974f544f415ac373243fab94a8534"
+        },
+        {
+          "date": "2025-11-06",
+          "file": "starlink_20251106.tle",
+          "quarantined": "0",
+          "records": "8757",
+          "sha256": "23f2011d0a47bec7228ed9c1adc39265ccc44ae46aa1addb533308d080d565dd"
+        },
+        {
+          "date": "2025-11-07",
+          "file": "starlink_20251107.tle",
+          "quarantined": "0",
+          "records": "8756",
+          "sha256": "1f49cfd7c8b6a324b5e05f10ec19f01b0d227f2cb0939a9422910929ce1022c8"
+        },
+        {
+          "date": "2025-11-08",
+          "file": "starlink_20251108.tle",
+          "quarantined": "0",
+          "records": "8756",
+          "sha256": "81140be385cc26b8d77abb2cda7ee0053010ace92be3c2b110ff8191386e4fc9"
+        },
+        {
+          "date": "2025-11-10",
+          "file": "starlink_20251110.tle",
+          "quarantined": "0",
+          "records": "8752",
+          "sha256": "5f6b2d15c9fafef3c003a8f69bc964e08f4886ef7cd41b059cad90c9d37b904f"
+        },
+        {
+          "date": "2025-11-11",
+          "file": "starlink_20251111.tle",
+          "quarantined": "0",
+          "records": "8750",
+          "sha256": "e0d0925bca0e77301cdb69c2a672c72a5803c0e9cd7ff0137ae20c9a78db43d8"
+        },
+        {
+          "date": "2025-11-12",
+          "file": "starlink_20251112.tle",
+          "quarantined": "0",
+          "records": "8750",
+          "sha256": "0aab9f55d28a0879d14ae4d87cf8370636fb39acb12890702ca0cadacca7487f"
+        },
+        {
+          "date": "2025-11-13",
+          "file": "starlink_20251113.tle",
+          "quarantined": "0",
+          "records": "8750",
+          "sha256": "3e82a65adb61c94da869fd7005a4ac211c940e314d6960eadbda1e0daaeb580a"
+        },
+        {
+          "date": "2025-11-14",
+          "file": "starlink_20251114.tle",
+          "quarantined": "0",
+          "records": "8806",
+          "sha256": "1e6ddfa57a304d30d8bd3817e4972df8da6c4bd5c8d447b8dbc99ed216253432"
+        },
+        {
+          "date": "2025-11-15",
+          "file": "starlink_20251115.tle",
+          "quarantined": "0",
+          "records": "8805",
+          "sha256": "ac53e48057bce4d7854055f4b19154704eab1b4ebb6b85a1fb78b671ead101f6"
+        },
+        {
+          "date": "2025-11-16",
+          "file": "starlink_20251116.tle",
+          "quarantined": "0",
+          "records": "8805",
+          "sha256": "0746641a313803c428e1c2b16e416d14966da762eacbf4fdd92202acaacd0582"
+        },
+        {
+          "date": "2025-11-17",
+          "file": "starlink_20251117.tle",
+          "quarantined": "0",
+          "records": "8801",
+          "sha256": "d7aa0891229555b2d0c20416e06e5f058a112a9de10f651d79f08c890818a87e"
+        },
+        {
+          "date": "2025-11-18",
+          "file": "starlink_20251118.tle",
+          "quarantined": "0",
+          "records": "8801",
+          "sha256": "2529cc1267f42417529a0cf270ecce1f2ac8dfe00f1e4b0fe752b571b566adf3"
+        },
+        {
+          "date": "2025-11-19",
+          "file": "starlink_20251119.tle",
+          "quarantined": "0",
+          "records": "8856",
+          "sha256": "fe51f89d3541df3692762aaf193af9db0b82f4a62c9bc18a1f07cdb24c0969e1"
+        },
+        {
+          "date": "2025-11-20",
+          "file": "starlink_20251120.tle",
+          "quarantined": "0",
+          "records": "8885",
+          "sha256": "dd56ee016a085c5f7e61f0e4e38f831886e2bea7769c8abbcc31f8e72d2aeeb3"
+        },
+        {
+          "date": "2025-11-21",
+          "file": "starlink_20251121.tle",
+          "quarantined": "0",
+          "records": "8883",
+          "sha256": "0b006c76622c2f604ca4f3a44fb3c093accfd7818cbc730c76465349f7b8927a"
+        },
+        {
+          "date": "2025-11-22",
+          "file": "starlink_20251122.tle",
+          "quarantined": "0",
+          "records": "8910",
+          "sha256": "431b92b14629bee6b2ff4bc0ff1e458a714ec52cb20b14c6e6c9fd9becb2c8d3"
+        },
+        {
+          "date": "2025-11-23",
+          "file": "starlink_20251123.tle",
+          "quarantined": "0",
+          "records": "8911",
+          "sha256": "4cf38c1409d2d2f20014ef738eccb49b1a50518d9cdbd83e092ca34b857d51bd"
+        },
+        {
+          "date": "2025-11-24",
+          "file": "starlink_20251124.tle",
+          "quarantined": "0",
+          "records": "8911",
+          "sha256": "71b906b369eae88bc08372484c7471bc63b869d5342681c07de2693883951064"
+        },
+        {
+          "date": "2025-11-25",
+          "file": "starlink_20251125.tle",
+          "quarantined": "0",
+          "records": "8938",
+          "sha256": "6243b0711d992c69ee10ea1c40b37fcf4cfa6ccb6850fbb01d81f01c69ff2201"
+        },
+        {
+          "date": "2025-11-26",
+          "file": "starlink_20251126.tle",
+          "quarantined": "0",
+          "records": "8967",
+          "sha256": "058c3b60632195e1308ead9c6f73e9fc716dc44a7392e220eb4fca7a0af5c2d5"
+        },
+        {
+          "date": "2025-11-27",
+          "file": "starlink_20251127.tle",
+          "quarantined": "0",
+          "records": "8994",
+          "sha256": "01e8cb63499978db5fff996274c75a165f871cbdaaeb72faef7fbb4c5fc36fec"
+        },
+        {
+          "date": "2025-11-28",
+          "file": "starlink_20251128.tle",
+          "quarantined": "0",
+          "records": "8991",
+          "sha256": "aff0de1e92c0e8daafd0ee0c580906ab18c6e40c7aca673fdf477af86de5a76c"
+        },
+        {
+          "date": "2025-11-29",
+          "file": "starlink_20251129.tle",
+          "quarantined": "0",
+          "records": "8990",
+          "sha256": "10d85c544c8b35e8b7dd78574fa3631c91639d6c4dc4a6cdcc0b86217be2c1e3"
+        },
+        {
+          "date": "2025-11-30",
+          "file": "starlink_20251130.tle",
+          "quarantined": "0",
+          "records": "8990",
+          "sha256": "54743473cdaa56a5647b79220ebc63f010f94735c970044c6d4d25d00c3a6d94"
+        },
+        {
+          "date": "2025-12-01",
+          "file": "starlink_20251201.tle",
+          "quarantined": "0",
+          "records": "8990",
+          "sha256": "67472ab391471b3a73827a6a5fc8a8a37393d33eb154e1086a29fdf0c76c3b01"
+        },
+        {
+          "date": "2025-12-02",
+          "file": "starlink_20251202.tle",
+          "quarantined": "0",
+          "records": "9017",
+          "sha256": "236fb09ae0ee6042e55085380387c5b37ccf5b7ab7575fc1385cee4d2c689e64"
+        },
+        {
+          "date": "2025-12-03",
+          "file": "starlink_20251203.tle",
+          "quarantined": "0",
+          "records": "9016",
+          "sha256": "666a03273322e2bf280bbe18afe1521a3cc5ce3c1570947c7778cf1bfb512428"
+        },
+        {
+          "date": "2025-12-04",
+          "file": "starlink_20251204.tle",
+          "quarantined": "0",
+          "records": "9042",
+          "sha256": "b1b2fc351354eae0ee3b7c79931d8f0434472394ded9fa3e5251c58de484b433"
+        },
+        {
+          "date": "2025-12-05",
+          "file": "starlink_20251205.tle",
+          "quarantined": "0",
+          "records": "9041",
+          "sha256": "37b2c6c8a9d697e4fd81abe5c5a5b7e3ae37df5d1a9fdba34687f7c0ccd4ed10"
+        },
+        {
+          "date": "2025-12-06",
+          "file": "starlink_20251206.tle",
+          "quarantined": "0",
+          "records": "9039",
+          "sha256": "b4fd181914b76a4c27d4f6dff25411b84928a6c819907f3fc6ad24bbbe5a688a"
+        },
+        {
+          "date": "2025-12-07",
+          "file": "starlink_20251207.tle",
+          "quarantined": "0",
+          "records": "9038",
+          "sha256": "7738ba570c736ea02550f2ceb0fe6e37488d58796c4390340a92d691bb6c3f73"
+        },
+        {
+          "date": "2025-12-08",
+          "file": "starlink_20251208.tle",
+          "quarantined": "0",
+          "records": "9038",
+          "sha256": "1cf51f8f7d9698710d7b7ea277f5f10a48f80f9151168b59eeb13b857f47ae10"
+        },
+        {
+          "date": "2025-12-09",
+          "file": "starlink_20251209.tle",
+          "quarantined": "0",
+          "records": "9038",
+          "sha256": "9b1af5622cff4143877236bf2a858e3520628f91a53a5a4f7f9791b4663fd2c1"
+        },
+        {
+          "date": "2025-12-10",
+          "file": "starlink_20251210.tle",
+          "quarantined": "0",
+          "records": "9036",
+          "sha256": "bdf756df95ef425357d5d2c1f080da993947f30989e703cb15df51d3c1a0c670"
+        },
+        {
+          "date": "2025-12-11",
+          "file": "starlink_20251211.tle",
+          "quarantined": "0",
+          "records": "9121",
+          "sha256": "9b38d5dbdfde8a01c9b27f33ea94124984b47706d693058a1232ad515dc90ab8"
+        },
+        {
+          "date": "2025-12-12",
+          "file": "starlink_20251212.tle",
+          "quarantined": "0",
+          "records": "9119",
+          "sha256": "ed651d716baeacabb97b04b93675e2f0540f2c84602e624c6684fb618e1f0760"
+        },
+        {
+          "date": "2025-12-13",
+          "file": "starlink_20251213.tle",
+          "quarantined": "0",
+          "records": "9172",
+          "sha256": "a85e3333553a7945ab741a23a658dff924a7d4d800ba94370f681d66627ff04f"
+        },
+        {
+          "date": "2025-12-14",
+          "file": "starlink_20251214.tle",
+          "quarantined": "0",
+          "records": "9170",
+          "sha256": "99a5d26925d81f7edc067d440502682480c8e2ac4ae42de3e67b242ecd5b9c7b"
+        },
+        {
+          "date": "2025-12-15",
+          "file": "starlink_20251215.tle",
+          "quarantined": "0",
+          "records": "9170",
+          "sha256": "5020db9b6b780ad691d7773a8799ffdfc2bf00a4966c9efae3d9041fbdeea121"
+        },
+        {
+          "date": "2025-12-16",
+          "file": "starlink_20251216.tle",
+          "quarantined": "0",
+          "records": "9170",
+          "sha256": "83da69c3f45173bc264f9aeb0ea1295ce15630d0c175ca7b35ba63adf73824ce"
+        },
+        {
+          "date": "2025-12-17",
+          "file": "starlink_20251217.tle",
+          "quarantined": "0",
+          "records": "9199",
+          "sha256": "54c0b98b227190e83a1e944954d9f3caa08a5f85fc5bfbf5721a84425c5158d3"
+        },
+        {
+          "date": "2025-12-18",
+          "file": "starlink_20251218.tle",
+          "quarantined": "0",
+          "records": "9199",
+          "sha256": "74fa2746dbcf4be03b88e91c31f7d728ee5b780351aeafa6564e80602f019d3c"
+        },
+        {
+          "date": "2025-12-19",
+          "file": "starlink_20251219.tle",
+          "quarantined": "0",
+          "records": "9254",
+          "sha256": "78a91cbf07f01a701d7caec28bae4132a5d56f9a6131ec6a406719f33e374795"
+        },
+        {
+          "date": "2025-12-20",
+          "file": "starlink_20251220.tle",
+          "quarantined": "0",
+          "records": "9309",
+          "sha256": "3019f348b6c8bdb5a54839259d696650c37e9cb773e74bf71695e77529f814f9"
+        },
+        {
+          "date": "2025-12-21",
+          "file": "starlink_20251221.tle",
+          "quarantined": "0",
+          "records": "9308",
+          "sha256": "eedb09f42e10501ebb99c995fc76ce4e47d70763c38325b1eec221948ba85ec9"
+        },
+        {
+          "date": "2025-12-22",
+          "file": "starlink_20251222.tle",
+          "quarantined": "0",
+          "records": "9308",
+          "sha256": "908453e91ad8164a4d1720a6fd0f04b9164378d238781605f8bac6a784779c3f"
+        },
+        {
+          "date": "2025-12-23",
+          "file": "starlink_20251223.tle",
+          "quarantined": "0",
+          "records": "9308",
+          "sha256": "7ab0713eb4871f2a7990d1b02f76ac16597f652afb068858bf8a4e694a831456"
+        },
+        {
+          "date": "2025-12-24",
+          "file": "starlink_20251224.tle",
+          "quarantined": "0",
+          "records": "9307",
+          "sha256": "88223f64fed80be5fc575e4549266aec9ede7edc067bef8a8bb62f14478daacd"
+        },
+        {
+          "date": "2025-12-25",
+          "file": "starlink_20251225.tle",
+          "quarantined": "0",
+          "records": "9304",
+          "sha256": "df89348417648cb6bdff8f2dfa4f67c56945456c8c5db52e72041d1b40d9c1d4"
+        },
+        {
+          "date": "2025-12-26",
+          "file": "starlink_20251226.tle",
+          "quarantined": "0",
+          "records": "9304",
+          "sha256": "45db72635263a63c3a906ab01e56db38bbcc22bd36fe8bc3b1d50f898034fc64"
+        },
+        {
+          "date": "2025-12-27",
+          "file": "starlink_20251227.tle",
+          "quarantined": "0",
+          "records": "9301",
+          "sha256": "81325bfe5a0f38d5db20f8ce86cff79e85d5f6dab9ecf911a522c06a97b4421b"
+        },
+        {
+          "date": "2025-12-28",
+          "file": "starlink_20251228.tle",
+          "quarantined": "0",
+          "records": "9301",
+          "sha256": "00c3c4f430a393d77d13adffc2738b3864ec755f9efed599d59164355627aa92"
+        },
+        {
+          "date": "2025-12-29",
+          "file": "starlink_20251229.tle",
+          "quarantined": "0",
+          "records": "9299",
+          "sha256": "c63bb11ec03e7567c2e9231dc1a694d4158bd13acec4924e3f27d21c8a3d0d89"
+        },
+        {
+          "date": "2025-12-30",
+          "file": "starlink_20251230.tle",
+          "quarantined": "0",
+          "records": "9299",
+          "sha256": "7952f0e4f2b5bcfc623a23c48c9d13dcc18788923a39e892c00e5f52807f4b62"
+        },
+        {
+          "date": "2025-12-31",
+          "file": "starlink_20251231.tle",
+          "quarantined": "0",
+          "records": "9297",
+          "sha256": "af63d59e9343728aa818d1e760e6e440d2fe0d9bf9be5b8afe406dc0484f97f1"
+        },
+        {
+          "date": "2026-01-01",
+          "file": "starlink_20260101.tle",
+          "quarantined": "0",
+          "records": "9320",
+          "sha256": "44eae52c790e30e1b89aa19a8198f3a9658d00741058348ed07549380dce817a"
+        },
+        {
+          "date": "2026-01-02",
+          "file": "starlink_20260102.tle",
+          "quarantined": "0",
+          "records": "9320",
+          "sha256": "1ce8bc51d498d8d11a3643e329244a82fad6ec1004c2ed81bb4c968bb0f6219f"
+        },
+        {
+          "date": "2026-01-03",
+          "file": "starlink_20260103.tle",
+          "quarantined": "0",
+          "records": "9320",
+          "sha256": "3fda3829a9d1dad836d7046305ec48f8f7d3554359af57eced4eaef81e371a14"
+        },
+        {
+          "date": "2026-01-04",
+          "file": "starlink_20260104.tle",
+          "quarantined": "0",
+          "records": "9318",
+          "sha256": "dec873411c358ef68af67322c3b1635f6510448064dd9e5fcb0d312b20339310"
+        },
+        {
+          "date": "2026-01-05",
+          "file": "starlink_20260105.tle",
+          "quarantined": "0",
+          "records": "9317",
+          "sha256": "a32917e75a5d154e04848c3b3684a2f79a15dd09ce52a47d3897e66324b155c8"
+        },
+        {
+          "date": "2026-01-06",
+          "file": "starlink_20260106.tle",
+          "quarantined": "0",
+          "records": "9316",
+          "sha256": "13077704521e385a4891ec69e6cf490e70c48534c7bc2b876b4b5d5e320f4008"
+        },
+        {
+          "date": "2026-01-07",
+          "file": "starlink_20260107.tle",
+          "quarantined": "0",
+          "records": "9315",
+          "sha256": "3788498fb71ce8abc578cb3ebae6d3c09181d75204e5619bd261bca3e48e51c9"
+        },
+        {
+          "date": "2026-01-08",
+          "file": "starlink_20260108.tle",
+          "quarantined": "0",
+          "records": "9314",
+          "sha256": "3e0a2209f1a2964bc534eef2696093397f7b9fdc566633cb4f292bd7b25fbbef"
+        },
+        {
+          "date": "2026-01-09",
+          "file": "starlink_20260109.tle",
+          "quarantined": "0",
+          "records": "9344",
+          "sha256": "d759c2353a34ab265599ad1aa5a0f6caf3db7b77461c3c280e6ad7e725df3b44"
+        },
+        {
+          "date": "2026-01-10",
+          "file": "starlink_20260110.tle",
+          "quarantined": "0",
+          "records": "9344",
+          "sha256": "18476404c1d0e791dc361f771e55490389cb3e08f365f3f3f54491c7b0c1976a"
+        },
+        {
+          "date": "2026-01-11",
+          "file": "starlink_20260111.tle",
+          "quarantined": "0",
+          "records": "9344",
+          "sha256": "02a4d27d5c064baca1a6ae9bb398908433a8dd48fad91eabb01456f49e2375c9"
+        },
+        {
+          "date": "2026-01-13",
+          "file": "starlink_20260113.tle",
+          "quarantined": "0",
+          "records": "9342",
+          "sha256": "4f27b2e6ee9fae14d13ea2b8524563e7cf1fc7c9cb2239ee912fc804d6007e63"
+        },
+        {
+          "date": "2026-01-14",
+          "file": "starlink_20260114.tle",
+          "quarantined": "0",
+          "records": "9338",
+          "sha256": "7fea3500bf3f083f6c95cd98dc57cfa381efb10641bb48a418b0d41879523861"
+        },
+        {
+          "date": "2026-01-15",
+          "file": "starlink_20260115.tle",
+          "quarantined": "0",
+          "records": "9335",
+          "sha256": "edabbca9e04ea644ad91e85b190d15f09af0d798e126fe27cba4502e0c4f8431"
+        },
+        {
+          "date": "2026-01-16",
+          "file": "starlink_20260116.tle",
+          "quarantined": "0",
+          "records": "9363",
+          "sha256": "3da347dbab8604429ebf32addbd275b3404c9b1161f2b32de9c01056e751a45a"
+        },
+        {
+          "date": "2026-01-17",
+          "file": "starlink_20260117.tle",
+          "quarantined": "0",
+          "records": "9363",
+          "sha256": "9bd212268ef2809bbb79b2d5965d3655a64bda44acad06b6bb63efe464d5fe82"
+        },
+        {
+          "date": "2026-01-18",
+          "file": "starlink_20260118.tle",
+          "quarantined": "0",
+          "records": "9363",
+          "sha256": "b2e6fcec6a470027c2bff15668561e90067c9e70650386f72935384f29cff82e"
+        },
+        {
+          "date": "2026-01-19",
+          "file": "starlink_20260119.tle",
+          "quarantined": "0",
+          "records": "9363",
+          "sha256": "73ef59cd0ef5938d10eb3dd812a588f03002bf82920f64a47746087b0e217fca"
+        },
+        {
+          "date": "2026-01-20",
+          "file": "starlink_20260120.tle",
+          "quarantined": "0",
+          "records": "9363",
+          "sha256": "fbe597752aa753a993cd93490165697bbb23a8104ce324dca8ccd2ccbe6f6cfa"
+        },
+        {
+          "date": "2026-01-21",
+          "file": "starlink_20260121.tle",
+          "quarantined": "0",
+          "records": "9362",
+          "sha256": "e5cf4d6fe794a0a7c951a09ba8bc83d259d9ca20286bd70f0ce588043190a9ba"
+        },
+        {
+          "date": "2026-01-22",
+          "file": "starlink_20260122.tle",
+          "quarantined": "0",
+          "records": "9391",
+          "sha256": "2f04cb991092ba271e980a5edbb4340bb528e86e64db6767be884c7ba0d584f6"
+        },
+        {
+          "date": "2026-01-23",
+          "file": "starlink_20260123.tle",
+          "quarantined": "0",
+          "records": "9420",
+          "sha256": "c06db466e43158c22ffd31cfe1edabb1dce4bfd142424f42e17a9c9c0161acf2"
+        },
+        {
+          "date": "2026-01-24",
+          "file": "starlink_20260124.tle",
+          "quarantined": "0",
+          "records": "9419",
+          "sha256": "2e35b57048ef26cace8d67a581cafa4c6b083d330df4e25b5239edb85c2d6735"
+        },
+        {
+          "date": "2026-01-25",
+          "file": "starlink_20260125.tle",
+          "quarantined": "0",
+          "records": "9447",
+          "sha256": "69b6f395e25a3fa96b66f91186d6e42fde766436c3ba61e318b01028a98bbffc"
+        },
+        {
+          "date": "2026-01-26",
+          "file": "starlink_20260126.tle",
+          "quarantined": "0",
+          "records": "9447",
+          "sha256": "4f31b836044935f8f39e9a60e49c179fd2ae573117c3c35c12d3f4f319c00e22"
+        },
+        {
+          "date": "2026-01-27",
+          "file": "starlink_20260127.tle",
+          "quarantined": "0",
+          "records": "9446",
+          "sha256": "61fca5a4cc68ad3ce1c7a60b36be8fc637f1c87558b2dbd5f3e50441203e10f5"
+        },
+        {
+          "date": "2026-01-28",
+          "file": "starlink_20260128.tle",
+          "quarantined": "0",
+          "records": "9446",
+          "sha256": "939e35fbed328b662b95ad58526a547d6eb5e083802a1959dadcca8f36027dca"
+        },
+        {
+          "date": "2026-01-29",
+          "file": "starlink_20260129.tle",
+          "quarantined": "0",
+          "records": "9446",
+          "sha256": "d60e53944b207118922a85e999ca7fe14c97f259d8dafa4058e3453e69be550a"
+        },
+        {
+          "date": "2026-01-30",
+          "file": "starlink_20260130.tle",
+          "quarantined": "0",
+          "records": "9442",
+          "sha256": "2516702bfe9dd15f550c6272ab401aec279d7fe0a263c1acd8c681323e6c847f"
+        },
+        {
+          "date": "2026-01-31",
+          "file": "starlink_20260131.tle",
+          "quarantined": "0",
+          "records": "9464",
+          "sha256": "3a31a681e3b8b0fc8b17ec46157a8c497da49b4ff71dd5ab062e1e505eafed54"
+        },
+        {
+          "date": "2026-02-01",
+          "file": "starlink_20260201.tle",
+          "quarantined": "0",
+          "records": "9489",
+          "sha256": "cd4245ebe7982231470eda3236a97157ec614c34fea5147b6cd6fcbf9203ca95"
+        },
+        {
+          "date": "2026-02-02",
+          "file": "starlink_20260202.tle",
+          "quarantined": "0",
+          "records": "9485",
+          "sha256": "1cd557949a6df72e6ec6c5397475ac02045c8668717ed184442b1ce47b838ba3"
+        },
+        {
+          "date": "2026-02-03",
+          "file": "starlink_20260203.tle",
+          "quarantined": "0",
+          "records": "9481",
+          "sha256": "e6ab0d96acb2c0108e2e2ae8fafa288e679b08be4db3e0a65fa35ae890e510a9"
+        },
+        {
+          "date": "2026-02-04",
+          "file": "starlink_20260204.tle",
+          "quarantined": "0",
+          "records": "9480",
+          "sha256": "63a53dc1ce23e5a2cba2a2eaa25be4bc78e592742c319e0557260c0f04b7903d"
+        },
+        {
+          "date": "2026-02-05",
+          "file": "starlink_20260205.tle",
+          "quarantined": "0",
+          "records": "9534",
+          "sha256": "565328bc944609f28c26fc989893ac320e44f00ca39f27993da9afd259effca1"
+        },
+        {
+          "date": "2026-02-06",
+          "file": "starlink_20260206.tle",
+          "quarantined": "0",
+          "records": "9528",
+          "sha256": "d45e8e417483ea866d77e8d0d4f8652814775280f700dcd5e4d45a927b51f7cf"
+        },
+        {
+          "date": "2026-02-07",
+          "file": "starlink_20260207.tle",
+          "quarantined": "0",
+          "records": "9550",
+          "sha256": "63fe78da0cb46968f7438da25d57e9749c7dbca63a92b014aa9e1765f67168ea"
+        },
+        {
+          "date": "2026-02-08",
+          "file": "starlink_20260208.tle",
+          "quarantined": "0",
+          "records": "9548",
+          "sha256": "726b8bda190f39d531659c777965bdfce871a45ca6f51bb1eb37a63b3a5bfcf9"
+        },
+        {
+          "date": "2026-02-09",
+          "file": "starlink_20260209.tle",
+          "quarantined": "0",
+          "records": "9543",
+          "sha256": "b9ea01a77a8babe98e7612060f2967a1ae5fec22b03ebc05809c3328e7108669"
+        },
+        {
+          "date": "2026-02-10",
+          "file": "starlink_20260210.tle",
+          "quarantined": "0",
+          "records": "9542",
+          "sha256": "160e137b94223c4c9ac608d44216191bc7da7938eb198f2670f0794a5977410b"
+        },
+        {
+          "date": "2026-02-11",
+          "file": "starlink_20260211.tle",
+          "quarantined": "0",
+          "records": "9541",
+          "sha256": "1aa86f8103398e8669836dab81fd8ee0f096f62465cfd4c417a90cbd25e1b570"
+        },
+        {
+          "date": "2026-02-12",
+          "file": "starlink_20260212.tle",
+          "quarantined": "0",
+          "records": "9541",
+          "sha256": "26007b1f2760c2140232a676cb4f539eaa98a14f71e6a0a3a574b0f0180f5f10"
+        },
+        {
+          "date": "2026-02-13",
+          "file": "starlink_20260213.tle",
+          "quarantined": "0",
+          "records": "9558",
+          "sha256": "8f264cee4ddc5333f4284257b4f85f1f4237c33cdc84b1e3242dab5e9300deb0"
+        },
+        {
+          "date": "2026-02-14",
+          "file": "starlink_20260214.tle",
+          "quarantined": "0",
+          "records": "9558",
+          "sha256": "9996a95d477ee59dd30c91becfd973da64cdbf555099dbb17f45bbad249d2b55"
+        },
+        {
+          "date": "2026-02-15",
+          "file": "starlink_20260215.tle",
+          "quarantined": "0",
+          "records": "9558",
+          "sha256": "50d3ca4275d5a07a332b3e9b5777a95ba22c30e8848289a43764be40c1905229"
+        },
+        {
+          "date": "2026-02-16",
+          "file": "starlink_20260216.tle",
+          "quarantined": "0",
+          "records": "9552",
+          "sha256": "8cadf6bd52c5782aa1bec252a6ed71f34cc07db237a3b7bdbd3cfe2ae8b84ab5"
+        },
+        {
+          "date": "2026-02-17",
+          "file": "starlink_20260217.tle",
+          "quarantined": "0",
+          "records": "9551",
+          "sha256": "d8ecb0f2198a92b340c040bfae48d16cffa80b0a1409e9b9315445871aacc2b7"
+        },
+        {
+          "date": "2026-02-18",
+          "file": "starlink_20260218.tle",
+          "quarantined": "0",
+          "records": "9548",
+          "sha256": "c9dc4175d459148331735ad7a99ad90034b419ff5f23332845acdb32f33e0637"
+        },
+        {
+          "date": "2026-02-19",
+          "file": "starlink_20260219.tle",
+          "quarantined": "0",
+          "records": "9545",
+          "sha256": "17655c61424dfa04f13c814c9df579dc42d8f92a33cdc168700102271d56efdb"
+        },
+        {
+          "date": "2026-02-20",
+          "file": "starlink_20260220.tle",
+          "quarantined": "0",
+          "records": "9544",
+          "sha256": "93ef1df777def1a181b93c104f1690cb29ebb1eca459896c14547d1323eacd10"
+        },
+        {
+          "date": "2026-02-21",
+          "file": "starlink_20260221.tle",
+          "quarantined": "0",
+          "records": "9544",
+          "sha256": "2296c0b40807d902f8c88cf946d8a27083bd5c4d22fe41a13e91a41ca0cac2f5"
+        },
+        {
+          "date": "2026-02-22",
+          "file": "starlink_20260222.tle",
+          "quarantined": "0",
+          "records": "9543",
+          "sha256": "dafb5990bf7547eff3876f9e6ed952f7f45aad1b53fc7ee7af22ca1dc59792f9"
+        },
+        {
+          "date": "2026-02-23",
+          "file": "starlink_20260223.tle",
+          "quarantined": "0",
+          "records": "9594",
+          "sha256": "3c749dfeb27bd5aace6a28b7518135fbcd7f369b67aa89d8ed06897ec65c9417"
+        },
+        {
+          "date": "2026-02-24",
+          "file": "starlink_20260224.tle",
+          "quarantined": "0",
+          "records": "9593",
+          "sha256": "f4552cce71aa828cdb151f42db6b033e68dcae5884e5e6f84f29a1ed3adaa390"
+        },
+        {
+          "date": "2026-02-26",
+          "file": "starlink_20260226.tle",
+          "quarantined": "0",
+          "records": "9669",
+          "sha256": "122782c3ad46b6af7ca09cef1b947b703c0af10fd682285cd145644aa27086a5"
+        },
+        {
+          "date": "2026-02-27",
+          "file": "starlink_20260227.tle",
+          "quarantined": "0",
+          "records": "9669",
+          "sha256": "c8064ab5ad065488960ed21d383fded93cd77592be86954b112a061120dab853"
+        },
+        {
+          "date": "2026-02-28",
+          "file": "starlink_20260228.tle",
+          "quarantined": "0",
+          "records": "9669",
+          "sha256": "e67e5b6fd17323842fa76b134d49d0ea8bed0c5f1fcbd04f8a942448e2d56bf5"
+        },
+        {
+          "date": "2026-03-01",
+          "file": "starlink_20260301.tle",
+          "quarantined": "0",
+          "records": "9669",
+          "sha256": "ea2c4688543b98958f5bc17ba8220a0fb9fab80574d4b9b49446e8f3fd6c59f4"
+        },
+        {
+          "date": "2026-03-02",
+          "file": "starlink_20260302.tle",
+          "quarantined": "0",
+          "records": "9669",
+          "sha256": "03a993c31d5d9cdb2093d17de61f59dbec38b70a7cd973171f7367ddf1127e31"
+        },
+        {
+          "date": "2026-03-03",
+          "file": "starlink_20260303.tle",
+          "quarantined": "0",
+          "records": "9667",
+          "sha256": "3ca3c7472d9bbbf722d2b85a9204ee06ac3c104579d1b909708a81c7285a3d58"
+        },
+        {
+          "date": "2026-03-05",
+          "file": "starlink_20260305.tle",
+          "quarantined": "0",
+          "records": "9741",
+          "sha256": "08a7f3af6b46d15f79411a3671c444dd5bf60b6cedc8943bb669a3385b7cfcb8"
+        },
+        {
+          "date": "2026-03-06",
+          "file": "starlink_20260306.tle",
+          "quarantined": "0",
+          "records": "9741",
+          "sha256": "f61b41c3fb645524faf26954f37a86d0f39bc3c8783e7ad3e4492c9dded46f76"
+        },
+        {
+          "date": "2026-03-07",
+          "file": "starlink_20260307.tle",
+          "quarantined": "0",
+          "records": "9792",
+          "sha256": "80175fc469a287a943857da46027d2a7fe80d053a8a8b39b1b46eb0abfa41f78"
+        },
+        {
+          "date": "2026-03-08",
+          "file": "starlink_20260308.tle",
+          "quarantined": "0",
+          "records": "9792",
+          "sha256": "1d3a3b425339b3088c1e6b9245927da82d6314b88ef92b59646a176233481eec"
+        },
+        {
+          "date": "2026-03-09",
+          "file": "starlink_20260309.tle",
+          "quarantined": "0",
+          "records": "9792",
+          "sha256": "7aaeded048a8bbc1f31a8c27fd8e3b65d0c64fa297253e1e01a652d9c1b01b64"
+        },
+        {
+          "date": "2026-03-10",
+          "file": "starlink_20260310.tle",
+          "quarantined": "0",
+          "records": "9818",
+          "sha256": "9134f912d5083fcbfcb7a256e457d57b0ff2900eff697a75073e7ca185e66e33"
+        },
+        {
+          "date": "2026-03-11",
+          "file": "starlink_20260311.tle",
+          "quarantined": "0",
+          "records": "9818",
+          "sha256": "9d98f90c8e7a110f567a7140c41aa7e60dcd0c0e89f316ffd3607ee7c7bfd134"
+        },
+        {
+          "date": "2026-03-12",
+          "file": "starlink_20260312.tle",
+          "quarantined": "0",
+          "records": "9818",
+          "sha256": "d0dcd94080d3670c3de8bced82d60d60731c68bdba0a638967b6b4f2c9fde818"
+        },
+        {
+          "date": "2026-03-13",
+          "file": "starlink_20260313.tle",
+          "quarantined": "0",
+          "records": "9840",
+          "sha256": "25b7b5f0a67bd794cff8fa7ff11c8a8a2232ee0fa767ef152799d71436229972"
+        },
+        {
+          "date": "2026-03-16",
+          "file": "starlink_20260316.tle",
+          "quarantined": "0",
+          "records": "9839",
+          "sha256": "3523bb3daa9d2353155e8863f70fcc140f0f06b320be45c6a1a25f76e77f0f7c"
+        },
+        {
+          "date": "2026-03-17",
+          "file": "starlink_20260317.tle",
+          "quarantined": "0",
+          "records": "9839",
+          "sha256": "9c2e43f1aa046b93f84b58cf1d97185a2b3ea38cf4a1f0ea734b8cf2894172b8"
+        },
+        {
+          "date": "2026-03-18",
+          "file": "starlink_20260318.tle",
+          "quarantined": "0",
+          "records": "9834",
+          "sha256": "6f31b8ebb27281e305cf202324c4c119872d2073e044cb9545b1061db33a3d97"
+        },
+        {
+          "date": "2026-03-19",
+          "file": "starlink_20260319.tle",
+          "quarantined": "0",
+          "records": "9835",
+          "sha256": "2d1b86cc01f9f7aacc36ab9cc1cdbcd386f0828e2bfd3d20d783023a6af54137"
+        },
+        {
+          "date": "2026-03-20",
+          "file": "starlink_20260320.tle",
+          "quarantined": "0",
+          "records": "9888",
+          "sha256": "58db108328b036f170dccad8895bb1a514e3702a93cae2fd56e60b659d4c56f2"
+        },
+        {
+          "date": "2026-03-21",
+          "file": "starlink_20260321.tle",
+          "quarantined": "0",
+          "records": "9888",
+          "sha256": "eb8d4f6d71560b3d47758bd360784018a957f900f1fae26e7cde70218cfb942d"
+        },
+        {
+          "date": "2026-03-22",
+          "file": "starlink_20260322.tle",
+          "quarantined": "0",
+          "records": "9885",
+          "sha256": "cda584cfe9decd3538e4165f5999cebdaed544957f7897d32064b3a73e79b745"
+        },
+        {
+          "date": "2026-03-23",
+          "file": "starlink_20260323.tle",
+          "quarantined": "0",
+          "records": "9884",
+          "sha256": "9fcc05e0726959a50ad7b20acc75a12ff24279e8d781f6e938f0cbc5cb4521b2"
+        },
+        {
+          "date": "2026-03-24",
+          "file": "starlink_20260324.tle",
+          "quarantined": "0",
+          "records": "9906",
+          "sha256": "f346a2de1aed3f2d4a3e21bf14cf3704c3a4e85b43abae9419b9b98e5d338dc1"
+        },
+        {
+          "date": "2026-03-25",
+          "file": "starlink_20260325.tle",
+          "quarantined": "0",
+          "records": "9985",
+          "sha256": "012bfd7482a3a3476abbfc6c60ac1f841d05b7e91856e69e718831b46b085fc9"
+        },
+        {
+          "date": "2026-03-26",
+          "file": "starlink_20260326.tle",
+          "quarantined": "0",
+          "records": "9985",
+          "sha256": "0c956027085f766d82b0b9f1a2787a69ac75a3ca57ac3a3fba77a5e8f461b6ae"
+        },
+        {
+          "date": "2026-03-27",
+          "file": "starlink_20260327.tle",
+          "quarantined": "0",
+          "records": "9984",
+          "sha256": "7bafca47766b1b5aeeedd806791be78bceab3e2e861e792102c0192ae86ad36c"
+        },
+        {
+          "date": "2026-03-28",
+          "file": "starlink_20260328.tle",
+          "quarantined": "0",
+          "records": "9983",
+          "sha256": "740329c1e6509af5d05f2f908430a1773a09ce5594f6611c9d10c420091575e0"
+        },
+        {
+          "date": "2026-03-29",
+          "file": "starlink_20260329.tle",
+          "quarantined": "0",
+          "records": "9979",
+          "sha256": "d17fc2e984323cb36e847caf630d7175e2d40c963327d425a1b16c5858aff54f"
+        },
+        {
+          "date": "2026-03-30",
+          "file": "starlink_20260330.tle",
+          "quarantined": "0",
+          "records": "9978",
+          "sha256": "edd0f8169742b3a59acbf5bfaad04be6d03d20882d12ce6cf7e525f4be49ec67"
+        },
+        {
+          "date": "2026-03-31",
+          "file": "starlink_20260331.tle",
+          "quarantined": "0",
+          "records": "9977",
+          "sha256": "2eddf3fd0fceaae9c8a6b2cb93c9973ed803eac00992fbd6ea85649453a2fdd4"
+        },
+        {
+          "date": "2026-04-01",
+          "file": "starlink_20260401.tle",
+          "quarantined": "0",
+          "records": "10100",
+          "sha256": "cb7cbbb8e563e5fb7943d23a5f2a75ffc798b5819456f58a0e105f0343c0bfad"
+        },
+        {
+          "date": "2026-04-02",
+          "file": "starlink_20260402.tle",
+          "quarantined": "0",
+          "records": "10097",
+          "sha256": "761d4914ff15dd103eb86353fa376ff48ff14b9d244210393c889cea76256694"
+        },
+        {
+          "date": "2026-04-03",
+          "file": "starlink_20260403.tle",
+          "quarantined": "0",
+          "records": "10119",
+          "sha256": "d097b53c22eb09d6fe33c3ed976ae2be3eb277a448e83795d399b0a37a5190bb"
+        },
+        {
+          "date": "2026-04-04",
+          "file": "starlink_20260404.tle",
+          "quarantined": "0",
+          "records": "10116",
+          "sha256": "1a2dc14d5455976c7430087e368b34b4fcda6b9ba1d6d88ed3daf0092d44f2d8"
+        },
+        {
+          "date": "2026-04-05",
+          "file": "starlink_20260405.tle",
+          "quarantined": "0",
+          "records": "10113",
+          "sha256": "f5cbafbce4ddf63b55f015ba3c99d260602edf6edd0640baaeaf1a1963bbf8e7"
+        },
+        {
+          "date": "2026-04-06",
+          "file": "starlink_20260406.tle",
+          "quarantined": "0",
+          "records": "10109",
+          "sha256": "4cbf194a1fe04af56aa22f7c007e0f26b8819702a75b5166c22434e186c5b98f"
+        },
+        {
+          "date": "2026-04-07",
+          "file": "starlink_20260407.tle",
+          "quarantined": "0",
+          "records": "10109",
+          "sha256": "2a043a834a8ae0e538871f32885726b31cb988dae26e22fafe5bb0a9c3d2eb25"
+        },
+        {
+          "date": "2026-04-08",
+          "file": "starlink_20260408.tle",
+          "quarantined": "0",
+          "records": "10138",
+          "sha256": "bcb6ab83dbf4b3e4d06fb93494dff72cfe7c5cc3e614e97a77eff5843171888e"
+        },
+        {
+          "date": "2026-04-09",
+          "file": "starlink_20260409.tle",
+          "quarantined": "0",
+          "records": "10165",
+          "sha256": "c3eb6b5360cb93ce432ab75b967bbecd61d752c03cae687377d902aa4146a16b"
+        },
+        {
+          "date": "2026-04-10",
+          "file": "starlink_20260410.tle",
+          "quarantined": "0",
+          "records": "10161",
+          "sha256": "2fd199168d3aeff9fece37496de7d6e6700f235b355498525ba4aecabd6f7bdc"
+        },
+        {
+          "date": "2026-04-11",
+          "file": "starlink_20260411.tle",
+          "quarantined": "0",
+          "records": "10156",
+          "sha256": "ba8b9fba636a57c035addb526edefc293bedef5c0160d002bdd98d3d9023177b"
+        },
+        {
+          "date": "2026-04-12",
+          "file": "starlink_20260412.tle",
+          "quarantined": "0",
+          "records": "10156",
+          "sha256": "a1206701e9808ba149b3212f514525c610f3c8a16eefc4e145cef37c54583233"
+        },
+        {
+          "date": "2026-04-13",
+          "file": "starlink_20260413.tle",
+          "quarantined": "0",
+          "records": "10156",
+          "sha256": "d5399edff885e1dd3a55248c70a2a0fe224b161ed30670fd612b581c9f026018"
+        },
+        {
+          "date": "2026-04-14",
+          "file": "starlink_20260414.tle",
+          "quarantined": "0",
+          "records": "10154",
+          "sha256": "0e1f30471b68023b224c96709203a7f08a8ad01aee06bb62c87a5b96367bea41"
+        },
+        {
+          "date": "2026-04-15",
+          "file": "starlink_20260415.tle",
+          "quarantined": "0",
+          "records": "10151",
+          "sha256": "743e5a179983785784f93a590433cbab12cbfa3cab06ab52089b7e85095a2a11"
+        },
+        {
+          "date": "2026-04-16",
+          "file": "starlink_20260416.tle",
+          "quarantined": "0",
+          "records": "10148",
+          "sha256": "5651ea4c5213244a56fe26d139cb4fb2ee253e8c2e11a1031f56bc2719589d6a"
+        },
+        {
+          "date": "2026-04-17",
+          "file": "starlink_20260417.tle",
+          "quarantined": "0",
+          "records": "10148",
+          "sha256": "b499a856c728365d51843473b43d7dd59876aeb5b8901dc32c64cc8849ce8580"
+        },
+        {
+          "date": "2026-04-18",
+          "file": "starlink_20260418.tle",
+          "quarantined": "0",
+          "records": "10171",
+          "sha256": "ba5e24543daffb334f01c64448d61e7f558e0e7e80f4b9ba4526cba29e76311e"
+        },
+        {
+          "date": "2026-04-19",
+          "file": "starlink_20260419.tle",
+          "quarantined": "0",
+          "records": "10170",
+          "sha256": "5d879d5afd2bd9d59b00d929d733dffd19038689d1ee114b53da0b5ca717a024"
+        },
+        {
+          "date": "2026-04-20",
+          "file": "starlink_20260420.tle",
+          "quarantined": "0",
+          "records": "10169",
+          "sha256": "91d072d120345ca186c6e3b63136d88aa2dc380fc4ce06c136775d942353774c"
+        },
+        {
+          "date": "2026-04-21",
+          "file": "starlink_20260421.tle",
+          "quarantined": "0",
+          "records": "10169",
+          "sha256": "234865f16c0df222cd081b5ae42a95f8c86f7b37632859fd5fc887357429c90f"
+        },
+        {
+          "date": "2026-04-22",
+          "file": "starlink_20260422.tle",
+          "quarantined": "0",
+          "records": "10164",
+          "sha256": "bbc60eec717f2d72b621ce53b3b28e8e916d8487b33c1657b18c11b1157ec3e1"
+        },
+        {
+          "date": "2026-04-23",
+          "file": "starlink_20260423.tle",
+          "quarantined": "0",
+          "records": "10188",
+          "sha256": "552693d88c00c3802b14763be4a24487ff57c09b57d5c3429526987e5737e608"
+        },
+        {
+          "date": "2026-04-24",
+          "file": "starlink_20260424.tle",
+          "quarantined": "0",
+          "records": "10188",
+          "sha256": "afaf69c736b500235582ba511df5352649d214ea8e9057ffbacd728876784468"
+        },
+        {
+          "date": "2026-04-25",
+          "file": "starlink_20260425.tle",
+          "quarantined": "0",
+          "records": "10242",
+          "sha256": "bf1f9336f924f15fa1b6c10880098f52d9c0a55599e30d6d4aba5304cc954b52"
+        },
+        {
+          "date": "2026-04-26",
+          "file": "starlink_20260426.tle",
+          "quarantined": "0",
+          "records": "10240",
+          "sha256": "ce30b74e7a721021b640414243171c1a9f36b8f5919f0f4f8de3182fed7618ce"
+        },
+        {
+          "date": "2026-04-27",
+          "file": "starlink_20260427.tle",
+          "quarantined": "0",
+          "records": "10238",
+          "sha256": "72e2db3d13b2823b1e36f305c25d693391585c61cfc554538bdb96d46b291706"
+        },
+        {
+          "date": "2026-04-28",
+          "file": "starlink_20260428.tle",
+          "quarantined": "0",
+          "records": "10285",
+          "sha256": "89acad5bd70ad61315e212d3bad653a375f39bb24c906c1a8250c8c720f16815"
+        },
+        {
+          "date": "2026-04-29",
+          "file": "starlink_20260429.tle",
+          "quarantined": "0",
+          "records": "10285",
+          "sha256": "57cfa224af9a509da04ce7a7fff28e1f4abd6ff0f4767632e01094f1692ab7bb"
+        },
+        {
+          "date": "2026-04-30",
+          "file": "starlink_20260430.tle",
+          "quarantined": "0",
+          "records": "10283",
+          "sha256": "bd0df9c5d24db79bcbb743c1c503798a97d143fe2acea7f93a4e5999f9318eeb"
+        },
+        {
+          "date": "2026-05-01",
+          "file": "starlink_20260501.tle",
+          "quarantined": "0",
+          "records": "10304",
+          "sha256": "97977ff37322e38695c00261b79e0b262fa01199ee3842f49b0f45fbe06b8c94"
+        },
+        {
+          "date": "2026-05-02",
+          "file": "starlink_20260502.tle",
+          "quarantined": "0",
+          "records": "10304",
+          "sha256": "dc9927ea14e8736faa846a96ab46b513b5567e1437d4bce35e9aac91aaf25ee5"
+        },
+        {
+          "date": "2026-05-03",
+          "file": "starlink_20260503.tle",
+          "quarantined": "0",
+          "records": "10303",
+          "sha256": "4bd8c56ef1194c4ac4d64c130fbd3d2cbaf9b0e38cda4b2279baa06dbdfc94a6"
+        },
+        {
+          "date": "2026-05-04",
+          "file": "starlink_20260504.tle",
+          "quarantined": "0",
+          "records": "10299",
+          "sha256": "473c2e8098856153e272c76be0955e908ebc2021c2bd6fd34397b6989e562ba9"
+        },
+        {
+          "date": "2026-05-05",
+          "file": "starlink_20260505.tle",
+          "quarantined": "0",
+          "records": "10321",
+          "sha256": "055696bc251ecd7a71b01335419f6f43d77a53eeefebe320561f30021752e5a8"
+        },
+        {
+          "date": "2026-05-06",
+          "file": "starlink_20260506.tle",
+          "quarantined": "0",
+          "records": "10321",
+          "sha256": "10a3a7ffa3a09505abf91ada668f5b46d99deaefdb419666d29f5a74e1808346"
+        },
+        {
+          "date": "2026-05-07",
+          "file": "starlink_20260507.tle",
+          "quarantined": "0",
+          "records": "10318",
+          "sha256": "6cd682569b70dff153632252312133183805eaef6e456ce136c9fc9e580e79cd"
+        },
+        {
+          "date": "2026-05-08",
+          "file": "starlink_20260508.tle",
+          "quarantined": "0",
+          "records": "10316",
+          "sha256": "3f0a5301112a18ef30c3e60a6be4eb819e16688de8890477a86da76b61360f60"
+        },
+        {
+          "date": "2026-05-09",
+          "file": "starlink_20260509.tle",
+          "quarantined": "0",
+          "records": "10315",
+          "sha256": "8661514e808022c31c3455499baff405edbdb61314749612d9e40656e885da91"
+        },
+        {
+          "date": "2026-05-10",
+          "file": "starlink_20260510.tle",
+          "quarantined": "0",
+          "records": "10313",
+          "sha256": "5d2bc00ab0965b19cc569714ce49ac0011c879625ec045a1eafb761804d05f5e"
+        },
+        {
+          "date": "2026-05-11",
+          "file": "starlink_20260511.tle",
+          "quarantined": "0",
+          "records": "10313",
+          "sha256": "e9997c9630a1b5b9ec82b887419602334cdcb40c6a1eca171534ee96b725b087"
+        },
+        {
+          "date": "2026-05-12",
+          "file": "starlink_20260512.tle",
+          "quarantined": "0",
+          "records": "10313",
+          "sha256": "f79d3aed3ca920f162513a37109896eb3d3e6e32a8061478e9aeee24258f375c"
+        },
+        {
+          "date": "2026-05-13",
+          "file": "starlink_20260513.tle",
+          "quarantined": "0",
+          "records": "10359",
+          "sha256": "92276dd0c3ee91b02e7d22a3087f272b559e6b38b5464bd09cc9e5dc41f12b06"
+        },
+        {
+          "date": "2026-05-14",
+          "file": "starlink_20260514.tle",
+          "quarantined": "0",
+          "records": "10364",
+          "sha256": "93b68249a6a2eb1e2496a78551f61ddccde9fc0885b577230d2ef7e29ff2c026"
+        },
+        {
+          "date": "2026-05-15",
+          "file": "starlink_20260515.tle",
+          "quarantined": "0",
+          "records": "10364",
+          "sha256": "5b7e73b92e55c838ae231cf8ba81439501aed1d36f7af421da5b5e84b0031d4b"
+        },
+        {
+          "date": "2026-05-16",
+          "file": "starlink_20260516.tle",
+          "quarantined": "0",
+          "records": "10364",
+          "sha256": "1f5a61448a1bf86a7df9fba470aa02f6290c5345e9dec72486a0dbd054f1fa65"
+        },
+        {
+          "date": "2026-05-17",
+          "file": "starlink_20260517.tle",
+          "quarantined": "0",
+          "records": "10363",
+          "sha256": "262b62046e4569f1dfaa024973e929c34c9ac2334122e73c41227e2e37b001e9"
+        },
+        {
+          "date": "2026-05-18",
+          "file": "starlink_20260518.tle",
+          "quarantined": "0",
+          "records": "10363",
+          "sha256": "b45261cc55c9b423c35a6cd5fd18a77d9235e5bb1d56a7d01bcba720fbc6f62a"
+        },
+        {
+          "date": "2026-05-19",
+          "file": "starlink_20260519.tle",
+          "quarantined": "0",
+          "records": "10360",
+          "sha256": "d7f49d97d75b3f874b9c3448f67770fdc89d55a77f7abd880b944df485df8143"
+        },
+        {
+          "date": "2026-05-20",
+          "file": "starlink_20260520.tle",
+          "quarantined": "0",
+          "records": "10359",
+          "sha256": "95d50fb604143e5155da87636e20bb32b4fd4f2c259b910a0d94c87364125bfc"
+        },
+        {
+          "date": "2026-05-21",
+          "file": "starlink_20260521.tle",
+          "quarantined": "0",
+          "records": "10358",
+          "sha256": "b7a2384bb5ba72d85b664457ea66c65ec2688577dfc99ad032da2e8ea8de78dd"
+        },
+        {
+          "date": "2026-05-22",
+          "file": "starlink_20260522.tle",
+          "quarantined": "0",
+          "records": "10358",
+          "sha256": "2be10897e6f2ba10c8a83c4a6115f06f88c842bfe309e917a3c36e7b6fbae869"
+        },
+        {
+          "date": "2026-05-23",
+          "file": "starlink_20260523.tle",
+          "quarantined": "0",
+          "records": "10356",
+          "sha256": "7514e207884021ffb6dbfdbe67df5cd2f8405e0c4fdd10b4f476e81eb117c41d"
+        },
+        {
+          "date": "2026-05-24",
+          "file": "starlink_20260524.tle",
+          "quarantined": "0",
+          "records": "10352",
+          "sha256": "8e7fdc3b47549a31f4e56b6d401764c1913a50f890bacbb30ff5b0a8cb0b1665"
+        },
+        {
+          "date": "2026-05-25",
+          "file": "starlink_20260525.tle",
+          "quarantined": "0",
+          "records": "10352",
+          "sha256": "775fdd2cb77eec2c9a1b926df9ee016320fced817be0576673a664efdb687b56"
+        },
+        {
+          "date": "2026-05-26",
+          "file": "starlink_20260526.tle",
+          "quarantined": "0",
+          "records": "10350",
+          "sha256": "d2f0c73fb3052402451c522339bf75b5de3247102811e70f8f44e85c6cbe36c8"
+        },
+        {
+          "date": "2026-05-27",
+          "file": "starlink_20260527.tle",
+          "quarantined": "0",
+          "records": "10347",
+          "sha256": "29d46664a9d8072f2f9d49f96b928d3e912f0a0220bf109ec4e750a2b409b704"
+        },
+        {
+          "date": "2026-05-28",
+          "file": "starlink_20260528.tle",
+          "quarantined": "1",
+          "records": "10397",
+          "sha256": "20596c4397ee1b9ae0d97ce3003299d47b60fbaa254527d5907bbf8ade3c4c1c"
+        },
+        {
+          "date": "2026-05-29",
+          "file": "starlink_20260529.tle",
+          "quarantined": "0",
+          "records": "10398",
+          "sha256": "4bffc9b78acb55aea45cd4b772c48fed6021f458c2dbf05ce69454fd7b5c03d6"
+        },
+        {
+          "date": "2026-05-30",
+          "file": "starlink_20260530.tle",
+          "quarantined": "0",
+          "records": "10396",
+          "sha256": "21c4ecb3f286381b1bc179030e236a8def1c7bca2a30597b52c290dc41dbf9e7"
+        },
+        {
+          "date": "2026-05-31",
+          "file": "starlink_20260531.tle",
+          "quarantined": "0",
+          "records": "10395",
+          "sha256": "84e0cf6ed7ed456f87f119cb08ca885231ad47ebc230295059359c3501240677"
+        },
+        {
+          "date": "2026-06-01",
+          "file": "starlink_20260601.tle",
+          "quarantined": "0",
+          "records": "10394",
+          "sha256": "be56703a6f821d5d90f761882c58480b70bac2788f3f120b89e8187d55f4a71e"
+        },
+        {
+          "date": "2026-06-02",
+          "file": "starlink_20260602.tle",
+          "quarantined": "0",
+          "records": "10475",
+          "sha256": "28f01e8c18488c2697a15aeb36ed63c5396358ca42306c6c5158a3f9dbc930cd"
+        },
+        {
+          "date": "2026-06-03",
+          "file": "starlink_20260603.tle",
+          "quarantined": "0",
+          "records": "10475",
+          "sha256": "5124d071d9b87a53e1bca9d28e04a4a59e975dff935edf62f1bffe481a636d53"
+        },
+        {
+          "date": "2026-06-04",
+          "file": "starlink_20260604.tle",
+          "quarantined": "0",
+          "records": "10497",
+          "sha256": "45430dd2f73f3b07426ee4b3dbd4ea5a9abc49f69623a3dbe4284e642f538bc3"
+        },
+        {
+          "date": "2026-06-05",
+          "file": "starlink_20260605.tle",
+          "quarantined": "0",
+          "records": "10495",
+          "sha256": "a21130102c409ea1ec18a2cb83805c2f0d77318afd17bc410d3f70f474cfa3a4"
+        },
+        {
+          "date": "2026-06-06",
+          "file": "starlink_20260606.tle",
+          "quarantined": "0",
+          "records": "10495",
+          "sha256": "515d7bc2675006dad8644a9f7369f589679ee6c8bd0e2c490f0322c61779ac0c"
+        },
+        {
+          "date": "2026-06-07",
+          "file": "starlink_20260607.tle",
+          "quarantined": "0",
+          "records": "10495",
+          "sha256": "6e34e16dad8d60f91fa2808b583e2be5734b5a3c49214488efb71d9b59350e79"
+        },
+        {
+          "date": "2026-06-08",
+          "file": "starlink_20260608.tle",
+          "quarantined": "0",
+          "records": "10495",
+          "sha256": "9e15d4f575ad5755d856dcb8a76c9e3e70eb7d36185936844090d927b2c57e57"
+        },
+        {
+          "date": "2026-06-09",
+          "file": "starlink_20260609.tle",
+          "quarantined": "0",
+          "records": "10495",
+          "sha256": "314a83b6d1bfd22b3deb7699f0e4046a6252ac7595f6716fbf5ead8281ae0267"
+        },
+        {
+          "date": "2026-06-10",
+          "file": "starlink_20260610.tle",
+          "quarantined": "0",
+          "records": "10545",
+          "sha256": "aa11a7abbdf21c6ca41603efcee2896a453c17616e201fed9fb9d57ae2e93511"
+        },
+        {
+          "date": "2026-06-11",
+          "file": "starlink_20260611.tle",
+          "quarantined": "0",
+          "records": "10545",
+          "sha256": "32efdd15937166c384feccf9cdc2ccb19c06762f4d6633a2610c25e98fb90447"
+        },
+        {
+          "date": "2026-06-12",
+          "file": "starlink_20260612.tle",
+          "quarantined": "0",
+          "records": "10545",
+          "sha256": "04df91c9df0d84894abcd20d869b547abcc92a31d2c8dfddad2fc5635ca91f52"
+        },
+        {
+          "date": "2026-06-13",
+          "file": "starlink_20260613.tle",
+          "quarantined": "0",
+          "records": "10544",
+          "sha256": "6c581cd8bf6408db93a28c1706bbf7cf1a523c3a631e0ecd8f85839fe2b1694b"
+        },
+        {
+          "date": "2026-06-14",
+          "file": "starlink_20260614.tle",
+          "quarantined": "0",
+          "records": "10542",
+          "sha256": "5dbfe5dea43e12164a2d6105558ad9fe2bd307a133f25bfca94ad7446d3c93cf"
+        },
+        {
+          "date": "2026-06-15",
+          "file": "starlink_20260615.tle",
+          "quarantined": "0",
+          "records": "10542",
+          "sha256": "fee05c14978a5d7005c30e39b742b72cdc71ba389b58014e3a14b028e840f9f0"
+        },
+        {
+          "date": "2026-06-16",
+          "file": "starlink_20260616.tle",
+          "quarantined": "0",
+          "records": "10538",
+          "sha256": "38cb73c19ff72fcdd114910291deaa75790a44f5d401a2e8cba57bacf271e668"
+        },
+        {
+          "date": "2026-06-18",
+          "file": "starlink_20260618.tle",
+          "quarantined": "0",
+          "records": "10616",
+          "sha256": "8b035d7ff688625fee8b7167a62229060d3032bc3a29bd070a4c2a3f026482c0"
+        },
+        {
+          "date": "2026-06-19",
+          "file": "starlink_20260619.tle",
+          "quarantined": "0",
+          "records": "10637",
+          "sha256": "78cccfbb7459f2abcbcc78f72625bd97683416c7c2327712ddac82de41ae3c8b"
+        },
+        {
+          "date": "2026-06-20",
+          "file": "starlink_20260620.tle",
+          "quarantined": "0",
+          "records": "10636",
+          "sha256": "702e88036ce321cee3099b35e5c848c25981ae859a6951da77e168aed5bc6fb8"
+        },
+        {
+          "date": "2026-06-22",
+          "file": "starlink_20260622.tle",
+          "quarantined": "0",
+          "records": "10632",
+          "sha256": "5e9885f2d61f3582c6408b543987b1b2ee680ca2505c63aa99e5c3bce5349e03"
+        },
+        {
+          "date": "2026-06-23",
+          "file": "starlink_20260623.tle",
+          "quarantined": "0",
+          "records": "10631",
+          "sha256": "7f3a8ee30021958ece7a6d40cc412ab9a13d7a67d6dd027a632a6d0cc3357ed8"
+        },
+        {
+          "date": "2026-06-24",
+          "file": "starlink_20260624.tle",
+          "quarantined": "0",
+          "records": "10653",
+          "sha256": "79455f0da5ff839797fa8854e575fe6415145eba491524e2ba4a306867c0bce6"
+        },
+        {
+          "date": "2026-06-25",
+          "file": "starlink_20260625.tle",
+          "quarantined": "0",
+          "records": "10652",
+          "sha256": "e8d327cac63610a1ce51e5e907abdd42436708d0afede85be0a820328be6cea2"
+        },
+        {
+          "date": "2026-06-26",
+          "file": "starlink_20260626.tle",
+          "quarantined": "0",
+          "records": "10651",
+          "sha256": "6396ffc8d54a8773eae3670895727ccb622ea927c90afbbd450d8e728975fb23"
+        },
+        {
+          "date": "2026-06-27",
+          "file": "starlink_20260627.tle",
+          "quarantined": "0",
+          "records": "10671",
+          "sha256": "7a6f2bdb1d44ff13f31679e183c3d045a3857ee6ec8e6f0d44c4ce829f554ef7"
+        },
+        {
+          "date": "2026-06-28",
+          "file": "starlink_20260628.tle",
+          "quarantined": "0",
+          "records": "10669",
+          "sha256": "5dab239b73d17a6d29752f979b93c2b4886d4d53d8807dd648fd06b43b444bf6"
+        },
+        {
+          "date": "2026-06-29",
+          "file": "starlink_20260629.tle",
+          "quarantined": "0",
+          "records": "10667",
+          "sha256": "62e67ae1c219be7d216166dcb0a15f1fc646d2902c0bad9096962fcc6d2f0863"
+        },
+        {
+          "date": "2026-07-01",
+          "file": "starlink_20260701.tle",
+          "quarantined": "0",
+          "records": "10714",
+          "sha256": "d6f6839f8a7359eb9e1488a95da4a99870eedc617478966bce037e8c8ffd897e"
+        },
+        {
+          "date": "2026-07-02",
+          "file": "starlink_20260702.tle",
+          "quarantined": "0",
+          "records": "10709",
+          "sha256": "678132cef4efde5a2758dcb8c2ed18ec45f009152dda9a269254ae655c3ff33b"
+        },
+        {
+          "date": "2026-07-03",
+          "file": "starlink_20260703.tle",
+          "quarantined": "0",
+          "records": "10705",
+          "sha256": "63cf7c5ce3819444a5aa1a3448e230dd861871233aa02841ffd7994fe4c0166c"
+        },
+        {
+          "date": "2026-07-04",
+          "file": "starlink_20260704.tle",
+          "quarantined": "0",
+          "records": "10701",
+          "sha256": "0c5f64dabdb1490ce932137ec7d841939dd35e288eff8ded0ed101cd7aaaaeca"
+        },
+        {
+          "date": "2026-07-05",
+          "file": "starlink_20260705.tle",
+          "quarantined": "0",
+          "records": "10700",
+          "sha256": "83a9b1457e514119c753fcd48718e66b8fdfe3933fe9d405ef81164af27e5b38"
+        },
+        {
+          "date": "2026-07-06",
+          "file": "starlink_20260706.tle",
+          "quarantined": "0",
+          "records": "10697",
+          "sha256": "4c8e72cbe27267fff8ef6a49e8db4af97d6d74e8b303981e009ac78a464b8ae0"
+        },
+        {
+          "date": "2026-07-07",
+          "file": "starlink_20260707.tle",
+          "quarantined": "0",
+          "records": "10717",
+          "sha256": "5c92dcdff9fbf5f3575ba1ae373a31154d5e807134bc5f75a4e9cca4f2d58047"
+        },
+        {
+          "date": "2026-07-08",
+          "file": "starlink_20260708.tle",
+          "quarantined": "0",
+          "records": "10742",
+          "sha256": "eab42b8f35cb43269a4559ef6f2bfb5d159af5e2593998c9517a0227a5a3a66f"
+        },
+        {
+          "date": "2026-07-09",
+          "file": "starlink_20260709.tle",
+          "quarantined": "0",
+          "records": "10741",
+          "sha256": "a89971ebc7e5a09c9396c2d31cf73efdfa3090081ca356dab7c58425aea1b96e"
+        },
+        {
+          "date": "2026-07-10",
+          "file": "starlink_20260710.tle",
+          "quarantined": "0",
+          "records": "10741",
+          "sha256": "9afe8663a41a2c0dd01d54daac841c05fe1e7d70c4188ad00632209d6ef8b520"
+        },
+        {
+          "date": "2026-07-11",
+          "file": "starlink_20260711.tle",
+          "quarantined": "0",
+          "records": "10741",
+          "sha256": "cfbd2f6d963afeb2ce2a811c25c6711b09e4921f9390f16c37e34e916535c1ce"
+        },
+        {
+          "date": "2026-07-12",
+          "file": "starlink_20260712.tle",
+          "quarantined": "0",
+          "records": "10737",
+          "sha256": "d12fc6ba01c4fd73549a7f2e6e8110e758b9aeff583058c716010cbe1baee917"
+        },
+        {
+          "date": "2026-07-13",
+          "file": "starlink_20260713.tle",
+          "quarantined": "0",
+          "records": "10736",
+          "sha256": "aa8c5f517d7ad1424aafa5e744de04828a1d97ed18d309a1dbd91308c4c081ff"
+        },
+        {
+          "date": "2026-07-14",
+          "file": "starlink_20260714.tle",
+          "quarantined": "0",
+          "records": "10786",
+          "sha256": "bfef407c7caa00ee45c99a173784ec0ddf753ff4ce541185a56ebda751f3a0ea"
+        },
+        {
+          "date": "2026-07-15",
+          "file": "starlink_20260715.tle",
+          "quarantined": "0",
+          "records": "10785",
+          "sha256": "6de1ecc5d1caa9ce2ea657bd312f55f2bead3baa58f7d7834fc1f0dbd67ede2e"
+        },
+        {
+          "date": "2026-07-16",
+          "file": "starlink_20260716.tle",
+          "quarantined": "0",
+          "records": "10785",
+          "sha256": "cce6c63013223ef1a578c06b85a8a4e2f8321f78b7003fd31556f5e6d3446d34"
+        },
+        {
+          "date": "2026-07-17",
+          "file": "starlink_20260717.tle",
+          "quarantined": "0",
+          "records": "10785",
+          "sha256": "5a1d25f39088c77e84815ea2bc65dc9575a5c2c070621ad59e9ff23af8afda15"
+        },
+        {
+          "date": "2026-07-18",
+          "file": "starlink_20260718.tle",
+          "quarantined": "0",
+          "records": "10784",
+          "sha256": "45047ae9877d126caef6ef0ec5e37a59ed09745e3e0b6cdc74ed306044545f46"
+        },
+        {
+          "date": "2026-07-19",
+          "file": "starlink_20260719.tle",
+          "quarantined": "0",
+          "records": "10783",
+          "sha256": "83afdf64e852bc44d31118e6aa54c2f703d2f738b99823a6e8b4a7f6c3efe6c6"
+        },
+        {
+          "date": "2026-07-20",
+          "file": "starlink_20260720.tle",
+          "quarantined": "0",
+          "records": "10783",
+          "sha256": "0e8a6b71f13da67eaec94a7dc9dcfb33afe4c2551a17aff97cd41150fb426de2"
+        },
+        {
+          "date": "2026-07-21",
+          "file": "starlink_20260721.tle",
+          "quarantined": "0",
+          "records": "10780",
+          "sha256": "60774e7aca112c3f63fa0c85a1219dba1b26a6492ce255743e2f68730dd5d342"
+        },
+        {
+          "date": "2026-07-22",
+          "file": "starlink_20260722.tle",
+          "quarantined": "0",
+          "records": "10778",
+          "sha256": "dbc7bfbec4f28160c84218ee721b91a37e5f9238df5f77ef49d562f3e168fc05"
+        },
+        {
+          "date": "2026-07-23",
+          "file": "starlink_20260723.tle",
+          "quarantined": "0",
+          "records": "10778",
+          "sha256": "10befeaca464794264ecc1f861d25902d816dce38e63b4d9aa98f6062cfacb0b"
+        },
+        {
+          "date": "2026-07-24",
+          "file": "starlink_20260724.tle",
+          "quarantined": "0",
+          "records": "10776",
+          "sha256": "ed2043b0816b29a29617497326e5c99342eba9297ae5bfc272e2af7163869c7d"
+        },
+        {
+          "date": "2026-07-26",
+          "file": "starlink_20260726.tle",
+          "quarantined": "0",
+          "records": "10776",
+          "sha256": "c21901399f0736e1d91e5aad166b5afa7e92e35673ac9acc7b5050ce32e57032"
+        },
+        {
+          "date": "2026-07-27",
+          "file": "starlink_20260727.tle",
+          "quarantined": "0",
+          "records": "10773",
+          "sha256": "a5e6a72ebe54a6d0e5327586db2a88bfbe736f116f1d8fe6e34ac2d2b9f63cc8"
+        },
+        {
+          "date": "2026-07-28",
+          "file": "starlink_20260728.tle",
+          "quarantined": "0",
+          "records": "10773",
+          "sha256": "dfd68b626d73bb2af6929fa9c2339dfffa21bca6e5d83ff5dc07b9c58c2bc37f"
+        },
+        {
+          "date": "2026-07-29",
+          "file": "starlink_20260729.tle",
+          "quarantined": "0",
+          "records": "10771",
+          "sha256": "c0c1730cf039f8cc4b57066b1e6255025cf8afb944721de72382babe72fc41b1"
+        },
+        {
+          "date": "2026-07-30",
+          "file": "starlink_20260730.tle",
+          "quarantined": "0",
+          "records": "10770",
+          "sha256": "121fda621a380cb411511ee7d96ec6483f877267cbcf9d6bbe3489eb13667fd9"
+        },
+        {
+          "date": "2026-07-31",
+          "file": "starlink_20260731.tle",
+          "quarantined": "0",
+          "records": "10769",
+          "sha256": "38c5bc5a32d3f73e51accc932c4faf10a6f3a4cd76abb11d70519e545dc3dba3"
+        },
+        {
+          "date": "2026-08-01",
+          "file": "starlink_20260801.tle",
+          "quarantined": "0",
+          "records": "10769",
+          "sha256": "86908c2105e578ea61e6a0252acdb29ccbf5bdd8e24a2a767be3c50afea422c9"
+        },
+        {
+          "date": "2026-08-02",
+          "file": "starlink_20260802.tle",
+          "quarantined": "0",
+          "records": "10767",
+          "sha256": "bd2b81d58260b57c8973d186df37cabf9969432bb89c5f43da7c5901ef7fa97b"
+        },
+        {
+          "date": "2026-08-03",
+          "file": "starlink_20260803.tle",
+          "quarantined": "0",
+          "records": "10766",
+          "sha256": "3d3f726e37f80acde8213027f92d68fc316f129dd3572bc5d4f8da0a0d1c0e8a"
+        },
+        {
+          "date": "2026-08-05",
+          "file": "starlink_20260805.tle",
+          "quarantined": "0",
+          "records": "10766",
+          "sha256": "6fdef490ab6234ee12a76e0a266e9114125884745e94bc5cb0d51182afc69124"
+        },
+        {
+          "date": "2026-08-06",
+          "file": "starlink_20260806.tle",
+          "quarantined": "0",
+          "records": "10766",
+          "sha256": "38eefe0a2d40f1bf90fd9d125708dfbf4824214c7553e08c675dee4374044d5a"
+        },
+        {
+          "date": "2026-08-07",
+          "file": "starlink_20260807.tle",
+          "quarantined": "0",
+          "records": "10761",
+          "sha256": "89e9f26999395fb549c9706deb73ad8ce83f57a92f17299073186b40c956ba40"
+        },
+        {
+          "date": "2026-08-08",
+          "file": "starlink_20260808.tle",
+          "quarantined": "0",
+          "records": "10761",
+          "sha256": "66bcbcd3292702e2103273c61801b3fef6aa39abf135f7b9309065dfd73ff50d"
+        },
+        {
+          "date": "2026-08-09",
+          "file": "starlink_20260809.tle",
+          "quarantined": "0",
+          "records": "10761",
+          "sha256": "d26b83968c790da2fb7bc408a422f6ff1c9578409b9c34b6d0643d059a88f0e8"
+        },
+        {
+          "date": "2026-08-10",
+          "file": "starlink_20260810.tle",
+          "quarantined": "0",
+          "records": "10758",
+          "sha256": "6bd978e9b4c2592b675af35252f94c07fcc29a48db72a08410c0e344569ddd0d"
+        },
+        {
+          "date": "2026-08-11",
+          "file": "starlink_20260811.tle",
+          "quarantined": "0",
+          "records": "10756",
+          "sha256": "6f96ac9d05f32f8d8c634dfba2351b9030b41749eeb655e7574f1864201388d1"
+        },
+        {
+          "date": "2026-08-12",
+          "file": "starlink_20260812.tle",
+          "quarantined": "0",
+          "records": "10755",
+          "sha256": "7d315bf091c332c756d8079d66f99ba0831be95ac381c6ca99e2835a3dd97d35"
+        },
+        {
+          "date": "2026-08-13",
+          "file": "starlink_20260813.tle",
+          "quarantined": "0",
+          "records": "10754",
+          "sha256": "efa7f9911c44c4df6f2c40a814740381d4270d315cac6eb83b25e48b8460932d"
+        },
+        {
+          "date": "2026-08-14",
+          "file": "starlink_20260814.tle",
+          "quarantined": "0",
+          "records": "10753",
+          "sha256": "9890a22e36bc85183235c73a181688ecd14e323766386c1a43a806805da4b5bc"
+        },
+        {
+          "date": "2026-08-15",
+          "file": "starlink_20260815.tle",
+          "quarantined": "0",
+          "records": "10753",
+          "sha256": "ddc93439ca69714271e7dfd0ab43d216626967084c07f0b65dd6d445fa8714ce"
+        },
+        {
+          "date": "2026-08-16",
+          "file": "starlink_20260816.tle",
+          "quarantined": "0",
+          "records": "10751",
+          "sha256": "280b82cbe95eee19bc8055db9a8bb1830e08c19b4c5a0beb520655bf58cc5ba2"
+        },
+        {
+          "date": "2026-08-17",
+          "file": "starlink_20260817.tle",
+          "quarantined": "0",
+          "records": "10750",
+          "sha256": "7e059db0267478b55ec1066295c1f516249356f648aef9725d1238bac1918461"
+        },
+        {
+          "date": "2026-08-18",
+          "file": "starlink_20260818.tle",
+          "quarantined": "0",
+          "records": "10750",
+          "sha256": "52dd2072219227429e77d9f06e4960cfba7bd3fd78922982a9bccca042d728c5"
+        },
+        {
+          "date": "2026-08-19",
+          "file": "starlink_20260819.tle",
+          "quarantined": "0",
+          "records": "10748",
+          "sha256": "1a0a16a689ff877d328477a93282fcdb1a534d77db16825474b5772ed1139a53"
+        },
+        {
+          "date": "2026-08-20",
+          "file": "starlink_20260820.tle",
+          "quarantined": "0",
+          "records": "10746",
+          "sha256": "daa31f7bdb5510c69561b54c03d3263eff993e875792e429ee98cf297f98eeb8"
+        }
+      ],
+      "sampling": {
+        "calendar_span_days": 390,
+        "date_count": 166,
+        "date_distribution": "uniform over available file dates",
+        "date_first": "2025-07-27",
+        "date_last": "2026-08-20",
+        "part": "train",
+        "time_of_day_distribution": "uniform over [0, 86400) s, floor-snapped to 30.080000000000002 s"
+      },
+      "schema": "mcrl-ephemeris-freeze-v1",
+      "sgp4": {
+        "accelerated": true,
+        "gravity_model": "wgs72",
+        "version": "2.27"
+      },
+      "split": {
+        "block_days": 7,
+        "cycle_days": 16,
+        "embargo_days": 1,
+        "embargoed_files": 47,
+        "first_block_part": "train",
+        "first_date": "2025-07-27",
+        "last_date": "2026-08-20",
+        "minimum_train_test_gap_days": 2,
+        "scheme": "block-alternating-with-embargo",
+        "test_files": 160,
+        "train_files": 166
+      }
+    },
+    "pointing_cells": {
+      "cell_ids": [
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66
+      ],
+      "cell_radius_km": 13.997617646799252,
+      "count": 39,
+      "coverage_fraction": 0.951667791846351,
+      "lattice_cells": 81,
+      "selection_rule": "descending area fraction inside the 200x90 km service area, then ascending distance from its centroid, then ascending cell_id"
+    },
+    "probe_grid": {
+      "P1": {
+        "ablation_dimension": null,
+        "closes": [
+          "Q-A",
+          "Q-B"
+        ],
+        "episodes": 200,
+        "implemented": "runtime/probe_p1.py",
+        "measures": [
+          "D2-eligible satellites per user per step",
+          "valid actions per user per step, and the starvation rate",
+          "handover events split phi1 / phi2 / re-entry, from realised associations and never from indices",
+          "elevation and its rate of change",
+          "outage_infeasible rate -- the §4A.5a(4) input"
+        ],
+        "policy": "all three reference policies, reported separately",
+        "question": "Q-A/Q-B: visibility and D2 event rate under a fixed policy",
+        "sdd_definition": "per-step visible-satellite distribution, handover event rate, elevation and angular-rate distributions",
+        "split_part": "train",
+        "users": 100
+      },
+      "P2": {
+        "ablation_dimension": "dwell_steps",
+        "closes": [],
+        "episodes": 200,
+        "measures": [
+          "P^N swing amplitude per N  (SDD, restored)",
+          "angle-aware EE dynamic range per N  (SDD, restored)",
+          "re-key rate and the fraction of re-keys that move j = 0",
+          "handover rate attributable to re-keying rather than to geometry",
+          "the headline metrics under each N, as a sensitivity band"
+        ],
+        "note": "Q-E is already closed at N = 3: the frozen mapping needs only the re-key rate, which is scenario characterisation available before any policy is evaluated.  P2 therefore reports sensitivity rather than making the choice -- but Q-E closing elsewhere does NOT discharge the two measurements SDD §4 asks P2 for, so they are restored above.",
+        "policy": "stay-if-possible",
+        "question": "sensitivity of the results to the dwell length N",
+        "sdd_definition": "P^N swing amplitude and angle-aware EE dynamic range for each N in {2,3,4}",
+        "split_part": "train",
+        "sweep": {
+          "dwell_steps": [
+            2,
+            3,
+            4
+          ]
+        },
+        "users": 100
+      },
+      "P3": {
+        "ablation_dimension": null,
+        "b17_q4_answer": {
+          "answer": "YES at the candidate level: argmax(r1) lies in r3's best set 100.00% of the time, against an 81.1% null.  Both are dominated by the same B^w/U divisor, so the EE-best candidate is always among the load-best ones.  => the keying is already right; the follow-on method should strengthen exploration, not replace the keying.",
+          "note": "recorded under B17 Q4 on 2026-08-23.  The number was produced by the run submitted to close Q-D, so the answer sat inside that report with no owner -- and B17 warns that taking the wrong branch here binds the wrong thing in the follow-on design.",
+          "question": "is the configuration with high system EE the same as the one that spreads load well?  B17 says this decides whether the follow-on method should STRENGTHEN EXPLORATION (the keying is already right) or CHANGE THE KEYING -- and that getting it wrong binds the wrong thing",
+          "scope_limit": "⚠ This is the CANDIDATE level -- the immediate reward.  On the realised TRAJECTORY r1 and r3 correlate only +0.25, so 'they never conflict at the point of choice' does NOT mean 'r3 is redundant': under stay-if-possible users sit on load-3 beams while ~23 load-1 candidates are available, and closing that gap is exactly what the third objective is for.",
+          "source": "artifacts/probe-p3-2026-08-23.json"
+        },
+        "closes": [
+          "Q-D",
+          "B17-Q3",
+          "B17-Q4"
+        ],
+        "episodes": 200,
+        "measures": [
+          "width of U_{b_u} across a user's 28 candidates  (SDD, restored)",
+          "per-decision argmax agreement between r1 and r3  (SDD, restored)",
+          "distribution of realised U_{b_u} across the population",
+          "p95 of |r3| over served steps -- the Q-D selection mapping's input",
+          "|r1|, |r2|, |r3| magnitudes on the same steps",
+          "correlation between r1 and r3 across steps -- they must be separable, which is what F-2's per-link power sum destroyed"
+        ],
+        "note": "the two questions share one measurement -- the U_{b_u} distribution -- which is why they can sit in one probe; but the argmax-agreement half is SDD's and was missing.",
+        "policy": "all three reference policies",
+        "question": "B17 Q3: does the counting-form r3 discriminate?  And Q-D: what scale does it enter training at?",
+        "sdd_definition": "width of the U_{b_u} distribution across one user's 28 candidate actions; per-decision argmax agreement rate with r1",
+        "split_part": "train",
+        "users": 100
+      },
+      "P4": {
+        "ablation_dimension": "co_colour_interference_enabled",
+        "closes": [],
+        "episodes": 100,
+        "measures": [
+          "I^intra / I^inter split per served link",
+          "SINR distribution with and without the co-colour sum",
+          "how often two satellites illuminate one cell -- (3.12b)'s v' = v"
+        ],
+        "note": "⚠ SDD §4 retired the OLD P4 series at r5 (dispersion-vs-EE, the EE-optimal beam count, the source of the 3.9x) as post-baseline ANALYSIS questions.  The number is genuinely vacant and is reused here with the controller's approval -- but this probe is UNRELATED to those, and saying so is the point of this note.",
+        "policy": "all three reference policies",
+        "question": "does the interference model bind?  which term dominates?",
+        "split_part": "train",
+        "users": 100
+      },
+      "P5": {
+        "ablation_dimension": null,
+        "closes": [],
+        "discharges": "eq. (3.10c)'s ANGULAR applicability disclosure",
+        "episodes": 100,
+        "measures": [
+          "distribution of the at-user inter-satellite separation angle over every interference term evaluated",
+          "fraction of evaluations below theta^R_min",
+          "how much received interference power those evaluations carry -- a rare-but-dominant tail reads differently from a rare-and-negligible one"
+        ],
+        "note": "⚠ RESTORED 2026-08-23.  This probe had been displaced by the action-set-contraction probe, which now holds P7.  ch3 currently discloses only (3.10c)'s FREQUENCY range (2-31 GHz per ITU-R S.465-6) and says nothing about its angular range, so this obligation had no owner at all.  ⚠ And ``theta^R_min`` does not yet exist in env/antenna.py -- the restored probe exposes a missing constant, not just a missing measurement.",
+        "policy": "all three reference policies",
+        "question": "receive-angle distribution against S.465-6's theta^R_min -- does the envelope get evaluated where it is defined?",
+        "sdd_definition": "fraction of link evaluations falling at theta^R < 2.05 deg",
+        "split_part": "train",
+        "users": 100
+      },
+      "P6": {
+        "ablation_dimension": "learning_rate",
+        "closes": [],
+        "episodes": 9000,
+        "measures": [
+          "q_margin, NORMALISED  (SDD emphasis, restored)",
+          "collapse metrics (G-3, all four)",
+          "scalar reward",
+          "control arm: a policy that breaks near-ties at RANDOM  (SDD r2, restored) -- if it reproduces the same EE the dispersion was noise; if it cannot, there is a weak learned ordering",
+          "perturbation stability  (SDD r2, restored)",
+          "cross-seed ranking consistency  (SDD r2, restored)"
+        ],
+        "note": "the only probe that needs training, so it is heavy compute and belongs on the server, not in the local probe pass",
+        "question": "the learning-rate sweep (ruling C-13)",
+        "sdd_definition": "alpha in {0.01, 0.003, 0.001} over short runs; report all four G-3 collapse metrics with q_margin NORMALISED; plus an r2 control arm that breaks near-ties at random, perturbation stability, and cross-seed ranking consistency",
+        "split_part": "train",
+        "sweep": {
+          "learning_rate": [
+            0.01,
+            0.003,
+            0.001
+          ]
+        },
+        "users": 100
+      },
+      "P7": {
+        "ablation_dimension": "segment_warm_start",
+        "closes": [],
+        "episodes": 100,
+        "measures": [
+          "per-term mask attrition: slot occupied / cell exists / cell visible, reported separately",
+          "power-feasibility outage rate, both warm-start arms",
+          "in-segment gain excursion against the 3.010 dB budget, and the required power of the steps judged infeasible"
+        ],
+        "note": "⚠ NEW NUMBER 2026-08-23.  This was P5 and had displaced SDD's own P5; the number is vacated and the probe keeps its content. W-17 measured all three geometric terms and the power gate as non-binding at one hand-picked epoch, and W-19/W-22 then found the power gate DOES fire once segments are warm-started (0.94% main arm, 0.81% sensitivity arm).  P7 turns both into numbers over the frozen sampling distribution.",
+        "policy": "random-masked, which stresses the mask hardest",
+        "prototypes": [
+          "scripts/outage_frozen.py",
+          "scripts/ceiling_and_segments.py",
+          "scripts/sensitivity_arm.py"
+        ],
+        "question": "does anything actually constrain the action set?",
+        "split_part": "train",
+        "users": 100
+      },
+      "rng_policy": "Every probe with an ablation_dimension draws its sampling randomness from streams that are INDEPENDENT of the swept quantity: env_rng (fading), mobility_rng (users), a spawned stream for the warm-start ages, and the policy's own generator.  Measured with one shared generator on 2026-08-23, switching fading off also re-drew every later episode's segment ages and moved the outage count by 11 -- so the 'fading ablation' had measured fading plus a different set of ages.  One generator produces numbers that look reasonable and are attributed wrongly, which is the hardest kind of error to see.",
+      "selection_mapping_policy": "A selection mapping must freeze its MEASUREMENT CONDITIONS along with its rule.  'Take the largest N whose X is at or below a threshold' is not a complete rule until the conditions X is measured under are pinned: Q-E's rule selected N = 3 from a 60-user single-stream script and N = 4 from probe P2 at 100 users with separated streams, and those are not two measurements disagreeing -- one was taken under conditions that are not this scenario.  ⚠ And a rule whose output looks inconsequential is still followed: 'the rule says 4 but 3 changes no reported result' puts the boundary of the exception at 'was this important', which is precisely the discretion pre-registration exists to remove.",
+      "test_validity_policy": "A test that only works because the system happens to be in some state is testing the environment, not the code.  It must put the system into that state itself, and it must assert BOTH that the controlled quantity is unchanged AND that the manipulated quantity moved -- an ablation test asserting only 'the two sides agree' also passes when the thing being ablated was never wired up.  Three instances in this project: nine gate assertions went vacuous the day Q-D and Q-E closed; the fading-ablation test would have passed with fading disconnected; and the PREREG stand-in mappings would have drifted out of sync with the live question set without a key-set assertion."
+    },
+    "reference_policy": {
+      "description": "hold the previous association while it stays valid",
+      "name": "stay-if-possible",
+      "seed": 20260822
+    },
+    "reward": {
+      "calibration_enabled": true,
+      "load_semantics": "eligible load = the served count AFTER the per-link power feasibility check = sum_u x_{u,s,v}, eq. (3.3); it drives r3 and the beam power aggregation.  demand (ungated, pre-admission) is the STATE quantity, n_{s,v}(t-1) in (4.1). ⚠ this line said 'eligible (post-m^e) drives r3, power and gamma_req' until 2026-08-23: m^e was deleted by C-11 and gamma_req is not on the live path",
+      "r1": "eq. (3.25): sum of selected link EE over the common P^N",
+      "r2": "identity-based handover, phi1=0.5, phi2=1.0",
+      "r3": "count-based -U_{b_u}"
+    },
+    "sampling": {
+      "calendar_span_days": 390,
+      "date_count": 166,
+      "date_distribution": "uniform over available file dates",
+      "date_first": "2025-07-27",
+      "date_last": "2026-08-20",
+      "part": "train",
+      "time_of_day_distribution": "uniform over [0, 86400) s, floor-snapped to 30.080000000000002 s"
+    },
+    "segment_warm_start": {
+      "main_arm": {
+        "mode": "uniform-episode-length",
+        "rationale": "without it p(0) = p0 for 100% of users in every episode, which is an artefact of the episode boundary rather than a property of the geometry -- the same defect W-04 fixed for the D2 latches by priming them before step 0.  Parameter-free: it reuses H, so step 0 looks like a uniformly random step of an ongoing episode.  a = 0 keeps positive probability, so a genuinely fresh segment still occurs.",
+        "rule": "segment age a ~ Uniform{0, ..., H-1} at episode reset"
+      },
+      "sensitivity_arm": {
+        "L_provenance": "6 steps: the median length of segments that end NATURALLY (by handover or outage) at dt = 30.08 s, measured under the reference policy at freeze time.  NOT the 5 of the pooled median -- 49.0% of segments are cut by the episode boundary and ran only 4.24 steps, so the pooled figure estimates a truncated quantity rather than the inter-renewal time this parameter is defined as.",
+        "caveat": "a trained policy will not hold links for the same length, so L is frozen as a reference-policy measurement and must be reported as one",
+        "mode": "uniform-segment-length",
+        "rationale": "For a deterministic segment length L the equilibrium age of an in-progress segment is Uniform{0, ..., L-1}, so this arm is not an alternative -- it IS the equilibrium distribution, with mean age 2.5 steps.  The two arms therefore carry complementary defects rather than one being better: the main arm is policy-independent by construction but draws ages 1.8x older than equilibrium (4.5 vs 2.5), which pushes p away from p0 and makes the mechanism look MORE active; this arm is the correct distribution but its L is measured UNDER THE REFERENCE POLICY, which is how a policy re-enters the initial state distribution. The main arm stays the headline because it is the pre-registered main arm -- switching after seeing a result is the thing pre-registration exists to prevent.",
+        "rule": "a ~ Uniform{0, ..., L-1} with L the UNCENSORED segment length",
+        "segment_age_steps": 6
+      },
+      "user_position_in_the_back_projection": "held at its current value; users travel 250 m per decision step, subtending 0.0297 deg at 483 km against a median per-step |dtheta| of 1.194 deg -- 2.5%, the same ratio that justifies leaving mobility on the decision clock"
+    },
+    "selection_mappings": {
+      "Q-D r3 calibration scale": {
+        "measured_abs_r3_over_served_steps": {
+          "count": 11898.0,
+          "max": 8.0,
+          "p05": 1.0,
+          "p50": 3.0,
+          "p95": 6.0,
+          "source": "probe P3, 12000 decision steps"
+        },
+        "note": "CLOSED by probe P3 on 2026-08-23 -- the first question here closed by a probe rather than a ruling.  The scale is applied through TrainerConfig.reward_calibration_*, which is why that surface survived P-05.  Measured under the reference policy at the frozen scenario; a trained policy spreads load differently but the scale stays frozen, because re-deriving it from training output would make the reward scale a function of the run it is scoring.",
+        "probe": "P3",
+        "rationale": "B13 changed r3's units from a normalised gap to a raw user count, so the inherited scale means nothing for it.  p95 rather than max because the max is a single congested beam and would make the scale a function of one outlier; rounding to an integer keeps the divisor a countable quantity rather than a fitted one.",
+        "resolved": 6,
+        "rule": "scale = the p95 of |r3| = U_{b_u} measured over P3's served steps, rounded to the nearest integer; r3 enters training as -U_{b_u} / scale",
+        "unfreezes": "env.service.R3_SCALE_IS_FROZEN"
+      },
+      "Q-E dwell N": {
+        "candidates": [
+          2,
+          3,
+          4
+        ],
+        "measured_rekey_rate": {
+          "authoritative_probe_P2_100_users_separated_streams": {
+            "N=2": 0.0205,
+            "N=3": 0.02875,
+            "N=4": 0.0325
+          },
+          "superseded_qe_rekey_script_60_users_single_stream": {
+            "N=2": 0.02708,
+            "N=3": 0.03819,
+            "N=4": 0.05417
+          },
+          "why_they_differ": "conditions, not sampling noise: 60 vs 100 users, and one shared generator versus three separated ones.  Both are kept so that re-running P2 and finding a different N than an older note says does not look like a records error."
+        },
+        "measurement_conditions": "measured in the FROZEN scenario: 100 users, dt = 30.08 s, streams separated per rng_policy, driven through StepEnvironment by probe P2.  ⚠ Frozen WITH the rule: 'largest N with X <= threshold' is not a complete rule until X's measurement conditions are pinned, and this mapping proves it -- the same rule selected 3 from a 60-user single-stream script and 4 from P2.",
+        "note": "the rate depends only on the product N*dt -- a user travels at most 14.3% of a cell radius within a segment at any (N, dt) swept -- so this is a live decision only at dt >= 30 s.  At the former 1 s clock every candidate sat below 0.1% and the rule would have returned N = 4 by default.",
+        "p2_sensitivity_at_the_chosen_N": {
+          "angle_aware_ee_dynamic_range": {
+            "N=2": 2599000.0,
+            "N=3": 2599000.0,
+            "N=4": 2607000.0
+          },
+          "handover_rate_per_decision": {
+            "N=2": 0.1133,
+            "N=3": 0.1133,
+            "N=4": 0.1133
+          },
+          "note": "⚠ NOT 'no measurable effect': N = 4 lowers the P^N swing by 5.4% and moves the EE dynamic range by 0.3%.  Only the handover rate is identical across N.  The differences are small but real, and calling them zero would make a later reader think the record was wrong.",
+          "system_power_swing_w": {
+            "N=2": 83.33,
+            "N=3": 83.33,
+            "N=4": 78.82
+          }
+        },
+        "probe": "scenario characterisation, not a probe",
+        "rationale": "independent of EE, throughput and every reported metric.  SDD 4A.2 gives dwell exactly one job: freeze j -> cell_id between boundaries so an action index keeps naming the same cell, which larger N serves better.  Its only cost is staleness -- the frozen map being wrong when the anchor should have moved -- and the re-key rate measures exactly that.  So the rule is 'as stable as possible, subject to not being stale': a correctness bound on the mechanism's own validity, not a performance target.  Monotone in N, so it cannot tie.  The earlier proposal (maximise the angle-aware EE dynamic range) was withdrawn: it selected on the effect the paper sets out to demonstrate.",
+        "resolved": 4,
+        "rule": "take the LARGEST N in {2, 3, 4} whose re-key rate -- the fraction of dwell boundaries at which j = 0 moves -- is at or below 5%; if none qualifies, take the smallest",
+        "unfreezes": "env.dwell.DWELL_N_IS_FROZEN"
+      },
+      "Q-F c1 calibration scale": {
+        "disclosure": "⚠ P3 had already run when this rule was written, so r1's distribution was VISIBLE -- 'the rule preceded the numbers' is not literally true here the way it is for c_3.  What protects it: the rule is structural (unbounded -> p95; bounded -> the bound); c_1 and c_3 share the p95 rule while c_2 is separate because its distribution shape forbids it -- NOT all three alike; and it was not selected from among alternatives by checking which produced a preferred balance, which is how the leak actually happens.",
+        "measured_r1_over_served_steps": {
+          "count": 12000.0,
+          "max": 6204625.88,
+          "p05": 60948.985,
+          "p50": 508681.149,
+          "p95": 2471140.576,
+          "source": "probe P3, 12000 decision steps"
+        },
+        "not_rounded_because": "r3 is a head count and rounding keeps its scale countable; r1 is a continuous bit/J ratio with no unit to round to",
+        "probe": "P3 (already measured; no new run)",
+        "rationale": "The three scales cannot share one statistic, and the reason is structural rather than stylistic: r2 is bounded by a frozen parameter, r3 by the population, and r1 by nothing at all.  The common INTENT is that each normalised objective spans roughly unit range, so that omega_j means what Table I says it means -- the effective trade-off is omega_j / c_j, so c_1 directly sets how much of the headline result the first objective accounts for.  r1 = R_u/P^N is strictly positive and unbounded above, with a right tail driven by the best link geometry, so it has no analytic bound to normalise against; p95 spans the range while staying robust to that tail, which the max would track instead.  Same reasoning, same statistic, as the already-frozen c_3.",
+        "resolved": 2471140.576,
+        "rule": "c_1 = the p95 of r1 over served steps, from P3's r1 quantiles",
+        "supersedes": {
+          "legacy_c1": 117217362.202,
+          "why": "measured r1 has p50 = 5.09e5, so the legacy value is 230x too large; dividing by it would put r1's median at 0.0043 against |r3|'s 0.500 and crush the first objective.  'Invalid by construction' is now a measurement, not an inference."
+        },
+        "unfreezes": "trainer_spec.TrainerConfig.reward_calibration_scales[0]"
+      },
+      "Q-G c2 calibration scale": {
+        "measured_r2_over_all_steps": {
+          "mean": -0.11175,
+          "note": "reported for the record; the rule uses none of it",
+          "p05": -1.0,
+          "p50": -0.0,
+          "p95": 0.0
+        },
+        "probe": "none -- closed analytically, no measurement needed",
+        "rationale": "r2 is the one objective **bounded by construction**: (3.27) gives r2 in {0, -phi1, -phi2}, so |r2| <= phi2 always and dividing by phi2 normalises it to [0, 1] exactly.  Its scale is a frozen parameter, not a statistic, and closing it needs no probe at all -- it was determined the moment phi1 and phi2 were frozen.  ⚠ And the p95 rule CANNOT be transplanted here: r2's signed p95 is 0 because most steps have no handover, so 'divide by the p95' would divide by zero.  The sign convention puts r2's informative end at p05, and p05 is exactly -phi2 by construction -- which is why the analytic bound is both simpler and exact.",
+        "resolved": 1.0,
+        "rule": "c_2 = phi2, the larger handover penalty",
+        "unfreezes": "trainer_spec.TrainerConfig.reward_calibration_scales[1]"
+      }
+    },
+    "split": {
+      "block_days": 7,
+      "cycle_days": 16,
+      "embargo_days": 1,
+      "embargoed_files": 47,
+      "first_block_part": "train",
+      "first_date": "2025-07-27",
+      "last_date": "2026-08-20",
+      "minimum_train_test_gap_days": 2,
+      "scheme": "block-alternating-with-embargo",
+      "test_files": 160,
+      "train_files": 166
+    },
+    "stopping_rules": {
+      "abort": {
+        "rationale": "P-3/G-11: a violated contract is a result, not a nuisance",
+        "rule": "a run aborts on any MCRLContractError and the abort is reported; it is never retried with a relaxed guard"
+      },
+      "checkpoint_selection": {
+        "assumption_id": "ASSUME-MODQN-REP-015",
+        "primary": "final-episode-policy",
+        "rationale": "the primary report is the final policy, so no selection over eval output enters the headline; the best-eval checkpoint is reported beside it and labelled as selected.",
+        "secondary": "best-weighted-reward-on-eval"
+      },
+      "probe": {
+        "rationale": "extending a probe until a rate crosses a threshold is the adaptive-sampling leak in its purest form.",
+        "rule": "run the pre-registered episode count; no peeking, no extension"
+      },
+      "training": {
+        "episodes": 9000,
+        "rationale": "Table I fixes the budget.  Early stopping on a validation metric would make the stopping point a function of the data, which is the same leak as an adaptive threshold.",
+        "rule": "fixed episode count, no early stopping"
+      }
+    },
+    "thresholds": {
+      "coverage_target_fraction": {
+        "class": "D",
+        "meaning": "what V = 39 was sized to achieve",
+        "measured": 0.9517,
+        "value": 0.95
+      },
+      "minimum_altitude_km": {
+        "class": "S",
+        "meaning": "D2 floor; below it a satellite is decaying, not serving",
+        "rationale": "the corpus contains healthy satellites at 156 km, so a naive '> 200 km' screen would have admitted them; 300 km is above the observed decay band and below every operational shell",
+        "value": 300.0
+      },
+      "outage_dropped_transition_rate": {
+        "class": "S",
+        "meaning": "above this, PATCH P-03's plain drop is inadmissible and the semi-MDP transition becomes mandatory (§4A.5a(4))",
+        "rationale": "1e-3 is one outage per hundred episodes at 100 users x 10 steps, too rare for a policy to find and exploit inside 9000 episodes.  It must be frozen BEFORE P1 because choosing it after seeing the rate is the leak §7.1 names.",
+        "value": 0.001
+      },
+      "tle_malformed_record_fraction": {
+        "class": "S",
+        "meaning": "quarantine ceiling; above it the corpus is rejected",
+        "rationale": "measured: exactly one malformed record in 3,545,756 (a BSTAR field overflowing its fixed width), i.e. 2.8e-7 — so 1e-3 leaves three orders of headroom over the observed rate while still failing loudly on a corrupt file",
+        "value": 0.001
+      }
+    },
+    "training": {
+      "batch_size": 128,
+      "collapse_metrics": {
+        "actions_used": "the two ACTION-derived indicators (active_beam_count, argmax_agreement) are computed from the GREEDY argmax, and that version answers B17 Q1.  The epsilon-greedy EXECUTED version is logged beside it as *_executed because it is what actually lit beams.  ⚠ They are not interchangeable: epsilon falls from 1 to 0.01 over 2000 of 9000 episodes, so the executed pair measures mostly a random policy for the first fifth of training.  q_margin and q_entropy come from the Q surface and epsilon never enters them at all",
+        "aggregation": "none; both points reported per episode in EpisodeLog, plus their difference",
+        "cadence": "every episode",
+        "indicators": [
+          "active_beam_count",
+          "argmax_agreement",
+          "q_margin",
+          "q_entropy"
+        ],
+        "q_margin_normalisation": "divided by the per-user Q range (top-1 minus bottom-1) over the valid actions; q_margin_raw and q_range are logged beside it so the scale stays auditable",
+        "sampled_at": "BOTH the first and the last decision step of the episode.  Collapse develops WITHIN an episode -- users in similar states converge onto one beam and its load climbs -- so a first-step-only sample can miss it systematically, while averaging over the episode would smooth the process away.  Their difference (EpisodeLog.collapse_drift) is the signal B17 Q1 asks for: how much more concentrated the episode ended than it began",
+        "users_excluded": "a user with fewer than two valid actions contributes no margin or entropy: a single candidate has no top-2 gap and a degenerate entropy of 0, and including it would report certainty the policy never exercised"
+      },
+      "discount_factor": 0.9,
+      "episodes": 9000,
+      "epsilon_decay_episodes": 2000,
+      "epsilon_end": 0.01,
+      "epsilon_start": 1.0,
+      "learning_rate": "CONTROLLED VARIABLE — not a default",
+      "objective_weights": [
+        0.5,
+        0.3,
+        0.2
+      ],
+      "replay_capacity": 50000,
+      "reward_logging": "per-objective means are logged BOTH before and after calibration: the effective trade-off is omega_j / c_j, so a log carrying one scaling cannot answer B17 Q2 without recomputing from numbers it no longer holds",
+      "steps_per_episode": 10,
+      "target_update_every_episodes": 50,
+      "td_target": "MODQN eq. (16) vanilla, per-objective target max, done term"
+    }
+  }
+}

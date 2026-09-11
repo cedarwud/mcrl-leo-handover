@@ -1,0 +1,171 @@
+=================== V025-CONTROLLER-PREDECLARATION-DEGENERACY-SCREEN-2026-09-10.md
+     1	# Pre-declaration — the degeneracy screen for the §C3 panel, fixed before any §C3 number exists
+     2	Recorded 2026-09-10, **before** the panel is built and before any source-training contrast has been measured. `DIAGNOSTIC_NOT_CLAIM`. Nothing here changes an arm definition, a source, a catalogue rule, a price, a guard or an acceptance criterion; it fixes how the resulting numbers may be read.
+     3	
+     4	## The problem this prevents
+     5	A leave-one-out arm ranks candidates with predicted scores, and its catalogue retains a fallback. A poorly informed head can therefore select something **worse** than the fallback. If it does, the gap between the full arm and that arm is large — and that largeness is evidence of the reference arm collapsing, not of the missing route contributing.
+     6	
+     7	One reviewer put the arithmetic plainly: a ranker can add at most the coordination span above the certified fixed point, so **any gap materially larger than that span means one arm fell below it**. On today's measurements that span is roughly one per cent, while a pilot produced a full-minus-drop gap of +15.6 %. I reported that gap to the owner as encouraging. It was not.
+     8	
+     9	## The reference, and why it is well defined
+    10	The certified unilateral fixed point is produced by an exact best-response search over single-user deviations. **It consumes no head output**, so at a given anchor and provisioning rule there is exactly one such endpoint, shared by every arm. It is therefore a legitimate common reference and needs no per-arm construction.
+    11	
+    12	Which local search produces it must be stated: today's anytime work showed that accepting the first strict improvement reaches a **different and better** endpoint than completing a best-improvement sweep, on all twenty anchors under both rules. **The screen uses whichever search the panel's own arms are built on, and the panel must use one search for every arm.**
+    13	
+    14	## The screen, declared
+    15	For every arm and every anchor, compute the committed forty-eight-boundary pooled efficiency of the arm's chosen configuration and of the certified unilateral fixed point at that same anchor.
+    16	
+    17	An arm is **below reference** at an anchor when its committed efficiency is strictly less than the fixed point's. No tolerance is applied: the comparison is by exact sign, so no threshold is chosen and none can later be argued about.
+    18	
+    19	Then report, for every contrast, **both** of the following:
+    20	
+    21	1. the marginal over **all** anchors;
+    22	2. the marginal over the subset where **every arm in the contrast** is at or above reference.
+    23	
+    24	**If the two agree, nothing is at issue. If they diverge, the divergence is the finding**, and the all-anchor figure may not be presented as component evidence without the restricted figure beside it.
+    25	
+    26	Also report, per arm, the count and fraction of anchors below reference, and the distribution of the shortfall. An arm that is frequently below reference has a defect of its own, whatever its ordering says.
+    27	
+    28	## Why it is written this way
+    29	No threshold is picked, so none can be tuned. The restricted subset is a standard sensitivity analysis rather than a filter chosen to produce an outcome. And both figures are published, so a reader can see exactly what the screen did.
+    30	
+    31	## What it does not do
+    32	It does not decide whether a route contributes. It prevents one specific misreading. A route whose arm stays above reference and still shows a positive marginal is supported by this panel; a route whose apparent margin comes from its reference arm collapsing is not.
+    33	
+    34	## Standing
+    35	Fixed on 2026-09-10, before the panel exists. If it is ever changed, the change and its reason must be recorded with a date, and any result produced under the earlier version must be reported under both.
+=================== V025-CONTROLLER-DESIGN-C3-PANEL-SPINE-2026-09-10.md
+     1	# §C3 panel — the design decisions that can be fixed now, and the two that wait
+     2	Recorded 2026-09-10, before the panel exists and before any source-training contrast has been measured. `DIAGNOSTIC_NOT_CLAIM`. Nothing here changes an arm definition, a source, a target, a price, a guard or an acceptance criterion; it fixes construction and reporting.
+     3	
+     4	## Fixed now
+     5	
+     6	**Arms — nine, plus the external control.** The sealed six: the full arm, three leave-one-out arms by neutral-source substitution with all heads retained and deployed, the all-neutral control, and the external geometry-only baseline. Plus the three single-informative arms the owner's requirement needs and the contract lacks. The leave-one-in contrast is half the requirement; without those arms that half cannot be evaluated.
+     7	
+     8	**Construction — each arm keeps its own seed and catalogue.** A measured probe found **zero** intersection between the full arm's and the first drop arm's catalogues at every anchor tested, so a shared catalogue is unsound the moment arms carry their own learned seeds. Instead a **shared physical cache** evaluates each configuration once per identical physical context, and for the one-step pooled comparison only the **union of chosen configurations** is realised — at most nine outcomes per anchor. Cached realised outcomes must never leak into selection, and cache keys bind tape, world, time, physical and run settings, evaluator identity, the nominal-versus-realised field, the boundary set and the prefix history; raw configuration identifiers are insufficient because base identifiers embed carrier names.
+     9	
+    10	**Local search — one for every arm, and it is first-improvement.** Accepting the first strict improvement reaches a different and better fixed point than completing a best-improvement sweep, on all twenty anchors under both provisioning rules, at 8.13 % and 1.62 % higher pooled efficiency. This is a search-order choice rather than a physics change, it was found while measuring something else, and it is better for every arm equally, so declaring it is not outcome-selection. **It must be stated in the panel's declaration, because the same neighbourhood with a different traversal order reaches a different local optimum.**
+    11	
+    12	**Reading — the degeneracy screen already pre-declared.** Below-reference is decided by exact sign against the head-independent certified fixed point; every contrast reports both the all-anchor marginal and the marginal over anchors where every arm in the contrast is at or above reference.
+    13	
+    14	**An asymmetry that must appear in the results table.** Dropping the third route changes **zero** proposed assignments at every anchor tested; dropping the first changes 12 to 26 and the second 29 to 69. The third route's ablation acts through ranking alone, the first two also move the proposal. A table that does not say so invites the reader to assume the three are mechanistically alike.
+    15	
+    16	**Seeds.** For a paired ordering test the learner seed is a nuisance replicate and the cluster is date by seed; with many dates most variance is across worlds. Three to five seeds are enough for the ordering on the added arms; the full seed count is reserved for the full arm and the three leave-one-out arms.
+    17	
+    18	## Run under both provisioning rules
+    19	The provisioning decision is unresolved and is blocked on framing rather than evidence. **The panel does not have to wait for it.** The adjudication's own conditions already require publishing both rules, so running every arm under both discharges that condition and removes the dependency. It costs twice, and that is the honest price of not prejudging a decision that is not mine.
+    20	
+    21	Running only under the sealed rule would measure the routes on a model that credits nothing on three quarters of its transmissions. Running only under the corrected rule would enact an unauthorised change to declared physics. Both is the only option that is neither.
+    22	
+    23	## What waits, and on what
+    24	- **Row-building path.** Whether rows are built through the exact path or the surrogate is being costed now. The surrogate writes geometric legality into both the validity and survival fields and is wrong on 822 of 1,784 rows; a cheaper option that changes a label is not acceptable at any price.
+    25	- **Anchor and date allocation.** Waits on the same cost measurement.
+    26	
+    27	## Standing
+    28	No panel is authorised by this note and no run is started. It exists so that the construction is fixed before any number exists, and so that a later reader can see which choices preceded the results.
+=================== V025-CONTROLLER-FINDING-GEOMETRY-FEATURES-2026-09-10.md
+     1	# Controller finding — the learner sees geometry only in compressed form, and one angle has no slot at all
+     2	Recorded 2026-09-10, prompted by the owner asking whether off-axis angle is the right quantity to influence power and efficiency, or whether it should be elevation. `DIAGNOSTIC_NOT_CLAIM`. Read from code and from today's row-path audit; nothing run, nothing sealed modified.
+     3	
+     4	**This record corrects an overstatement I made an hour earlier.**
+     5	
+     6	## The two angles are not substitutes
+     7	**Off-axis angle** sets the transmit antenna gain toward a user through the pattern law, and it varies strongly **between candidate beams at the same instant** — it is what distinguishes beams on the same satellite.
+     8	
+     9	**Elevation angle** sets slant range, atmospheric path length and the fading statistics; our fading quantile is elevation-binned, at 0.5137 for thirty degrees against 0.42923539 for ten. It varies mainly **between satellites** and is nearly common across beams of one satellite.
+    10	
+    11	So off-axis discriminates beams, elevation discriminates satellites, and a handover decision does both. For our candidate sets — many of which are beams on the same satellite — **off-axis is the more decision-relevant of the two**, because in those comparisons elevation and often occupancy barely move.
+    12	
+    13	## What the per-user feature vector actually contains
+    14	Sixteen scalars: nominal margin at the rate target; required power over cap; mode spectral efficiency; background occupancy excluding the focal user; beam and satellite active flags; **off-axis angle in radians**; remaining D2 and visibility time; refresh phase; four previous-association flags and loads; previous beam maximum radiated power over cap; and a missing-incumbent flag.
+    15	
+    16	**There is no elevation feature at all**, and the off-axis slot is filled with a hard-coded zero at both row-building sites — the surrogate path and the exact path alike, so switching paths does not repair it.
+    17	
+    18	## The correction I owe
+    19	I told the owner an hour ago that the learner "has never seen off-axis variation". **That is wrong.** The first three features — margin, required power over cap and spectral efficiency — are **downstream of both angles**: they are computed from the antenna gain and the path, and even the surrogate versions are built from a focal nominal-gain ratio, which carries the off-axis dependence.
+    20	
+    21	**The learner is not blind to geometry.** The accurate statement is narrower: it sees geometry only through three conflated scalars, never as separated quantities, and the raw angle slot that the designers provided is constant.
+    22	
+    23	## Why the narrower defect still matters
+    24	The pattern is a Bessel-form function of the angle. Recovering it from three derived scalars that also fold in path loss and the current operating point is not obviously possible, and nothing in the feature set lets the head separate **off-axis** from **elevation** from **occupancy**. In exactly the comparisons that matter most — two beams of one satellite — those three scalars differ almost solely because of off-axis, but the head cannot know that is the reason.
+    25	
+    26	## Why this is a different class of repair from the two that failed today
+    27	Both first-route repairs I proposed today bought nothing. The admissible power-headroom feature was constant across all thirty anchors. The resource-context coordinates failed for a structural reason: their useful variation is coalition-level while that route's interface is action-local, so only 28 of 163 slots varied at all.
+    28	
+    29	**An angle is action-local.** The off-axis angle of a focal user under a candidate beam, and the elevation of that beam's satellite, are properties of the focal user-action pair. That interface fits them. So this candidate is not in the class that failed.
+    30	
+    31	## Standing
+    32	No repair is proposed and none is dispatched. Two of my own have already bought nothing, and the third should be reasoned through rather than tried. This is recorded so the option is on the table with its physics stated, and so that the hard-coded zero is registered as a defect independent of the row-path decision.
+=================== V025-CONTROLLER-PREDECLARATION-GEOMETRY-TEST-2026-09-10.md
+     1	# Pre-declaration — the geometry-feature test for the first route, with my expectation stated before it runs
+     2	Recorded 2026-09-10, **before dispatching** and before any result exists. `DIAGNOSTIC_NOT_CLAIM`. Nothing here authorises a change to the sealed feature schema; it declares a diagnostic and the prediction it will be judged against.
+     3	
+     4	## What will be tested
+     5	Two candidate features for the per-user route, both **action-local** and both computable from the decision-time tape without any coupled solve:
+     6	
+     7	- the **off-axis angle** of the focal user under the candidate beam, replacing the hard-coded zero that both row-building paths currently write;
+     8	- the **elevation angle** of the candidate beam's satellite at the focal user, for which no feature slot exists at all.
+     9	
+    10	The arms, metrics, split, seed, estimator family and grid will be those of the two comparisons already run today, so the result is directly comparable to the resource-context test that failed. The primary metric is **held-out pairwise ordering within each anchor's candidate pool**, the same quantity measured at 0.650 for this route and 0.902 for an oracle that removes only the cross-user externality. The materiality rule already frozen for that test applies unchanged.
+    11	
+    12	## My expectation, stated now
+    13	**I expect the gain to be small, and I would not be surprised by zero.**
+    14	
+    15	The reason against: if the nominal margin at the rate target is exact, it already contains the antenna gain and the path — for the **focal link** the angle is a sufficient statistic and adds nothing beyond it.
+    16	
+    17	The reason for: the target is a whole-network difference, and 79.3 % of its variance is externality — how *other* users' links change. That depends on angular geometry between beams, which the focal link's margin does not express. The raw angle at least locates the focal user in the pattern, and so hints how much of the focal beam's power spills into neighbours.
+    18	
+    19	The hole in that reason: what actually determines the spill is the **neighbours'** geometry, not the focal angle alone. That is precisely what the 163 resource-context coordinates encode, and they failed today — rebuilt per focal action, only 28 of them varied at all.
+    20	
+    21	So the mechanism that would make this work is the same one that has already been measured not to work, approached from a thinner direction.
+    22	
+    23	## Why it is still worth one measurement
+    24	It is cheap, the harness exists, and the candidate is **not** in the class that failed for a structural reason: the resource-context coordinates failed because their useful variation is coalition-level while this route's interface is action-local. An angle is action-local. So this test distinguishes "the interface cannot carry the information" from "this particular information does not help", which are different diagnoses with different consequences.
+    25	
+    26	And the hard-coded zero is a defect regardless of what the test shows: a slot the designers provided, filled with a constant, at both row-building sites.
+    27	
+    28	## The standard this is held to
+    29	If the gain is immaterial, the record will show I predicted it, and the first route will have had three repairs measured and rejected — at which point the honest next step is to stop proposing repairs and run the contrast, letting the route answer for itself.
+    30	
+    31	If the gain is material, the surprise is itself information: it would mean the externality is partly predictable from focal geometry, which nothing measured so far suggests.
+    32	
+    33	Either way the prediction is on the record before the measurement, which is the point.
+=================== V025-CONTROLLER-DECISION-BEAMWIDTH-NO-CHANGE-2026-09-10.md
+     1	# Controller decision — closed: the beam width does not change, because the current design point works
+     2	Recorded 2026-09-10 from the final beam-width curve, which applies **both** corrections at once: strict numerical clearance and correct pairing of the joint arm against the same local search its unilateral arm uses. All five widths reached 8/8 anchors under both provisioning rules. `DIAGNOSTIC_NOT_CLAIM`; the sealed one-sided half-power angle remains 1.66° and no sealed value was changed.
+     3	
+     4	## The correction I owe
+     5	Tonight I told the owner that at the width we model, coordination under corrected physics is **negative** at −0.303 %, and that the design point was therefore dead. **That was wrong**, and both defects contributed:
+     6	
+     7	| at the sealed 1.66° width, corrected rule | gap | negative anchors |
+     8	|---|---:|---:|
+     9	| simple division, mispaired | −0.302750 % | 5/8 |
+    10	| strict clearance, mispaired | −0.176800 % | 3/8 |
+    11	| **strict clearance, correctly paired** | **+0.899421 %** | **1/8** |
+    12	
+    13	## The curve
+    14	| one-sided width | sealed rule | **corrected rule** | negative anchors, corrected |
+    15	|---:|---:|---:|---:|
+    16	| **1.66°, sealed design point** | +3.618798 % | **+0.899421 %** | **1/8** |
+    17	| 2.40° | +10.834491 % | +0.820174 % | 2/8 |
+    18	| 3.32°, the source's own value | +12.549948 % | +1.154601 % | **4/8** |
+    19	| 4.50° | +19.960312 % | +2.156154 % | 2/8 |
+    20	| 6.65° | +26.186258 % | +4.022219 % | 2/8 |
+    21	
+    22	Under the corrected rule the curve is **not monotone** — it dips at 2.40°. Under the sealed rule it is strictly increasing. The monotone rise I reported earlier belongs to the defective physics.
+    23	
+    24	## Why the width does not change
+    25	The current design point is **positive and the most stable point sampled**: one negative anchor out of eight, against four of eight at the source's own value. The source width has a higher mean, +1.155 % against +0.899 %, and markedly worse per-anchor consistency.
+    26	
+    27	So there is no case for moving. That outcome is the cleanest available:
+    28	
+    29	- the exposure to *"you chose an antenna that flatters your method"* **disappears entirely**;
+    30	- the adjudication's requirement to **freeze the sealed width for the provisioning comparison** is satisfied by doing nothing;
+    31	- the provenance erratum stands and is already repaired — the comment asserting a retained full-beamwidth convention was false, proved by substituting the source's own value into its own equation and obtaining exactly one half — but that only makes the comment true. **It moves no value.**
+    32	
+    33	The report kept the boundary I set for it: no wider width is offered as a remedy for the 1.66° result, and any antenna change is stated as a separate design decision outside the diagnostic.
+    34	
+    35	## Where this leaves the coordination side
+    36	Corrected-physics coordination span, three panels: **+0.899 %** on eight anchors, **+1.291 %** on twenty, **+0.717 %** on thirty dates with the old pairing. Small, positive, and stably present. Four exploratory routes were measured and none enlarges it; the fifth shows the design point needs no change.
+    37	
+    38	**The coordination side is closed. Effort moves to the source-training contrast, which is the owner's actual requirement and has still never been run.**

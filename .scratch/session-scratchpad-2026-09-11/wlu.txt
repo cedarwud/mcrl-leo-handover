@@ -1,0 +1,2823 @@
+Optimal
+
+David
+Kagan
+
+Wonderful
+
+Life
+
+Utility
+
+Functions
+
+H. Wolpert
+Tumer
+
+Computational
+
+Sciences
+
+The
+
+mathematics
+
+gence"
+
+(COINs)
+
+Division,
+
+NASA
+
+Ames
+
+Research
+
+of
+
+"COllective
+
+is concerned
+
+with
+
+INtellithe
+
+269-2,
+
+Moffet
+
+• there
+
+is little
+
+to no
+
+centralized
+
+(RL)
+
+communication
+
+or
+
+world utility function
+of the full system.
+
+that
+
+rates
+
+This problem
+is related
+to work in many other fields,
+including
+computational
+economics,
+mechanism
+design, reinforcement
+learning
+for adaptive
+control,
+statistical mechanics,
+computational
+ecologies,
+and game
+theory, in particular,
+evolutionary
+game theory.
+However none of these fields directly
+addresses
+the inverse
+problem.
+(This is even true for the field of mechanism
+design; see (Wolpert
+gz Turner,
+2000a) for a detailed
+discussion
+of the relationship
+between
+these fields, involving
+
+several
+
+hundred
+
+references.)
+
+Other previous
+work involves
+MAS's
+where
+agents
+use reinforcement
+learning
+(Boutilier,
+1999; Claus &:
+Boutilier,
+1998), and/or
+where agents model
+the behavior of other agents (Hu & Wellman,
+1998).
+Typ-
+
+In this paper
+we are interested
+in multi-agent
+systems (MAS's
+(Jennings
+et al., 1998; Sen, 1997; Syeara,
+1998)) having
+the following characteristics:
+learning
+
+NASA.GOV
+
+CA 94035
+
+purposes",
+so that their collective behavior
+maximizes
+the provided
+global utility
+function.
+Intuitively,
+we
+need to provide the agents with utility functions
+they
+can learn well, while ensuring that their doing so won't
+result
+in economics
+phenomena
+like the Tragedy
+of
+The Commons
+(TOC;
+(Hardin,
+1968)), liquidity
+trap
+or Braess' paradox
+(Tumer&
+Wolpert,
+2000)
+
+ically this work simply
+with the global utility
+function,
+in a so-called
+
+run reinforcement
+
+Field,
+
+These kinds of problems
+may well be most readily
+addressed
+by having each agent run a Reinforcement
+Learning
+(RL) algorithm.
+In such a system,
+we are
+confronted
+with the inverse problem
+of how to initialize/update
+the agents'
+individual
+utility
+functions
+to ensure
+that
+the agents
+do not "work
+at cross-
+
+1. Introduction
+
+each
+
+Mailstop
+
+• there is a provided
+the possible histories
+
+de-
+
+ful Life Utility"
+(WLU),
+and experimentally
+established
+that having the agents use it induces global utility performance
+up to orders
+of magnitude
+superior
+to that induced by use
+of the team game utility.
+The WLU has a
+free parameter
+(the "clamping
+parameter")
+which we simply
+set to 0 in that previous
+work. Here we derive the optimal value of the
+clamping
+parameter,
+and demonstrate
+experimentally
+that using that optimal
+value can
+result in significantly
+improved
+performance
+over that of clamping
+to 0, over and above the
+improvement
+beyond traditional
+approaches.
+
+agents
+
+_PTOLEMY.ARC.
+
+Center,
+
+control;
+
+sign of multi-agent
+systems
+so as to optimize
+an overall global utility function
+when those
+systems
+lack centralized
+communication
+and
+control
+(Jennings
+et al., 1998; Sen, 1997;
+Sycara,
+1998).
+Typically
+in COINs
+each
+agent runs a distinct
+Reinforcement
+Learning
+(RL) algorithm
+(Kaelbing
+et al., 1996; Sutton & Barto,
+1998; Watkins
+& Dayan,
+1992),
+so that much of the design problem
+reduces
+to how best to initialize/update
+each agent's
+private
+utility function,
+as far as the ensuing
+value of the global utility is concerned.
+Traditional
+"team game" solutions
+to this problem assign to each agent the global utility as
+its private
+utility
+function
+(Crites
+& Barto,
+1996).
+In previous
+work we used the COIN
+framework
+to derive the alternative
+"Wonder-
+
+gorithms;
+
+Systems
+
+DHW'_PTOLEMY.ARC.NASA.GOV
+KAGAN
+
+Abstract
+
+• the
+
+in Multi-Agent
+
+al-
+
+elects to provide
+each agent
+function
+as its private
+utility
+"exact potential"
+or "team"
+
+game.
+Unfortunately,
+as expounded
+below,
+this can
+result in very poor global performance
+in large problems. Intuitively,
+the difficulty
+is that each agent can
+have a hard time discerning
+the echo of its behavior
+on the global utility when the system is large.
+
+In previousworkweusedthe COINframework
+to derive the alternative"WonderfulLife Utility" (WLU)
+(Wolpert_ Turner, 2000a), a utility that generically
+avoids the pitfalls of the team game utility.
+In some
+of that work we used the WLU for distributed
+control of network
+packet routing
+(Wolpert
+et al., 1999a).
+Conventional
+approaches
+to packet
+routing have each
+router run a shortest
+path algorithm
+(SPA), i.e., each
+router routes its packets in the way that it expects will
+get those packets
+to their destinations
+most quickly.
+Unlike
+with a COIN,
+with SPA-based
+routing
+the
+routers
+have no concern
+for the possible
+deleterious
+side-effects
+
+of their
+
+routing
+
+decisions
+
+on the global
+
+goal
+
+(e.g., they have no concern
+for whether
+they induce
+bottlenecks).
+Vte ran simulations
+that demonstrated
+that a COIN-based
+routing
+system
+has substantially
+better
+throughputs
+than does the best possible SPAbased system (Wolpert
+et al., 1999a), even though that
+SPA-based
+system
+has information
+denied the COIN
+system.
+In related work we have shown that use of the
+WLU automatically
+avoids the infamous
+Braess' paradox, in which adding
+new links can actually
+decrease
+throughput
+-- a situation
+that readily ensnares
+SPA's.
+Finally,
+in (Wolpert
+et al., 1999b) we considered
+the
+pared-down
+problem
+domain
+of a congestion
+game, in
+particular
+a more challenging
+variant
+of Arthur's
+El
+Farol bar attendance
+problem
+(Arthur,
+1994), sometimes also known as the "minority
+game" (Challet
+&
+Zhang,
+1998).
+In this problem,
+agents have to determine which night in the week to attend
+a bar. The
+problem
+is set up so that if either too few people attend
+(boring
+evening)
+or too many people attend
+(crowded
+evening),
+the total enjoyment
+of the attendees
+drops.
+Our goal is to design the reward
+functions
+of the attendees
+so that the total enjoyment
+across all nights is
+maximized.
+In this previous
+work of ours we showed
+that use of the WLU can result in performance
+orders
+of magnitude
+superior
+to that of team game utilities.
+The
+
+WLU
+
+has
+
+a free
+
+parameter
+
+(the
+
+"clamping
+
+extends
+the superiority
+of the COIN-based
+above conventional
+team-game
+approaches
+ther than had been done previously.
+
+2.
+
+Theory
+
+of
+
+In this section
+
+approach
+even fur-
+
+COINs
+
+we summarize
+
+that
+
+part
+
+of the
+
+theory
+
+of COINs presented
+in (Wolpert
+et al., 1999a; Wolpert
+&Tumer,
+2000a; Wolpert
+et al., 1999b) that is relevant to the study in this article.
+We consider
+the state
+of the system across a set of consecutive
+time steps,
+t E (0, 1.... }. Without
+loss of generality,
+all relevant
+characteristics
+of agent r/at time t -- including
+its internal parameters
+at that time as well as its externally
+visible actions -- are encapsulated
+by a Euclidean
+vector -_n.t' the state of agent q at time t. _',t is the set of
+the states of all agents at t, and _ is system's
+worldline,
+i.e., the state of all agents across all time.
+World
+rithm
+
+utility
+"striving
+
+is G(_), and when r/ is an ML algoto increase"
+its private
+utility,
+we
+
+write that utility
+as 7o(__).
+readily be generalized
+beyond
+see (Wolpert
+restrict
+reward
+
+& Tumer,
+
+2000b)
+
+attention
+to utilities
+functions
+Rt.
+
+We are interested
+
+(The
+such
+
+mathematics
+can
+ML-based
+agents;
+
+for details.)
+
+of the form
+
+in systems
+
+whose
+
+Here
+
+_"_t Rt(_t)
+
+dynamics
+
+we
+for
+
+is deter-
+
+ministic.
+(This covers in particular
+any system run on
+a digital computer,
+even one using a pseudo-random
+number generator
+to generate
+apparent
+stochasticity.)
+We indicate
+that
+all characteristics
+
+dynamics
+by writing _ = C(_o).
+of an agent q at t = 0 that affects
+
+ensuing
+
+dynamics
+
+utility,
+
+must
+
+of the
+
+system,
+
+be included
+
+in -_,,0
+
+A system
+
+is factored
+
+%(C(_,o))
+
+_> %(C(._:o))
+
+_
+
+for all pairs
+
+_,0 and _',o that
+
+Definition:
+
+including
+
+So
+the
+
+its private
+
+if for each
+
+agent
+
+r/
+
+individually,
+G(C(_'o))
+
+_> G(C(_",o)),
+
+pa-
+
+rameter"),
+which we simply
+set to 0 in our previous
+work.
+To determine
+the optimal
+value of that parameter
+we must employ some of the mathematics
+of
+COINs, whose relevant
+concepts
+we review in the next
+section.
+We next use those concepts
+to sketch the calculation
+deriving
+the optimal
+clamping
+parameter.
+To
+facilitate
+comparison
+with previous
+work, we chose to
+conduct
+our experimental
+investigations
+of the performance with this optimal
+clamping
+parameter
+in variations of the Bar Prohlem.
+We present
+those variations
+in Section
+3.
+Finally
+we present
+the results
+of the
+experiments
+in Section
+4. Those results
+corroborate
+the predicted
+improvement
+in performance
+when using
+our theoretically
+derived
+clamping
+parameter.
+This
+
+differ
+
+only
+
+for node
+
+r/.
+
+For a factored
+system,
+the side effects of changes
+to
+r/'s t = 0 state that increase its private
+utility cannot
+decrease world utility. If the separate
+agents have high
+values of their private utilities,
+by luck or by design,
+then they have not frustrated
+each other, as far as G is
+concerned.
+(We arbitarily
+phrase
+this paper in terms
+of changes at time O; the formalism
+is easily extended
+to deal with arbitrary
+times.)
+The
+
+definition
+
+of factored
+
+is carefully
+
+crafted.
+
+In par-
+
+ticular, it does not concern changes in the value of the
+utility of agents other than the one whose state is varied. Nor does it concern changes
+to the states of more
+
+thanoneagentat once,Indeed,consider
+thefollowing
+alternativedesideratum
+to havingthe systembe fac-
+
+nothing
+
+tored: any change to _,0 that simultaneously
+improves
+the ensuing
+values of all the agents'
+utilities must also
+improve
+world utility.
+Although
+it seems quite reasonable,
+there are systems
+that obey this desideratum
+
+Theorem
+
+and yet quickly
+((Wolpert
+etal.,
+
+evolve to a mimmum
+1999b)).
+
+of world
+
+utility
+
+As a trivial example,
+if 7. = G Vrh then the system is
+factored,
+regardless
+of C. However
+there exist other,
+often preferable
+sets of {7. }, as we now discuss.
+
+Cg/!(_),
+the
+
+The
+is the
+
+set
+
+of node
+
+set of all components
+
+gradients
+
+specification
+
+(t = 0) effect
+
+_¢
+
+o(C(__0)),,,t,
+
+of _ is defined
+
+_
+
+_.',t'
+{_.
+
+C_ ]!
+
+r/ at _,
+
+for which
+with
+
+no
+
+as U___cC_!!(__).
+
+Intuitively,
+the effect set of r} is the set of all node-time
+pairs affected
+by changes
+to q's t = 0 state.
+Definition:
+
+Let
+
+a
+
+be
+
+a
+
+set
+
+of
+
+agent-time
+
+CL_((_) is _ modified
+by "clamping"
+the states
+responding
+to all elements
+of _r to some arbitrary
+fixed value, here taken to be 0. The wonderful
+utility
+
+(WLU)
+
+for cr at _( is defined
+
+WLUa(_.)
+In particular,
+
+the
+
+a(O - G(CLc;-
+
+for the
+
+effect
+
+corprelife
+
+as:
+
+-- G((_.) - G(CL_(_)).
+WLU
+
+pairs.
+
+set of node
+
+1: A COIN
+in (Wolpert
+
+If our
+then
+
+For a factored
+system, when every agents'
+private utility is optimized
+(given the other agents'
+behavior),
+world utility is at a critical point (Wolpert
+& Tumer,
+2000a).
+In game-theoretic
+terms,
+optimal global behavior occurs when the agents'
+are at a private utility
+Nash equilibrium
+(Yhdenberg
+& Tirole, 1991). Accordingly, there can be no TOC for a factored
+system.
+
+Definition:
+
+(proof
+
+of the details
+
+system
+each
+
+_.,0
+
+of the dynamics
+
+of the system.
+
+is factored
+
+= WLUc;H
+
+& Tumer.
+
+ifT.
+
+V_7
+
+2000a)).
+
+is factored
+
+with
+
+should
+
+be in a state
+
+respect
+
+tosome
+with
+
+{7.},
+
+as high
+
+a
+
+value of 7.(C(_(0))
+as possible.
+So for such systems,
+our problem
+is determining
+what {7.} the agents will
+best be able to maximize
+while also causing dynamics
+that is factored
+with respect
+to those {7.}.
+Now
+
+regardless
+
+of C(.),
+
+both
+
+7.
+
+= G Vr] and
+
+7.
+
+=
+
+WLUc_zt
+VrI are factored systems.
+However since each
+agent is operating
+in a large system,
+it may experience difficulty discerning
+the effects of its actions on G
+when G sensitively
+depends
+on all components
+of the
+system.
+Therefore
+each rI may have difficulty
+learning
+how to achieve high 7. when 7. = G. This problem
+can be obviated
+by using effect set WLU, since the
+subtraction
+of the clamped
+term removes
+some of the
+"noise" of the activity
+of other agents, leaving only the
+underlying
+"signal"
+of how agent q affects its utility.
+We can quantify
+the ramifications
+
+this signal/noise
+on the private
+
+changes
+
+to -(.,0
+
+with
+
+changes
+than q.
+
+to [-.,0'
+where
+_ represents
+all nodes other
+We call this quantification
+the learnability
+
+of those utilities
+Tumer, 2000a).
+
+the
+
+effect by comparing
+utilities
+arising from
+
+ramifications
+
+arising
+
+from
+
+at the point _( = C((.'mo ) (Wolpert
+&
+A linear approximation
+to the learn-
+
+ability
+
+in the vicinity
+
+of the worldline
+
+ential
+
+learnability
+
+A,,_. (_):
+
+__ is the differ-
+
+(1)
+
+IIv__,o7.(c(¢" o))It
+_.,_.(¢) .
+iiV%.o_,,(c(__.o))lI
+
+q is
+
+(_)).
+
+A node rfs effect set WLU is analogous
+to the change
+world utility
+would
+undergo
+had node 17 "never existed".
+(Hence the name of this utility - cf. the Frank
+Capra movie.)
+However
+CL(.) is a purely "fictional",
+counter-factual
+mapping,
+in that it produces
+a new
+without
+taking
+into account
+the system's
+dynamics.
+The sequence
+of states produced
+by the clamping
+operation
+in the definition
+of the WLU need not be con-
+
+Differential
+learnability
+advantage
+of the WLU
+Theorem
+
+captures
+the
+in the following
+
+2: Let a be a set containing
+
+A.,w_.u.(g.)
+
+(2)
+
+signal-to-noise
+theorem:
+C_ I1.
+
+Then
+
+IIV.%,oG(C(g.,o))
+
+_.,a(_) = II_.,oa(C(;,o))-
+
+_;.oa(CL.(C(fo)))ll
+
+sistent
+with the dynamical
+laws embodied
+in C. This
+is a crucialstrength of effectset WLU. Itmeans that
+to evaluate that WLU
+we do not try to inferhow the
+system would have evolved ifnode r/'sstate were set
+to (_at time 0 and the system re-evolved.So long as
+
+(proof in (Wolpert
+&Tumer,
+2000a)).
+This ratio of
+gradients
+should be large whenever
+a is a small par_
+of the system,
+so that the clamping
+won't affect G's
+
+we know G and the full_, and can accurately estimate what agent-time pairs comprise C_ !I, we know
+the value of T/'seffectset WLU
+_ even ifwe know
+
+dependence
+on q"_,0 much, and therefore
+dence will approximately
+cancel in the
+term.
+In such cases, WLU is factored,
+
+that dependenominator
+just as G is,
+
+but far morelearnable.The experiments
+presented However to reflect the fact that each agent perceives
+belowillustratethepowerofthis factin thecontextof art environment that is changing in time, the reward
+aged data:
+the bar problem,whereonecanreadilyapproximate estimates were formed using exponentially
+effectsetWLU andthereforeusea utility for which in any week t, the estimate agent r/ makes for the reward for attending
+night i is a weighted
+average of all
+the conditions in Thm.'s I and 2 should hold.
+3. The
+
+Bar
+
+Arthur's
+
+bar
+
+the rewards it has previously
+received when it attended
+that night, with the weights given by an exponential
+function
+of how long ago each such reward was.
+
+Problem
+problem
+
+(Arthur,
+
+1994)
+
+can be viewed
+
+as a problem
+in designing
+COINs.
+Loosely speaking, in this problem
+at each time t each agent r/ decides whether
+to attend
+a bar by predicting,
+based on
+its previous
+experience,
+whether
+the bar will be too
+crowded
+to be "rewarding"
+at that time, as quantified by a reward function
+RG. The greedy nature
+of
+the agents frustrates
+the global goal of maximizing
+RG
+at t. This is because
+if most agents
+think the attendance will be low (and therefore
+choose to attend),
+the
+attendance
+will actually
+be high, and vice-versa.
+We
+modified
+Arthur's
+original problem
+to be more general,
+and since we are not interested
+here in directly
+comparing
+our results
+to those in (Arthur,
+1994; Challet
+_: Zhang,
+1998), we use a more conventional
+ML algorithm
+than the ones investigated
+in (Arthur,
+1994;
+Caldarelli
+et el., 1997; Challet
+& Zhang,
+1998).
+There are N agents,
+each picking one of seven nights
+to attend
+a bar in a particular
+week, a process that is
+then repeated
+for the following weeks.
+In each week,
+each agent's
+the associated
+
+pick is determined
+rewards it would
+
+by its predictions
+of
+receive if it made that
+
+pick. Each such prediction
+in turn is based solely upon
+the rewards
+received
+by the agent in those preceding
+weeks in which it made that pick.
+The
+
+world
+
+utility
+
+is
+
+G(_()
+
+=
+
+_-_tRG(_(,t),
+
+where
+
+RG((_.,t) -- _-,_=i (b(xk((_,t)),
+xa(_.,t)
+is the total attendance
+on night k at week t, ¢?(y) =- yexp (-y/c);
+and c is a real-valued
+parameter.
+Our choice of _b(.)
+means that when too few agents attend
+some night in
+some week, the bar suffers from lack of activity
+and
+therefore
+the world reward is low.
+Conversely,
+when
+there are too many agents the bar is overcrowded
+and
+the reward is again low.
+Since we are concentrating
+on the choice of utilities
+rather
+than
+the RL algorithms
+that
+use them,
+we
+use simple
+RL algorithms.
+Each agent r/ has a 7dimensional
+vector representing
+its estimate of the reward it would receive for attending
+each night of the
+week.
+At the beginning
+of each week, to trade off
+exploration
+and exploitation,
+77 picks the night to attend randomly
+using a Boltzmann
+distribution
+over
+the seven components
+of rfs estimated
+rewards vector. For simplicity,
+temperature
+did not decay in time.
+
+To form the agents' initial training
+set, we had an initial training
+period in which all actions
+by all agents
+were chosen uniformly
+randomly,
+and the associated
+rewards
+recorded
+by all agents.
+After this period,
+the
+Boltzmann
+scheme outlined
+above was "turned
+on".
+This
+than
+
+simple RL algorithm
+works with rewards
+full-blown
+utilities.
+So formally
+speaking,
+
+rather
+to ap-
+
+ply the COIN framework
+to it it is necessary
+to extend
+that framework
+to encompass
+rewards
+in addition
+to
+utilities,
+and in particular
+derful life reward
+(WLR),
+
+to concern
+effect set wonwhose value at moment
+t
+
+for agent r/is RG(_,,) - RG(CLc_sI(_,t)).
+To do this
+one uses Thm.
+1 to prove that, under some mild assumptions,
+if we have a set of private rewards
+that are
+factored
+with respect to world rewards,
+then maximizing those private rewards also maximizes
+the full world
+utility.
+In terms of game theory, a Nash equilibrium
+of the single-stage
+game induces
+a maximum
+of the
+world utility defined over the entire multi-stage
+game.
+(Intuitively,
+this follows from the fact that the world
+utility is a sum of the world rewards.)
+In addition,
+one can show that the WLR is factored
+with respect
+to the world reward, and that it has the same advantageous learnability
+characteristics
+that accrue to the
+WLU. Accordingly,
+just as the COIN framework
+recommend
+we use WLU when dealing with utility-based
+RL algorithms,
+it recommends
+that we use WLR in
+the bar problem
+when dealing with reward-based
+RL
+algorithms.
+See (Wolpert
+_z Tumer, 2000b).
+Example:
+It is worth illustrating
+how the WLR is factored with respect
+to the world reward in the context
+of the bar problem.
+Say we're comparing
+the action
+of some particular
+agent going on night 1 versus that
+agent going on night 2, in some pre-fixed
+week. Let x_
+and x_ be the total attendances
+of everybody
+but our
+agent, on nights 1 and 2 of that week, respectively.
+So
+WLR(1),
+the WLR value for the agent attending
+night
+1, is given by O(x_ + 1) - O(x' t + CLt) + ¢P(x'2) - ¢(x'2 +
+CL.2) + _)'_i>.2[_(xi) - 0(x_ + CLi)],
+where
+"eLi"
+is
+the i'th component
+of our clamped
+vector.
+Similarly,
+W LR(2)
+= ¢;(x_ ) - ¢_(x't + CLt) + ¢)(x'2 + 1) - _(z_ +
+CL2)
+
++ _{>2[O(x_)
+
+Combining,
+
+- ¢_(x_ + C L_)].
+
+sgn(WLR(l)
+
+-
+
+WLR(2))
+
+= sgn(dz(z_
+
++
+
+[) - 0(._'l)
+Re(i),
+
+the
+
+- O(x,_ + l) + ¢(x!,)).
+Or, the other hand,
+G value for the agent attending
+night l,
+
+is _(x' t + l) + _(x._) + _7":_,>2_(x,).
+Similarly,
+Re(2)
+rp(x'L) +_(x. _ + l)+ _-_,>._ O(x,). Therefore
+sgn(Rc(l)-
+
+= . .qn(o(z't+ 1) +
+
+-
+
+is
+
++ L)- ¢(xl)).
+
+So sgn(WLR(l)
+- WLR(2)
+= sgn(Rc(I)
+- Ra(2)).
+This is true for any pair of nights, and any attendances
+{xi},
+claim
+
+and
+that
+
+reward,
+
+any clamping
+vector.
+WLR is factored
+with
+
+This establishes
+the
+respect to the world
+
+of_. One way to do this is to solve for those values that
+maximize
+differential
+learnability.
+An approximation
+to this calculation
+is to solve for the clamping
+paramewhere
+ciated
+
+minimizes
+
+the expected
+
+the expectation
+rewards
+making
+
+tending
+every night.
+The third option
+is equivalent
+to the agents attending
+partially
+on all nights in proportions equivalent
+to the overall attendance
+profile of
+all agents across the initial training
+period.
+(If taken,
+this "action"
+would violate the dynamics
+of the system, but because it is a fictional action as described
+in
+Section 2, it is consistent
+with COIN theory.)
+In order
+operators,
+
+for the bar problem.
+
+When using the WLR we are faced with the question
+of setting the clamping
+parameter,
+i.e., of determining
+the best values to which to clamp the components
+C_ I!
+
+ter that
+
+clamping
+is equivalent
+to the agent "staying
+at home,"
+while the second option
+corresponds
+to the agent at-
+
+value of [A_,WLR,] -2,
+
+is over the values -_,t and assoup rfs training
+set.
+
+We compared
+performance
+with
+and the team game reward,
+RG.
+those three WLR reward functions
+
+have to be made to carry
+final result is that r/should
+
+clamp to its (appropriately
+data-aged)
+empirical
+expected
+average
+action, where that average is over the
+elements
+in its training
+set (Wolpert
+&Tumer,
+2000b).
+Here, for simplicity,
+we ignore
+the data-aging
+stipulation of this result.
+Also for simplicity,
+we do not
+actually
+make sure to clamp each r/ separately
+to its
+own average
+action, a process
+that involves r/modifying what it clamps to in an online manner.
+Rather we
+choose to clamp all agents to the same vector, where
+that vector
+is an initial guess as to what the average
+action of a typical
+agent will be. Here, where the initial training
+period has each agent choose its action
+uniformly
+randomly,
+that guess is just the uniform average of all actions.
+The experiments
+recounted
+in the
+next section
+illustrate
+that even using these approximations,
+performance
+with the associated
+clamping
+parameter
+is superior
+to that of using the WL reward
+with clamping
+to (_, which in turn exhibits performance
+significantly
+superior
+to use of team game rewards.
+
+4.
+
+Experiments
+
+4.1
+
+Single
+
+Night
+
+the different
+action vector
+
+clamping
+to which
+
+the agents are damped
+as a subscript
+(e.g., CL 6 will
+denote the operation
+where the action is clamped
+to
+the zero vector).
+Because
+all agents
+have the same
+reward function
+in the experiments
+reported
+here, we
+will drop the agent subscript
+from the reward function.
+
+RWL_(__,t)
+A number of approximations
+out this calculation.
+The
+
+to distinguish
+among
+we will include
+the
+
+--
+
+RG(__t)-
+
+=
+
+Od,(Xd,(_,t))
+
+these three
+WLR's
+Writing
+them out,
+are:
+
+Ra(CL_(_,t))
+-- 4_d,(Xd,(__,t)
+
+-- 1)
+
+7
+
+=
+
+t)) -
+
+t) + l)
+
+dCd_
+
+RG(CL,T(_,t))
+7
+
+=
+
+t)) --
+
+t) + ad)
+
+d_d,
+
++
+
+Od.(Xd.(_,t))
+
+-- Va.(x_.(__,t)
+
+where d n is the night picked by r], and
+ponent of ff corresponding
+to night d.
+
+-- 1 +ad)
+
+ad is the com-
+
+The team game reward,
+RG, results
+in the system
+meeting the desideratum
+of factoredness.
+However, because of Theorem
+2, we expect Ra to have poor learnability, particularly
+in comparison
+to that
+(see (Wolpert
+& Turner, 2000a) for details).
+
+of RwLa;
+Note that
+
+to evaluate
+RWLa each agent only needs to know the
+total attendance
+on the night it attended.
+In contrast,
+RG and RwLs
+require centralized
+communication
+conAttendance
+
+Our initial experiments
+compared
+three choices of the
+clamping
+parameter:
+Clamping
+to "zero" i.e., the action vector
+given by 0 = (0, 0, 0, 0, 0, 0, 0), as in our
+original
+work; clamping
+to "ones" i.e., the action vector f = (1, 1, 1, 1, 1, 1, 1); and clamping
+to the (ideal)
+"average"
+action vector for the agents after the initial
+training
+period,
+denoted
+by _.
+Intuitively,
+the first
+
+cerning
+all 7 nights, and
+tion concerning
+6 nights.
+
+RWL r requires
+
+communica-
+
+Figure
+1 graphs world reward against
+time, averaged
+over 100 runs, for 60 agents and c = 3. (Throughout
+this paper, error bars are too small to depict.)
+The two
+straight
+lines correspond
+to the optimal
+performance,
+and the "baseline"
+performance
+given by uniform
+occupancies
+
+across
+
+all nights.
+
+Systems
+
+using
+
+WL_
+
+and
+
+7
+
+when
+...............
+
+_ .......
+
+,
+
+As N increases
+
+however,
+
+it becomes
+
+increasinglydifficult
+for the agents to extract the information they need from Re;. Because of theirsuperiorlearnability,
+systems using the WL rewards overcome this signal-to-noise
+problem to a great extent.
+Because the WL rewards are based on the dzfference
+between the actualstateand the state where one agent
+is clamped, they are much lessaffectedby the total
+
+6
+
+r'["
+
+N is low.
+
+;::csss::_,_
+
+GJ-
+
+_
+
+3
+
+number of agents.However, the actionvector to which
+agents are clamped also affectsthe scalingproperties.
+_
+
+*
+
+0
+
+100
+
+1
+
+I
+
+200
+300
+Time
+
+a
+
+400
+
+500
+
+Figure I. Reward function comparison when agents attend
+one night• (WL_ is O ; WL_j is + ; WL r is O ; G is x)
+
+WL 6 rapidly
+converged
+to optimal and to quite good
+performance,
+respectively.
+This indicates
+that for the
+bar problem
+the "mild assumptions"
+mentioned
+above
+hold, and that the approximations
+in the derivation
+of
+the optimal
+clamping
+parameter
+are valid.
+In agreement
+with our previous
+results,
+use of the reward Re, converged
+very poorly in spite of its being
+factored.
+The same was true for the WLf reward. This
+behavior
+highlights
+the subtle interaction
+between factoredness
+and learnability.
+Because
+the signal-to-noise
+was higher for these reward functions,
+it was very difficult for individual
+agents to determine
+what actions
+would improve
+their private utilities and therefore
+had
+difficulties
+in finding good solutions.
+1
+E
+
+0.9
+
+_
+o
+
+0.8
+0.7
+
+4.2
+
+Multiple
+
+Attendance
+
+In order to study the relationship
+between
+the clamping parameter
+and the resulting
+world utility in more
+detail,
+we now modify
+the bar problem
+as follows:
+Each week, each agents picks three
+nights to attend
+the bar. So each of the seven possible actions now corresponds
+to a different
+attendance
+pattern.
+(Keeping
+the number of candidate
+actions at 7 ensures
+that the
+complexity
+of the RL problem
+faced by the agents is
+roughly the same.)
+Here those seven attendance
+profiles were attending
+the first three nights,
+attending
+nights 2 through
+4, ..., attending
+on nights 7, 1 and 2.
+Figure 3 shows world reward
+value as a function
+of
+time for this problem,
+averaged
+over 100 runs, for all
+four reward functions.
+For these simulations
+c = 8,
+and there were 60 agents.
+Optimal
+and baseline
+performance are plotted as straight
+lines. Note that in the
+experiments
+of the previous
+section CL _ clamps to the
+:
+attendance
+vector v with components
+vi = _d=l
+_7 '
+where _d,i is the Kronecker
+delta function.
+Now however it clamps to vi = _-']_a=l
+v
+__, where ua,i is the i'th
+component
+(0 or 1) of the the d'th action vector,
+so
+that for each d it contains three l's and four O's.
+
+o.6
+"_
+
+Night
+
+12
+
+0.5
+
+1_:
+
+::::
+
+....
+
+:::--:
+
+11
+0.3
+__o.4
+0.2
+z
+0.1
+
+_,o,e.r
+
+cr
+
+10
+
+LI'W
+
+°
+
+F le
+ii1'
+
+#"
+
+40
+
+80
+
+120 160 200 240 280 320
+Number of Agents
+
+9
+8
+
+Figure 2. Scalingpropertiesof the different
+reward function.(WL& is 0 ; WL_ is + ; WLf is 0 ; G is x)
+
+7
+
+i
+
+0
+Figure 2 shows how t = 500 performance scaleswith
+N foreach of the reward signals.For comparison purposes the performance isnormalized -- foreach utility
+U we plot _,
+where R_
+and /_ome are the
+_olPl
+
+_
+
+100
+
+m
+
+i
+
+200
+
+300
+
+i
+
+400
+
+500
+
+Time
+Figure 3. Reward function comparison
+when agents attend
+three nights. (WL# is O ; WL_ is + ; WL r is C] ; G is ×)
+
+g%i,,,
+
+optimal performance and a canonical baselineperformance given by uniform attendance
+across all nights,
+respectively.
+Systems
+using RG perform adequately
+
+As in the previouscase,the reward obtained by clamping to the average action Rwt, e performs near optimally. RWLa on the other hand shows a slightdrop-
+
+off cornpar_(l
+to the previous
+problem.
+RwLr now
+performs
+almost
+as well as RWL#.
+All three WL rewards still significantly
+outperform
+the team game reward. What is noticeable
+though is that as the number
+of nights
+to attend
+increases,
+the difference
+between
+
+tion vectors are very similar.
+RWL a shows a slight drop
+in performance
+when the number
+of nights to attend
+increases,
+while Rc shows a much more pronounced
+drop. These results
+reinforce
+the conclusion
+obtained
+in the previous
+section that the clamped
+action vector
+
+RWL_ and RwL r decreases,
+illustrating
+how changing
+the problem
+can change the relative
+performances
+of
+the various WL rewards.
+
+Chat best matches
+the aggregate
+profile results in best performance
+
+empirical
+
+4.4
+
+Selection
+
+4.3
+
+Sensitivity
+
+The
+
+results
+
+to
+
+Clamping
+
+of the previous
+
+section
+
+shows
+
+that
+
+the ac-
+
+tion vector
+to which agents clamp has a considerable
+impact
+on the global performance.
+In this section we
+study how that dependence
+varies with changes in the
+problem
+formulation.
+We considered
+four additional
+variants of the bar problem just like the one described
+in the previous
+subsection,
+only with four new values for the number
+of
+nights
+each agent
+attends.
+As in the previous
+section, we keep the number
+of actions at seven and map
+those
+actions
+to correspond
+to attending
+particular
+sets of nights.
+Also as in the previous
+section,
+we
+choose the attendance
+profiles of each potential
+action
+so that when the actions
+are selected
+uniformly
+the
+resultant
+attendance
+profile is also uniform.
+We also
+
+Sensitivity
+
+to Parameter
+
+The final aspect of these reward functions
+the sensitivity
+of the associated
+performance
+
+attendance
+
+we study is
+to the in-
+
+ternal parameters
+of the learning
+algorithms.
+Figure 5
+illustrates
+experiments
+in the original bar problem presented
+in Figures
+1 and 2, onl for a set of different
+temperatures
+in the Boltzamnn
+distribution.
+RWL,
+is fairly insensitive
+to the temperature,
+until it is so
+high that agents' actions are chosen almost randomly.
+RwL_
+ficient
+
+depends
+more than RWL_ does on having sufexploration
+and therefore
+has a narrower
+range
+
+of good temperatures.
+Both RWLr and RG have more
+serious learnability
+problems,
+and therefore have shallower and thinner
+performance
+graphs.
+
+7
+
+modify
+c to keep the "congestion"
+level of the problem at a level similar
+to the original
+problem.
+(For
+the number
+of nights attended
+going from one to six,
+
+rr
+
+'
+
+'
+
+"
+
+5
+
+c = {3, 6, 8, 10, 12, 15} respectively.)
+1
+0.9
+
+3
+
+0.8
+
+-3
+
+.z,. -'y
+,..
+.............
+
+Figure 5. Sensitivity of reward functions
+eters. (WLa isO; WL_is+
+; WLfis
+
+5.
+I
+
+i
+
+i
+
+i
+
+Figure 4. Behavior of different reward function with respect to number of nights to attend.
+(WLa is 0 ; WL_
+is + ; W L _ is 0 ; G is x)
+the normalized
+world reward obtained
+rewards as a function of the number of
+
+agent
+
+attends.
+
+the set of problems.
+poorly when agents
+
+#
+
+0
+
+Rwt,,
+
+performs
+
+well across
+
+RwL r on the other hand performs
+only attend on a few nights, but
+
+reaches the performance
+of Rwt,,
+select six nights, a situation
+where
+
+to internal paramD ;Gis
+x)
+
+Conclusion
+
+i
+
+2
+3
+4
+5
+6
+Number of Nights to Attend
+
+each
+
+-2
+-1
+Log (Temperature)
+
+m"
+
+0.2
+0.3
+0.1
+
+nights
+
+..................
+I
+
+o 0.7
+'t::
+_. 0.6
+a.
+0.5
+"0
+0.4
+N
+
+Figure 4 shows
+for the different
+
+,°i
+
+when agent need to
+the two clamped ac-
+
+In this article we consider how to configure large multiagent systems
+where each agent
+uses reinforcement
+learning.
+To that end we summarize
+relevant aspects
+of COIN theory, focussing on how to initialize/update
+the agents'
+private utility functions
+so that their collective behavior
+optimizes
+a global utility function.
+In traditional
+"team game" solutions
+to this problem,
+which assign to each agent the global utility as its private utility function,
+each agent has difficulty
+discernLug the effects of its actions on its own utility function.
+We confirmed earlier results that if the agents use the
+alternative
+"Wonderful
+Life Utility"
+with clamping
+to
+
+(_, the system converges
+to significantly
+superior
+world
+reward values than do that associated
+team game systems.
+We then demonstrated
+that this wonderful
+life
+utility
+also results
+in faster convergence,
+better
+scaling, and less sensitivity
+to parameters
+of the agents'
+learning
+algorithms.
+We also showed
+that optimally
+choosing
+the action
+to which agents
+clamp
+(rather
+than arbitrarily
+choosing
+1_) provides
+significant
+further gains in performance,
+according
+to all of these
+performance
+measures.
+Future
+work involves investigating
+various
+ways of having
+the agents determine
+their optimal
+clamping
+vectors dynamically.
+
+References
+Arthur,
+W. B. (1994).
+Inductive
+reasoning
+American
+Economic
+
+Complexity
+in economic theory:
+and bounded
+rationality.
+The
+Review, 8,l, 406-411.
+
+Baum,
+E (1998).
+Manifesto
+for an evolutionary
+economics of intelligence.
+In C. M. Bishop (Ed.), Neural
+networks
+and machine
+learning.
+Springer-Verlag.
+Boutilier,
+C. (1999).
+Multiagent
+and opportunities
+for decision
+Magazine,
+
+Artificial
+
+algorithm.
+Conference
+
+Y., & Wellman,
+M. P. (1997).
+principles
+of multi-agent
+sys-
+
+Intelligence
+
+Journal,
+
+Bradshaw,
+Press.
+
+J. M. (Ed.),
+
+(1997).
+
+Caldarelli,
+
+G.,
+
+M.,
+
+Marsili,
+
+A prototype
+model
+Letters,
+_0, 479-484.
+
+Software
+
+& Zhang,
+
+of stock
+
+exchange.
+
+agents.
+
+MIT
+
+Y. C. (1997).
+Europhys.
+
+Challet,
+D., & Zhang, Y. C. (1998).
+On the minority
+game: Analytical
+and numerical
+studies.
+Physics
+A,
+256, 514.
+
+Multiagent
+reinframework
+and an
+
+Proceedings
+of the Fifteenth
+on Machine
+Learning
+(pp.
+
+International
+242-250).
+
+Jennings,
+N. R., Sycara, K., & Wooldridge,
+M. (1998).
+A roadmap
+of agent research
+and development.
+Autonomous
+Agents and Multi-Agent
+Systems,
+1, 7-38.
+Kaelbing,
+L. P, Littman,
+M. L., & Moore,
+A. W.
+(1996).
+Reinforcement
+learning:
+A survey.
+Journal
+of Artificial
+Intelligence
+Research,
+4, 237-285.
+Sandholm,
+
+T., Larson,
+
+K., Anderson,
+
+M., Shehory,
+
+O.,
+
+& Tohme,
+F. (1998).
+Anytime
+coalition
+structure
+generation
+with worst case guarantees.
+Proceedings
+of the Fifteenth
+National
+Conference
+on Artificial
+Intelligence
+
+(pp. 46-53).
+
+Sen, S. (1997).
+1997 AAAI
+Menlo Park,
+
+Multi-agent
+learning:
+Papers from the
+workshop
+(technical
+report
+WS-gT-03.
+CA: AAAI Press.
+
+R. S., & Barto,
+
+learning:
+Press.
+
+An
+
+A. G. (1998).
+
+introduction.
+
+Sycara, K. (1998).
+I9, 79-92.
+
+94, 1--6.
+
+M. P. (t998).
+Theoretical
+
+Huberrnann,
+B. A., & Hogg, T. (1988).
+The behavior
+of computational
+ecologies.
+In The ecology of computation,
+77-115. North-Holland.
+
+Sutton,
+
+20, 35-43.
+
+Boutilier,
+C., Shoham,
+Editorial:
+Economic
+tems.
+
+systems:
+Challenges
+theoretic
+planning.
+AI
+
+Hu, .I+ & Wellman,
+forcement
+learning:
+
+Multiagent
+
+Reinforcement
+
+Cambridge,
+
+systems.
+
+MA:
+
+AI
+
+Magazine,
+
+Turner, K., & Wolpert,
+D. H. (2000).
+Collective
+ligence and Braess' paradox.,
+pre-print.
+Watkins,
+
+C., & Dayan,
+
+Learning,
+Wolpert,
+duction
+
+P. (1992).
+
+Q-learning.
+
+MIT
+
+intel-
+
+Machine
+
+8, 279-292.
+D. H., & Turner,
+K. (2000a).
+An Introto Collective
+Intelligence.
+In J. M. Brad-
+
+shaw (Ed.),
+Handbook
+of agent
+technology.
+AAAI
+Press/MIT
+Press. Available
+as tech. rep. NASAARC-IC-99-63
+from
+http://it,
+axe. na-
+
+Claus,
+C., & Boutilier,
+C. (1998).
+The dynamics
+of
+reinforcement
+learning
+cooperative
+multiagent
+systems. Proceedings
+of the Fifteenth
+National
+Conference on Artificial
+Intelligence
+(pp. 746--752).
+
+Wolpert, D. H., &: Turner, K. (2000b).
+The
+ics of collective intelligence,
+pre-print.
+
+Crites, R. H., & Barto, A. G. (1996). Improving
+elevator performance
+using reinforcement
+learning.
+Advances in Neural Information
+Processing
+Systems
+-
+
+Wolpert, D. H., Turner, K., & Frank, J. (1999a).
+Using
+collective
+intelligence
+to route internet
+traffic.
+Advances in Neural Information
+Processing
+Systerr_s -
+
+8 (pp.
+
+1017-1023).
+
+Fudenberg,
+
+D.,
+
+Cambridge,
+Hardin,
+ence,
+
+MIT
+
+& Tirole,
+
+MA: MIT
+
+II (pp.
+
+Press.
+J.
+
+(1991).
+
+Game
+
+theory.
+
+Press.
+
+G. (1968).
+The tragedy
+16_, 1243-1248.
+
+sa. gov/£c/proj
+
+of the commons.
+
+Sci-
+
+952-958).
+
+ect s/coin_pubs,
+
+MIT
+
+h'cml.
+mathemat-
+
+Press.
+
+Wolpert,
+D. H., Wheeler,
+K., & Turner,
+K. (1999b).
+General principles of learning-based
+muhi-agent
+systems.
+Proceedings
+of the Third International
+Conference of Autonomous
+Agents (pp. 77-83).
+
+

@@ -1,0 +1,307 @@
+=================== V025-CONTROLLER-AUDIT-AND-SPLIT-2026-09-10.md
+     1	# Controller record — both audits say do not proceed, and the two reviewers split on whether the requirement is achievable at all
+     2	Recorded 2026-09-10. Two independent pre-run audits of the panel harness and two independent strategic notes, all commissioned in parallel while the screening run was starting. The screening run was stopped ten minutes after launch on the strength of the first audit. `DIAGNOSTIC_NOT_CLAIM`; nothing sealed was modified.
+     3	
+     4	## The audits agree: do not proceed
+     5	**Both** auditors independently found the two-provisioning-rule design broken, from different angles.
+     6	
+     7	One found that all arm plans are built **before** the provisioning-rule loop, so proposal repair, catalogue construction, learned scores and eligibility guards are identical between rules — the design measures *the same inherited-rule decisions under two outcome evaluators*.
+     8	
+     9	The other found something stronger and proved it: **the corrected rule is never engaged at all.** The bridge calls the scalar evaluator, which never touches the variant seam; the seam is consulted only inside the batched path. **The receipt shows all eight contrast marginals identical across the two rules to sixteen significant digits.** "Both rules" was one rule run twice under two labels, and the harness's own contract tests cannot catch it because they never call the bridge.
+    10	
+    11	Two further blocking findings:
+    12	
+    13	**The source tape and the evaluator tape have different authenticated digests**, with no equivalence check. The run cannot authenticate which physical problem its decisions were trained and selected against.
+    14	
+    15	**The declared protocol has no implementation.** The only entry point hard-codes one seed, two epochs, one anchor and one step; the trainer has no checkpoint write or load; and the sealed checkpoint loader rejects completed epochs above two thousand and any arm inventory other than the five production arms. **My declared nine-thousand-epoch, eight-arm, hundred-epoch-cadence protocol cannot be expressed in the sealed format.** I did not know that when I declared it.
+    16	
+    17	## The finding that matters most for the owner's requirement
+    18	One auditor found a **structural blind spot** for the set-level route: a jointly legal per-user argmax becomes the search seed, that route is **exactly zero on singleton coalitions**, and the panel then permits only single-user moves requiring strict improvement. So **when the seed is already an additive optimum, that route cannot cause the first move**, however decisively its prediction favours a two-user configuration. Arms differing only in that route can therefore commit identical configurations at every such anchor.
+    19	
+    20	This explains the earlier probe result that dropping that route changed **zero** proposed assignments. I recorded that as mechanistic asymmetry. **It is closer to the route being locked out.**
+    21	
+    22	## The strategic split
+    23	**One reviewer: the requirement cannot be met in this system under any arrangement.** The set-level residual is small at both measured decision objects — about +0.7 % to +1.3 % on association under the corrected rule, and about +2.1 % on power and mode, where an independent per-beam probe reaches 97.9 % of the coupled search. Three structural reasons: the coordination span collapsed four- to eight-fold once the provisioning defect was repaired, so most of the room ever observed was that defect; the one mechanism that fires at real anchors is a step function of summed beam occupancy, **expressible as a per-user feature and needing no residual at all**; and at the power object the coupling that would make a set-level term necessary is weak against local amplifier and threshold effects. It also disposes of the +15.6 % pilot: with about one per cent above the fixed point, any leave-one-out contrast clearing five per cent is the reference arm falling below it, which the pre-declared screen strips.
+    24	
+    25	Its per-route verdict is sharper than anything I had: the first route has large room at power and mode; **the second has none anywhere measured, because that object's gain is per-slot with no temporal component**; the third gets about two per cent anywhere.
+    26	
+    27	**The other reviewer: not established.** The set-level route is **not restricted to cross-beam interference** — a per-beam rule already sees a whole beam's users, and a sum of per-user terms need not capture shared activation costs, occupancy thresholds or simultaneous moves, so the 2.1 % does not bound the residual. It also refuses to fund the panel yet.
+    28	
+    29	## They agree on the decisive measurement
+    30	Both point to the same thing: measure, under the **reported** forty-eight-boundary objective rather than the fixed-price single-boundary proxy, how much enabling the **exact** set residual adds. That is the ceiling for any learned head on that route. Both pre-declared a screen — ten per cent for one, five per cent for the other — and both said a result below it stops this candidate design without establishing universal impossibility.
+    31	
+    32	Two jobs are running that measure it.
+    33	
+    34	## Standing
+    35	The harness is **not** being rebuilt yet. Repairing a panel that the pending measurement may show should never exist would be the most expensive mistake available today.
+=================== V025-CONTROLLER-FINDING-CORPUS-IS-SURROGATE-2026-09-10.md
+     1	# Controller finding — the training corpus does not carry the declared targets
+     2	
+     3	**2026-09-10 · `DIAGNOSTIC_NOT_CLAIM` · no sealed artefact, constant, threshold, sign, seed,
+     4	horizon, price, guard, acceptance rule, manifest or contract was changed by this record.**
+     5	
+     6	**All 176,223 checked-in source rows were built by an unconditional compute stand-in whose
+     7	C1 and C2 labels are bounded `kappa*tanh(log ratio)` surrogates, not the declared
+     8	`c1_difference_surplus` / `c2_persistence_forecast`. The declared path is unreachable as
+     9	sealed. Every statement about C1/C2 learnability on record was measured against the
+    10	surrogate.**
+    11	
+    12	---
+    13	
+    14	## 1. Verified by the controller, reading the code directly
+    15	
+    16	These were confirmed line by line in `/home/sat/mcrl-v025-pilot-ws` by the controller, not
+    17	taken from a worker report.
+    18	
+    19	| Fact | Citation |
+    20	|---|---|
+    21	| The fallback flag is a module-level constant, not a data predicate | `scripts/run_v025_pilot_c3.py:89` — `PILOT_PRIMITIVE_SOURCE_FALLBACK = True` |
+    22	| It is dispatched as the **first statement** of the only row-building entry point | `_build_anchor_rows` at `:525`, dispatch at `:537` |
+    23	| The stand-in it dispatches to | `_build_anchor_rows_primitive` at `:355`, self-described in its docstring as "Schema-complete provider-primitive fallback for **bounded pilot compute**" (`:359`) |
+    24	| C1 label written by the stand-in | `c1_label_bits = kappa * tanh(log(max(ratio, 1e-30)))`, computed ~`:409`, written ~`:460` |
+    25	| C2 label written by the stand-in | `c2_label_bits = kappa * SUM_offsets tanh(log(future_ratio))`, `-1` per lost offset, computed ~`:414-427`, written ~`:462` |
+    26	| The declared C1 target | `src/mcrl/physics_v025/targets.py:154-173` — `core = (cand.bits - def.bits) - eta*(cand.joules - def.joules)`; label `= core/kappa + Phi` |
+    27	| `targets.py` contains **no** `tanh` | grep over the whole file: zero hits |
+    28	| `c1_difference_surplus` is **never imported** by the pilot script | `run_v025_pilot_c3.py:36` imports only `c2_persistence_forecast` and `matched_anchor_decomposition` |
+    29	| `c2_persistence_forecast` is called only at `:601`, i.e. **after** the `:537` dispatch, on the branch that cannot execute | `:601` |
+    30	
+    31	The two objects are not variants of one another:
+    32	
+    33	- the declared target is **unbounded**, is a difference of `B - eta*E` at the whole-network
+    34	  level, and carries `Phi` inside the label;
+    35	- the stand-in's label is **bounded** by `kappa`, is a monotone squash of a **per-user gain
+    36	  ratio**, contains **no energy term at all**, and stores `Phi` in a separate field.
+    37	
+    38	## 2. Reported by workers, attributed, not independently re-measured here
+    39	
+    40	**`TARGET-DESIGN-2026-09-10.md` (selector workspace), §0.1 and Q1/Q1b.**
+    41	
+    42	- 100% of the 176,223 rows carry the surrogate; the 180 *coalition* rows are genuine but
+    43	  all `|A| = 2`.
+    44	- Learnability, 16-D linear model: surrogate label **R^2 = 0.598**, within-group ordering
+    45	  **0.801**. Production target, held out: **R^2 = 0.151**, ordering **0.650**.
+    46	- Variance shares of the declared C1 target: `own` 0.187, `ext` 0.375, `energy` 0.418,
+    47	  `Phi` 0.021. The pre-decision part carries **2.1%**.
+    48	- Between-anchor share of the cross-user externality: **0.0109** — 98.9% of its variance is
+    49	  *within* an anchor, so it does not cancel in a ranking and cannot be dropped.
+    50	- **Q1b, the structural fact.** With a *perfect* C1 head, median over 24 anchors: 82 of 100
+    51	  users have a strictly positive best unilateral surplus; their sum is **200.4**; the best
+    52	  single-user move is **8.02** — a **20.5x** ratio. At `|A| = 100` the exact singleton sum
+    53	  is **+480.113**, the exact residual **-440.079**, the exact final value **+40.034**. The
+    54	  quantity being ranked is the small difference of two large terms.
+    55	
+    56	**`EXACT-ROW-PATH-COST-2026-09-10.md`.** The declared path is executable and costs
+    57	**49.03 s/anchor**, **57.79x** the stand-in, and **29.42 serial worker-hours** for the full
+    58	panel at 20 anchors x 12 seeds x 9 arm-owned catalogues with no cross-arm reuse. Verdict
+    59	`AFFORDABLE`.
+    60	
+    61	**`PREFLIGHTDATA` (interim, 2026-09-10, coverage workspace).** Independently reproduced the
+    62	surrogate finding from the shipped bytes — each path stamps a distinct
+    63	`forecast_method_sha256`, and 176,223 of 176,223 rows carry the fallback digest — and added:
+    64	
+    65	- `missing_incumbent` is **also** constant 0.0 on every row: a **second** dead slot, not
+    66	  previously on the list, alongside the known `off_axis_angle`;
+    67	- the 16-column design matrix has **rank 14**, smallest singular value exactly 0;
+    68	- slots 4 and 12 are **exact indicator functions** of slots 3 and 11 — effective input
+    69	  dimension is **12**, and any per-slot ablation over those pairs is arbitrary;
+    70	- slot 1 (`nominal_required_power_over_cap`) carries a **1e6 sentinel on 10.21%** of rows
+    71	  (the null-action rows), giving that slot SD 302,837 against O(1) elsewhere;
+    72	- `outage` agrees with `null_action` on all 176,223 rows in both directions — it never
+    73	  encodes a real PHY service failure;
+    74	- the selected coalition is chosen by **lexicographic `configuration_id`**, not by the
+    75	  `-(C1+C3)` factor score, over an **unfiltered** candidate set;
+    76	- measured cost on one 992-row anchor: stand-in **4.79 s**, declared path **632.83 s**
+    77	  (**132x**).
+    78	
+    79	**The two cost measurements disagree (57.79x vs 132x) and are left unreconciled here.**
+    80	They were taken at different row densities and anchors and neither has been re-run.
+    81	
+    82	## 3. Detectability — the part that matters for planning
+    83	
+    84	Of the thirteen defects PREFLIGHTDATA enumerated, **one** (the 1e6 sentinel) could have
+    85	announced itself in a training curve, and then only as unexplained instability rather than
+    86	as a diagnosis. **Twelve are silent.** Three of them push the wrong way: a bounded,
+    87	saturating surrogate of a single ratio is **strictly easier to fit** than the declared
+    88	unbounded surplus, and ~31% of the C2 surrogate sits on one constant floor. A healthy C1/C2
+    89	training curve on this corpus is therefore **not weak evidence** that the routes learned the
+    90	declared quantities; it is **no evidence**.
+    91	
+    92	## 4. Accountability
+    93	
+    94	`TARGET-DESIGN-2026-09-10.md` recorded §0.1 — the same finding, with the same citations —
+    95	**earlier the same day**, and its own text says it "should be fixed regardless of the
+    96	verdict, and is not sealed". The controller read that report, recorded the `TARGET_REFORMULATE`
+    97	verdict, and **did not act on §0.1**. It surfaced again only because an unrelated pre-flight
+    98	census re-derived it from the shipped bytes.
+    99	
+   100	The failure mode is not "the finding was missing". It is **a finding that was present,
+   101	correct, and filed** while the controller went on planning a panel that would have consumed
+   102	those rows. This is the same shape as the `MARGIN_Q` case, where the rule that would have
+   103	caught it had already been written down on 2026-09-08 and was not applied.
+   104	
+   105	## 5. Owed repairs register — nothing here is authorised by this record
+   106	
+   107	1. `PILOT_PRIMITIVE_SOURCE_FALLBACK` is `True` unconditionally; the declared path at
+   108	   `run_v025_pilot_c3.py:544+` never runs. Changing it is a **declared change**, recorded as
+   109	   such, with a rationale independent of what it does to any route's sign — not a bug fix.
+   110	2. `off_axis_angle` hard-coded 0.0 at both row paths; **no elevation feature exists** in the
+   111	   16-slot schema.
+   112	3. `missing_incumbent` constant 0.0.
+   113	4. Slots 4/12 duplicate slots 3/11 exactly; design matrix rank 14 of 16.
+   114	5. Slot 1 sentinel 1e6 on 10.21% of rows.
+   115	6. `outage` is an alias of `null_action`.
+   116	7. Coalition selection by lexicographic id over an unfiltered candidate set.
+   117	8. `Phi` computed without `cell_rekeyed_users` on the stand-in path — latent on this corpus,
+   118	   activates on tapes built from boundary candidates.
+   119	9. `StepEvaluator.evaluate` vs `evaluate_many` disagree on the same `Configuration`
+   120	   (-29.45 to +54.08 kappa-units of network bits), and the stand-in takes its **reference**
+   121	   through `evaluate` (`:396`) while the catalogue goes through `evaluate_many`. Under
+   122	   investigation as `EVALPATH`; **no conclusion yet**.
+   123	
+   124	## 6. What this does and does not say
+   125	
+   126	It says: no claim about C1 or C2 learnability currently rests on the declared estimand.
+   127	It says: the declared path exists, executes, and has a measured price.
+   128	
+   129	It does **not** say the declared targets are unlearnable — `R^2 = 0.151` held out is a
+   130	measurement on 24 anchors with one linear model, not a ceiling.
+   131	It does **not** say the stand-in was illegitimate when it was written; it says the flag that
+   132	made it unconditional was never revisited.
+   133	It does **not** authorise flipping that flag, rebuilding the corpus, or funding the panel.
+=================== V025-CONTROLLER-PREDECLARATION-RESIDUAL-READING-2026-09-10.md
+     1	# Pre-declaration — how the residual-ceiling result will be read
+     2	
+     3	**2026-09-10, written BEFORE either measurement has reported.** No sealed artefact,
+     4	constant, threshold, sign, seed, horizon, price, guard or acceptance rule is changed by this
+     5	record. Its only purpose is to fix the reading rule while the outcome is still unknown.
+     6	
+     7	## What is being measured
+     8	
+     9	- **RESIDTOGGLE** — over one fixed catalogue at 8 anchors under corrected physics,
+    10	  `ADDITIVE_ONLY` versus `WITH_RESIDUAL` in the **deployed selector**, scored on the
+    11	  **reported** objective: pooled committed EE over 48 boundaries, demand-capped. This is the
+    12	  ceiling on what **any** C3 head can be worth inside the deployed selector, because it gives
+    13	  the residual exactly rather than predicting it.
+    14	- **OBJMISMATCH** — whether the certified endpoints are locally optimal under the **reported**
+    15	  objective, as opposed to the boundary-0 selection objective `F = B - eta_ref E` they were
+    16	  certified against.
+    17	
+    18	## The screens, as the two strategic reviews stated them
+    19	
+    20	| Reviewer | Screen |
+    21	|---|---|
+    22	| astra | **10%** |
+    23	| fable | **5%**, and required on **both** halves |
+    24	
+    25	Both were stated before either measurement ran. **They are not adjusted here and will not be
+    26	adjusted after the fact.**
+    27	
+    28	## The reading rule
+    29	
+    30	Let `R` be the residual ceiling RESIDTOGGLE reports on the reported numerator.
+    31	
+    32	- **`R` at or above 10%** — both screens pass. The current decomposition can in principle
+    33	  support a substantial C3 contribution, and repairing the panel harness is justified. The
+    34	  repair order is the owed-repair register in
+    35	  `V025-CONTROLLER-FINDING-CORPUS-IS-SURROGATE-2026-09-10.md` section 5, not a new plan.
+    36	- **`R` between 5% and 10%** — the reviewers' screens disagree on this interval. **This is
+    37	  not mine to resolve by preference.** It goes to the owner with both screens stated, both
+    38	  numbers stated, and no unilateral call.
+    39	- **`R` below 5%** — both screens fail. The current decomposition cannot support the stated
+    40	  requirement for C3, and the panel as designed should not be built. That is reported plainly,
+    41	  against fable's stated conclusion and astra's, without softening.
+    42	
+    43	OBJMISMATCH is read the same way on its own half and does not substitute for `R`.
+    44	
+    45	## What does not count as evidence here
+    46	
+    47	- Any gain measured under the **capacity** numerator. One such headline moved from `+113.412%`
+    48	  to `+0.273%` today when the demand cap was applied.
+    49	- Any **oracle-only** gain, including a mode-selection counterfactual that uses the realised
+    50	  fading draw.
+    51	- Any loss value, from any route, in any direction.
+    52	- Anything measured on the shipped surrogate corpus, whose C1/C2 labels are not the declared
+    53	  targets.
+    54	
+    55	## Validity condition, declared in advance
+    56	
+    57	`EVALPATH` is currently determining whether `StepEvaluator.evaluate` and `evaluate_many`
+    58	disagree on the same `Configuration`, and if so which is authoritative. **If it finds that
+    59	RESIDTOGGLE was scored through the non-authoritative path, or through a mixture of the two,
+    60	that measurement must be repeated on the authoritative path.**
+    61	
+    62	This repetition is declared **now, before either result is known**, precisely so that it
+    63	cannot later be an outcome-selected rerun. It is conditioned on a validity finding about the
+    64	instrument, not on the value of `R`. If EVALPATH finds the paths agree, or finds RESIDTOGGLE
+    65	used the authoritative path, the first result stands as reported — **including if it fails
+    66	the screens**.
+    67	
+    68	## What I will not do
+    69	
+    70	- I will not re-run either measurement because of what it reported.
+    71	- I will not move a screen, in either direction, after seeing a number.
+    72	- I will not report a pass by quoting the more favourable of the two numerators.
+    73	- I will not describe a result between the two screens as a pass.
+=================== V025-CONTROLLER-DECLARATION-ULP-TOLERANCE-2026-09-10.md
+     1	# Declared change — the replay parity gate is relaxed from bit-exact to 2 ULP
+     2	
+     3	**2026-09-10. Written BEFORE any demand-capped result exists. No sealed constant,
+     4	threshold, sign, seed, horizon, price, guard, acceptance rule, artefact or manifest is
+     5	changed. This changes a gate in a controller-authored diagnostic prompt, not in the science.**
+     6	
+     7	## What happened
+     8	
+     9	`MSCAP` was asked to replay 128 recorded multi-start endpoints and confirm the pooled
+    10	capacity efficiency reproduced the receipts **at binary64**, stopping if it did not. That
+    11	gate was written by the controller.
+    12	
+    13	It failed on 5 of 128 endpoints, 9 field values in all. The worker stopped as instructed and
+    14	reported no capped result. **It followed the instruction correctly.**
+    15	
+    16	## Why the gate was wrong
+    17	
+    18	Every one of the nine mismatches is **exactly one unit in the last place**:
+    19	
+    20	| field | relative difference | ULP of the value | mismatch / ULP |
+    21	|---|---:|---:|---:|
+    22	| bits (w3/s1) | 1.710e-16 | 1.526e-05 | **1.00** |
+    23	| ee_bit_per_j (w3/s1) | 1.880e-16 | 7.451e-09 | **1.00** |
+    24	| bits (w4/s0) | 1.917e-16 | 1.526e-05 | **1.00** |
+    25	| joules (w4/s0) | 1.847e-16 | 4.547e-13 | **1.00** |
+    26	| joules (w1/s0) | 1.314e-16 | 4.547e-13 | **1.00** |
+    27	| joules (w1/s1) | 1.325e-16 | 4.547e-13 | **1.00** |
+    28	| ee_bit_per_j (w1/s1) | 1.602e-16 | 7.451e-09 | **1.00** |
+    29	| joules (w3/s1) | 1.352e-16 | 4.547e-13 | **1.00** |
+    30	| ee_bit_per_j (w3/s1) | 1.590e-16 | 7.451e-09 | **1.00** |
+    31	
+    32	Double precision epsilon is 2.220e-16. Nine out of nine at exactly 1 ULP is the signature of
+    33	**summation order**, not of a physical or accounting discrepancy. Floating-point addition is
+    34	not associative; a replay that pools in a different order than the recording cannot be
+    35	bit-identical, and demanding that it be is a defect in the gate.
+    36	
+    37	This is corroborated independently: `EVALPATH-2026-09-10.md` reports that with both
+    38	evaluation paths on all 48 boundaries, realised-field parity is "numerical but never fully
+    39	binary64-identical in this sample."
+    40	
+    41	## The declared change
+    42	
+    43	**The replay parity gate becomes: every replayed field must agree with its receipt to within
+    44	2 ULP of the receipt value, and the count of fields exceeding 1 ULP must be reported.**
+    45	Any mismatch above 2 ULP still stops the job.
+    46	
+    47	## Why this is not tuning against an observed result
+    48	
+    49	- The quantity being gated is **instrument reproducibility**, not any scientific outcome.
+    50	  No route's sign, no EE figure, and no acceptance rule depends on it.
+    51	- **No demand-capped number has been computed.** The job stopped before producing one, so
+    52	  there is no observed result to tune toward. The relaxation is declared while the outcome
+    53	  is still unknown.
+    54	- The new tolerance is fixed by IEEE 754, not chosen to admit the observed mismatches: 1 ULP
+    55	  is the smallest representable disagreement, and the bound is set at 2 ULP before rerunning.
+    56	- The rerun is **not outcome-selected**. It is a rerun of a job that produced **no** result,
+    57	  for a reason established to be an artefact of the gate.
+    58	
+    59	## What is still owed
+    60	
+    61	The `EVALPATH` finding that global path authority is `UNDETERMINED` is **not** resolved by
+    62	this declaration and is not affected by it. It remains on the owed-repair register.

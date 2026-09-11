@@ -1,0 +1,33 @@
+== counts {'BASELINE_EQ16': 500, 'SHARED_BOOTSTRAP': 500, 'FROZEN[0:500] (no D-2)': 500}
+
+== stability
+BASELINE_EQ16            finite=True loss max=[0.3654 0.4355 0.0612] mean0-100=[0.1122 0.0697 0.0171] mean400-500=[0.3091 0.1042 0.0508]
+SHARED_BOOTSTRAP         finite=True loss max=[0.2975 0.4806 0.0877] mean0-100=[0.108  0.0752 0.0181] mean400-500=[0.2653 0.1383 0.0738]
+FROZEN[0:500] (no D-2)   finite=True loss max=[0.4324 0.3796 0.0571] mean0-100=[0.1128 0.0811 0.0182] mean400-500=[0.3864 0.0791 0.0477]
+
+== training-time windows (epsilon-greedy)
+arm                            win    eps |     r1c      r2c      r3c | scal_cal |  ho/us  out/us
+BASELINE_EQ16               0-100   0.951 |  2.7069  -8.3133  -2.4860 |  -1.6378 | 0.8658  0.0615
+BASELINE_EQ16             100-200   0.901 |  2.7822  -8.0884  -2.5030 |  -1.5360 | 0.8566  0.0566
+BASELINE_EQ16             200-300   0.852 |  2.9182  -7.8945  -2.5165 |  -1.4126 | 0.8433  0.0543
+BASELINE_EQ16             300-400   0.802 |  3.0121  -7.7170  -2.5483 |  -1.3187 | 0.8299  0.0515
+BASELINE_EQ16             400-500   0.753 |  3.0960  -7.4638  -2.5819 |  -1.2075 | 0.8087  0.0494
+
+SHARED_BOOTSTRAP            0-100   0.951 |  2.7073  -8.3179  -2.4846 |  -1.6386 | 0.8660  0.0615
+SHARED_BOOTSTRAP          100-200   0.901 |  2.7870  -8.1007  -2.5038 |  -1.5375 | 0.8569  0.0565
+SHARED_BOOTSTRAP          200-300   0.852 |  2.9400  -7.9431  -2.5108 |  -1.4151 | 0.8451  0.0546
+SHARED_BOOTSTRAP          300-400   0.802 |  3.0329  -7.7523  -2.5504 |  -1.3193 | 0.8323  0.0521
+SHARED_BOOTSTRAP          400-500   0.753 |  3.1353  -7.5015  -2.5794 |  -1.1987 | 0.8133  0.0491
+
+FROZEN[0:500] (no D-2)      0-100   0.951 |  2.7021  -7.7015  -2.2640 |  -1.4122 | 0.8661     nan
+FROZEN[0:500] (no D-2)    100-200   0.901 |  2.7931  -7.5162  -2.2772 |  -1.3137 | 0.8558     nan
+FROZEN[0:500] (no D-2)    200-300   0.852 |  2.9137  -7.3614  -2.2983 |  -1.2112 | 0.8445     nan
+FROZEN[0:500] (no D-2)    300-400   0.802 |  3.0211  -7.1960  -2.3269 |  -1.1136 | 0.8303     nan
+FROZEN[0:500] (no D-2)    400-500   0.753 |  3.1282  -6.9927  -2.3617 |  -1.0060 | 0.8114     nan
+
+BASELINE_EQ16: training outage user-steps total 27331 / 500000 = 5.4662%
+SHARED_BOOTSTRAP: training outage user-steps total 27382 / 500000 = 5.4764%
+
+ep0 BASELINE vs FROZEN: r1 equal True handovers equal True | r2 -8.435 -7.815 | r3 -15.14 -13.28 | outages 62
+first episode where BASELINE_EQ16 r1 departs from frozen: 6
+first episode where SHARED_BOOTSTRAP r1 departs from BASELINE_EQ16: 11

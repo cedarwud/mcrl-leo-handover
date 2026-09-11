@@ -1,0 +1,355 @@
+=================== V025-DECLARATION-MODQN-COMPARATOR-BINDING-2026-09-10.md
+     1	# Declaration — the MODQN comparator binding, and an amendment to a sealed condition
+     2	
+     3	Date: 2026-09-10 ~17:05Z
+     4	Decision by: the owner, on this date, in response to `BASELINE-MODQN-REFERENCE-2026-09-10.md`
+     5	Status: **the acceptance gate's definition. Written before any MODQN EE on V0.25 exists.**
+     6	
+     7	## The gap this closes
+     8	
+     9	`BASELINE-MODQN-REFERENCE-2026-09-10.md` (`/home/sat/mcrl-v025-modqn-ws`) established, by
+    10	reading the seals and loading the artefacts:
+    11	
+    12	- the V0.25 contract names an **"external BASELINE"** and **binds nothing executable** — no
+    13	  policy, checkpoint, training regime, or V0.25-to-legacy interface mapping;
+    14	- the V0.23 declaration binds it precisely: *"the unchanged, externally authenticated
+    15	  pre-Catfish MODQN policy … and is **never a trained arm**"*, checkpoint SHA-256
+    16	  `e6b063efea8608fd1e46ac15d5442aa8d1171dffc9f0b5e8cc209eca1b09c28b`, **112 states, 28
+    17	  actions**, 9,000 episodes;
+    18	- the checkpoint and its adapter still load, but **no path submits their decisions to the
+    19	  V0.25 `a-r0` evaluator**, so the gate is **unmeasured, not zero**;
+    20	- the object the current pilot calls `BASELINE` is `carrier_base`, a **fixed carrier geometry
+    21	  control**. **Using its numbers as the MODQN gate would be a category error**, and without
+    22	  this determination that is what tonight would have reported.
+    23	
+    24	## The decision
+    25	
+    26	**Primary gate: a MODQN retrained on V0.25 physics.**
+    27	**Secondary, reported alongside: the frozen V0.23 checkpoint replayed on V0.25 physics.**
+    28	
+    29	Both are reported, always, in every place the gate is stated. Neither may be omitted because
+    30	it is the less favourable of the two.
+    31	
+    32	**Why retrained is primary.** The V0.23 checkpoint learned on a physics engine that V0.25
+    33	replaced — angle/rate/TPC/TDM/ACM, corrected v1.9 provisioning, a different energy account.
+    34	A policy frozen on the old engine and deployed on the new one is handicapped by distribution
+    35	shift. Beating it would partly measure *"we changed the engine"*, not *"the three routes
+    36	help"*. The owner's criterion is about the three routes, so the gate must be physics-matched.
+    37	
+    38	**Why frozen is retained as secondary.** It is what the sealed record literally names, and
+    39	dropping it would break continuity with the V0.23 declaration.
+    40	
+    41	## This amends a sealed condition, and the amendment is declared as such
+    42	
+    43	The V0.23 declaration says `BASELINE` **"is never a trained arm"**. Retraining it is a change
+    44	to that condition, so it is declared, not slipped in:
+    45	
+    46	1. **The prior declaration is acknowledged**, quoted above in full.
+    47	2. **The reason is independent of the outcome it would help.** V0.25 replaced the physics
+    48	   engine; a comparator frozen on the previous engine is not like-for-like. That reason existed
+    49	   before any V0.25 measurement and does not depend on which way the comparison goes.
+    50	3. **The outcome is not known at the time of the decision.** `MODQNREF` verified that MODQN's
+    51	   V0.25 pooled EE is **unmeasured**. Nobody — owner or controller — knows whether retraining
+    52	   makes the gate easier or harder.
+    53	4. **The frozen arm is not removed**, only demoted to secondary, so no evidence is lost.
+    54	
+    55	## Fairness bindings — fixed now, before MODQN is trained
+    56	
+    57	Retraining creates a surface on which the comparator could be weakened, deliberately or by
+    58	inattention. These close it. **They are fixed before the run and are not to be revised against
+    59	an observed MODQN result.**
+    60	
+    61	1. **At least the Catfish budget.** MODQN receives **no less** training budget and **no fewer
+    62	   seeds** than the five sealed Catfish arms. If the Catfish arms run 16 seeds, MODQN runs at
+    63	   least 16.
+    64	2. **At least the Catfish information.** MODQN's observation carries **no less** decision-time
+    65	   information than the Catfish system's. If a field is available to Q1/Q2/Q3, it is available
+    66	   to MODQN unless the legacy interface structurally cannot carry it — and every such case is
+    67	   named in the report.
+    68	3. **Its own hyperparameters, honestly chosen.** MODQN is tuned by the **same procedure** used
+    69	   for the Catfish heads — a convergence screen against a rule fixed before it runs, computing
+    70	   no EE — and the admissible setting is chosen on the same grounds (earliest admissibility,
+    71	   then cost). It is not given the Catfish heads' literals if those are wrong for it.
+    72	4. **No outcome-selected reruns.** The first completed run under this binding is the reported
+    73	   one. A rerun requires a stated defect, declared before its result is seen.
+    74	5. **Report the stronger of primary and secondary as the harder gate.** If the frozen replay
+    75	   scores **higher** than the retrained MODQN, the frozen number is the one the Catfish must
+    76	   clear. **The comparator is never selected downward.**
+    77	6. **Configuration frozen before launch**, with digests, in a launch receipt.
+    78	
+    79	## The evaluator rule, binding on every measurement under this declaration
+    80	
+    81	Selection: **one fresh dense `StepEvaluator(boundary_indices=(0,))`** per anchor, with `BASE`
+    82	and every candidate in its **first** `evaluate_many` call; **no scalar `evaluate`**, no foreign
+    83	cache preceding it. Endpoints: **one separate fresh realised dense full-48** evaluator, `BASE`
+    84	and all endpoints in one call. Assert both in code and report the assertion result.
+    85	
+    86	Non-negotiable: `SELECTION-SURFACE-2026-09-10.md` showed a scalar-cached `BASE` moved a
+    87	published fixed point from `13.430253` to `31.028111`, retaining **0 of 12** configuration IDs.
+    88	
+    89	## What is measured, and how it is reported
+    90	
+    91	On the development panel, full-buffer numerator, no demand cap: pooled EE, pooled bits, pooled
+    92	joules, served PHY, rate-target attainment, `modal_frac`, `active` beams and satellites,
+    93	`argmax_distinct` — for **retrained MODQN**, **frozen-replay MODQN**, and the learned arms.
+    94	
+    95	**Disclosure that is not optional.** The non-learned family is **not** a gate — the owner has
+    96	fixed that the Catfish need only beat MODQN. But where the Catfish and MODQN sit relative to
+    97	`RSS_MAX` (**41.621560**), the clean fixed point (**31.028111**) and `RANDOM` (**11.233999**)
+    98	is **reported every time the gate is reported**. A reviewer will ask; the answer is given
+    99	before it is asked.
+   100	
+   101	## Open, and not settled here
+   102	
+   103	Whether MODQN retraining on V0.25 is a bounded piece of work at all. `MODQNBRIDGE` (17:03Z) is
+   104	building the option-independent half — the 112-field projection, the 28-slot roster with a
+   105	physical-identity round trip, the edge rules and known-answer tests — and is instructed to stop
+   106	and report if the projection **cannot be completed without invention**. If it cannot, this
+   107	declaration's primary gate is not yet constructible and that becomes the next decision.
+=================== V025-CONTROLLER-DECLARATION-RUNNER-V2-2026-09-10.md
+     1	# Declaration — runner v2: raise the epoch cap, add the declared decay, keep v1 byte-identical
+     2	
+     3	Date: 2026-09-10 ~17:22Z · Controller
+     4	**Written before any EE exists on the exact corpus. No EE quantity has been computed from it.**
+     5	
+     6	## What blocked
+     7	
+     8	`EXACT-CORPUS-TRAINING-2026-09-10.md` (`/home/sat/mcrl-v025-exacttrain-ws`) assembled the exact
+     9	corpus and passed every label check, then **stopped before creating an output directory**:
+    10	
+    11	> the required runner, SHA-256 `4885705…c797d66`, accepts only **1–2,000 epochs** and implements
+    12	> the legacy **constant-rate, exact-budget/no-early-selection** contract. It cannot express the
+    13	> declared 4,000-update step decay and cadence-100 stability stopping rule without changing the
+    14	> sealed implementation or inventing a new runner and held-out split.
+    15	
+    16	`DECAY` measured first-admissibility for step decay at **2,200 updates**. The cap is 2,000.
+    17	**It is short by 200.**
+    18	
+    19	## The three-layer test, applied
+    20	
+    21	- **Scientific sealing?** No. `V025-CONTROLLER-WHAT-IS-ACTUALLY-SEALED-2026-09-10.md` lists the
+    22	  **2000-epoch cap** explicitly among the things that are **not sealed**, alongside lr,
+    23	  `gauge_beta`, hidden layers, activation, Adam betas, checkpoint cadence and catalogue caps.
+    24	  That listing was written this morning, before any of today's results.
+    25	- **Compatibility pinning?** Yes. Three completed runs carry launch receipts binding
+    26	  `4885705…c797d66`. **Runner v1 stays byte-identical and those receipts remain valid.**
+    27	- **Implementation default?** Yes, and the rule for those is: **declare before the judging
+    28	  measurement.** This is that declaration, and no EE from the exact corpus exists yet.
+    29	
+    30	## Authorised
+    31	
+    32	**Runner v2, as a new file with a new digest. v1 is not edited.**
+    33	
+    34	1. **Epoch cap `1–4,000`.** The 2,000 literal was an implementation default, never a scientific
+    35	   choice.
+    36	2. **Step-decay schedule support**, expressing the already-declared schedule
+    37	   (`V025-CONTROLLER-DECLARATION-SCHEDULE-CHOICE-2026-09-10`): from `1e-3`, factor `0.1` after
+    38	   2,000 updates and again after 3,000. **Constant rate remains available and remains the
+    39	   default**, so v2 can reproduce v1's behaviour exactly.
+    40	3. **Nothing else changes.** Not the architecture, not the arms, not the corpus contract, not
+    41	   the fixture gate, not the checkpoint format, not the cadence semantics.
+    42	
+    43	**A v1-equivalence test is required**: run v2 with a constant rate on the same corpus and seed
+    44	and show it reproduces a v1 checkpoint **bit-for-bit**. Without that, v2 is not usable, because
+    45	a silent behavioural change would be indistinguishable from a result.
+    46	
+    47	## Not authorised
+    48	
+    49	**Do not put the stopping rule inside the runner.** The runner already writes cadence-100
+    50	checkpoints; the pre-declared stability criterion is applied to that checkpoint sequence
+    51	**offline**, exactly as `DECAY` and `HORIZON` applied it. Adding a held-out split and
+    52	early-selection to the training loop would change the runner's exact-budget contract, and that
+    53	**is** a scientific change — it would let the training loop select against held-out data.
+    54	
+    55	**Do not rescale the decay schedule to fit a 2,000 cap.** Compressing the decay points to
+    56	1,000/1,500 because 2,200 exceeds 2,000 would be choosing a schedule against a constraint
+    57	discovered after the schedule was declared. Raise the cap instead; it is the free variable.
+    58	
+    59	## Why this is not the move it might resemble
+    60	
+    61	I have attacked sealed declarations three times this project on bad grounds. This is not that:
+    62	the object being changed was **listed as unsealed this morning, in writing, before any of
+    63	today's measurements**; the change is a version, not an edit; v1 remains valid for the runs
+    64	that used it; and the declaration precedes the measurement it affects. If any of those four
+    65	were untrue I would not authorise it.
+=================== V025-CONTROLLER-PREDECLARATION-C3-NEGATIVE-2026-09-10.md
+     1	# Pre-declaration — how the exact-corpus C3 result will be read, given that the surrogate run says −23%
+     2	
+     3	Date: 2026-09-10 ~17:28Z · Controller
+     4	**Written after the surrogate-corpus number exists and BEFORE the exact-corpus run produces
+     5	one.** `EXACTTRAIN2` launched 17:22Z and has produced no result.
+     6	
+     7	## The number this document exists to constrain
+     8	
+     9	First five-arm scoring, `panel-q1v1`, 20 development anchors.
+    10	*Reference: each `DROP_X` arm, and `ALL_NEUTRAL_CONTROL`. Information class: development —
+    11	**one seed** (`6407676579069309528`), **500 unconverged updates**, **surrogate labels**, and
+    12	**12 of 20 anchors' reference objects reused from the contaminated `PANELCEIL` path**.
+    13	Estimand: relative pooled-EE marginal. Numerator: full-buffer pooled EE, no demand cap.*
+    14	
+    15	| arm | pooled EE (Mbit/J) |
+    16	|---|---:|
+    17	| `DROP_C3` | **43.211826** |
+    18	| `FULL` | 33.255431 |
+    19	| `DROP_C1` | 32.476038 |
+    20	| `DROP_C2` | 25.991598 |
+    21	| `ALL_NEUTRAL_CONTROL` | 23.469363 |
+    22	
+    23	| route | `FULL − DROP_X` | relative to `DROP_X` |
+    24	|---|---:|---:|
+    25	| C1 | +0.779393 | **+2.400%** |
+    26	| C2 | +7.263833 | **+27.947%** |
+    27	| **C3** | **−9.956395** | **−23.041%** |
+    28	| `FULL − ALL_NEUTRAL_CONTROL` | +9.786068 | +41.696% |
+    29	
+    30	**Two routes positive; C3 strongly negative. Removing C3 improves pooled EE by 23%.**
+    31	
+    32	## The confound that must not be used as an excuse afterwards
+    33	
+    34	`EXACT-CORPUS-TRAINING-2026-09-10.md` measured, before this scoring was read:
+    35	**C3's surrogate labels disagree with the exact labels on 18 of 22 anchors — 81.8182%.**
+    36	C1 is 51.68%, C2 55.27%.
+    37	
+    38	**A head trained on 82%-wrong labels actively degrading the decision is the expected outcome,
+    39	not a surprise.** But "the labels were wrong" is exactly the kind of explanation I could reach
+    40	for after seeing any unfavourable number, so the reading is fixed here instead.
+    41	
+    42	## The reading rule, fixed now
+    43	
+    44	`EXACTTRAIN2` trains the same five arms on the **exact** corpus with the declared step-decay
+    45	schedule and the offline stopping rule. When its scoring lands:
+    46	
+    47	| exact-corpus C3 marginal | reading, fixed in advance |
+    48	|---|---|
+    49	| **positive** | the surrogate result was a label artefact. C3's earlier negatives — including the F1 kill screen and the oracle-marginals probe — were measured on the same defective labels and their scope is narrower than recorded. **This does not make C3 "alive"; it makes the earlier negatives uninformative.** |
+    50	| **near zero** | C3 contributes nothing at this operating point. The owner's three-route requirement is not met by this design, and the honest options are a different C3 target, a wider catalogue (`\|A\|<=2` is 98.13% today), or dropping to two routes. |
+    51	| **still strongly negative** | **C3 is harmful, on exact labels, at convergence.** That is a real finding and it stands. It is then reported as a negative result, and no further label, schedule or corpus explanation is offered for it. |
+    52	| positive but service falls | **not admissible** under the service guard, whatever the EE. |
+    53	
+    54	## What this scoring may and may not be used for
+    55	
+    56	**May:** confirm the arms produce distinct, nonzero contrasts — they do, and `SCALE` predicted
+    57	it from decision counts (`DROP_C3` differs from `FULL` on 39/480 decisions, 11/20 anchors).
+    58	
+    59	**May not:** state that any route is dead, or that C3 is harmful. **One seed, unconverged, wrong
+    60	labels, partly contaminated reference.** Fifteen further seeds exist and were not scored; this
+    61	was an interface-acceptance run.
+    62	
+    63	## Two things to fix regardless of the outcome
+    64	
+    65	1. **Score all 16 seeds**, not one. A single seed is not a result and I will not report the
+    66	   ranking above as one.
+    67	2. **The 12 contaminated reference anchors** in `panel-q1v1` still need correcting, and the
+    68	   `certified_fixed_point` / `anytime_incumbent` axes remain unusable until then.
+    69	
+    70	## Note on what is *not* claimed
+    71	
+    72	`DROP_C3` at 43.211826 sits above `RSS_MAX`'s 41.621560 — **on a different panel** (20 anchors
+    73	versus 12) and therefore **not comparable**. I am recording that explicitly so the coincidence
+    74	is not repeated later as a comparison.
+=================== V025-CONTROLLER-RULING-THREE-BINDINGS-2026-09-10.md
+     1	# Ruling — the three route bindings, and two proposals I am not adopting as written
+     2	
+     3	Date: 2026-09-10 ~17:40Z · Controller
+     4	Source: `APPROACHING-THE-INSTRUMENTS-2026-09-10.md` (`/home/sat/mcrl-v025-approach-ws`),
+     5	verified over **all 16** `FULL` epoch-500 checkpoints, 12 development anchors, with the
+     6	evaluator rule asserted in code (scalar `evaluate` replaced by a raising stub, **zero** calls,
+     7	24/24 assertions passed, instrument endpoints reproduced to `rel_tol=1e-12`).
+     8	
+     9	## The findings I accept as established
+    10	
+    11	1. **Neither Q1 v2 nor Q2 v2 carries per-legal-option `nominal_gain`, nor primitives sufficient
+    12	   to reconstruct it.** The physical RSS action is present in **1,200/1,200** user-anchor action
+    13	   tables. The action is available; the value that would rank it is not.
+    14	2. **Median `a0`-to-`RSS_MAX` Hamming distance is 92.5 of 100 users.**
+    15	3. **Against `RSS_MAX`, every differing learned choice has lower nominal gain.** Systematic, not
+    16	   a tie-breaking effect.
+    17	4. **Against the crowded endpoint, 99.13% of differing learned choices land on a less-occupied
+    18	   beam**, and that endpoint differs on a median 93 users — far outside a catalogue that is
+    19	   98.13% `|A| <= 2`.
+    20	5. **Bindings: C1 = features, C2 = target, C3 = candidates. Optimisation is secondary but real
+    21	   in all three** (the sealed head loses to plain linear on level calibration in every route).
+    22	
+    23	## C1 — ADOPT the feature addition, as a successor
+    24	
+    25	Add one per-legal-option `decision_boundary_log_nominal_gain_db` scalar to the Q1 action row.
+    26	
+    27	**Why this is not handing the head the answer.** `RSS_MAX` is a demand-blind greedy. A head
+    28	that can see gain is *able* to reproduce it but is not obliged to; the whole point of a learned
+    29	method is to use gain where gain decides and to deviate where demand, occupancy or interaction
+    30	decide. Removing a blindfold is not the same as supplying a policy.
+    31	
+    32	**What I will not claim.** I have no evidence that the omission was an oversight rather than a
+    33	design choice, and I am not asserting it was. The schema carries other quantities; it does not
+    34	carry this one. That is the whole finding.
+    35	
+    36	**Consequence, declared:** a new Q1 schema width and digest, a new corpus, new checkpoints, and
+    37	therefore a **successor learned arm**. The sealed five-arm inventory is **not** mutated in
+    38	place. `C3 = 1 + 2*(2*Q1 + 6) + 4*7 + (32*4 + 1) + 6` moves with Q1, and the derivation is
+    39	enforced fail-closed.
+    40	
+    41	## C2 — HOLD, with a stated objection to the proposal as written
+    42	
+    43	Proposed: redefine the label as *incremental future value after conditioning on / subtracting
+    44	the current-slot C1 contribution*.
+    45	
+    46	**The objection.** Defining C2's target as "the residual C1 did not capture" puts the
+    47	decomposition into the structure where **a positive C2 marginal is least informative**, because
+    48	the target is constructed to be whatever the other route missed. It is not guaranteed positive
+    49	— the residual may be unlearnable or worth nothing in EE — but if it comes out positive I would
+    50	be unable to distinguish "C2 carries real horizon value" from "C2 fits C1's leftovers".
+    51	
+    52	**This is not a rejection.** The report's sequencing argument is sound: while C1 cannot see
+    53	gain, C2's absolute persistence label is partly spent re-deriving the current choice, and the
+    54	two routes compete instead of composing.
+    55	
+    56	**Ruling: hold C2's redefinition until C1's feature change has been made and measured.** Then
+    57	decide with the residual's actual size in view, and **declare in advance how a positive C2
+    58	marginal under a residual target would be distinguished from construction** — before that
+    59	number exists. If no such distinction can be stated, the redefinition is not adopted.
+    60	
+    61	## C3 — ADOPT in principle, but not before `CEILING2` reports
+    62	
+    63	Proposed: add one deterministic whole-profile `RSS_MAX` proposal to the bounded catalogue.
+    64	
+    65	**Why it survives the obvious objection.** The row is offered to **every** arm, including
+    66	`DROP_C3` and `ALL_NEUTRAL_CONTROL`. It raises the floor for all of them, so the `FULL` minus
+    67	`DROP_C3` contrast still isolates C3's contribution rather than measuring the row. Putting a
+    68	known-good profile on the menu is not the same as putting it in one arm's pocket.
+    69	
+    70	**What it does change, and must be reported:** the meaning of every ceiling computed over that
+    71	catalogue. A "coordination ceiling" measured with an `RSS_MAX` row present is a different
+    72	quantity from one measured without it, and the two must never be compared.
+    73	
+    74	**Ruling: hold until `CEILING2` reports.** Its Part 2 is already sweeping catalogue coalition
+    75	support (`|A| <= 1, 2, 3, 4, 6`). If the ceiling **saturates** at `|A| = 2`, the candidate set
+    76	is not C3's binding constraint and this proposal is answering the wrong question. If it keeps
+    77	rising, add the row **and** report the support sweep beside it, since a single hand-chosen
+    78	profile and a genuinely wider support are different claims.
+    79	
+    80	## Optimisation — a control, not a fix
+    81	
+    82	After each binding is released, the **first** thing run is a calibrated linear head on the same
+    83	features, as the report recommends. The sealed head currently loses to plain linear on level
+    84	calibration in all three routes; until a change beats that control, "the head learned it" is
+    85	not established.
+    86	
+    87	**A calibrated linear control cannot create absent gain information or absent configurations.**
+    88	So it is a control on the optimisation claim only, never a substitute for the feature or
+    89	candidate change.
+    90	
+    91	## Sequence
+    92	
+    93	1. **C1's feature addition** — the largest lever and the prerequisite for C2's question being
+    94	   well-posed. Held only until `EXACTTRAIN2` proves the exact-corpus path end to end, so the
+    95	   new corpus is built once on a proven pipeline rather than twice.
+    96	2. **`CEILING2` reports** → then rule on C3's catalogue row.
+    97	3. **C2's target** — last, and only with a pre-declared test that separates real horizon value
+    98	   from residual fitting.
+    99	
+   100	## Every one of these creates a successor arm
+   101	
+   102	None mutates the sealed five-arm inventory. Each is an owner-visible declared design change
+   103	with new schema digests, new corpora and new checkpoints, and each is recorded before it is
+   104	measured. The current five arms remain exactly as sealed, and the runs already completed
+   105	against them remain valid for what they measured.

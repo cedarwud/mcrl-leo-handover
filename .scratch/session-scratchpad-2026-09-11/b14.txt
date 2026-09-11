@@ -1,0 +1,392 @@
+=================== V025-CONTROLLER-PREDECLARATION-ZSCORE-AND-HORIZON-2026-09-10.md
+     1	# Pre-declaration — how the z-score result will be read, and what a big gain would cost
+     2	
+     3	Date: 2026-09-10 ~15:25Z · Controller
+     4	**Written before any z-score number exists.** ZSCORE launched 15:00:04Z and has produced
+     5	no result. This document exists so the reading rule is not chosen after seeing the outcome.
+     6	
+     7	## A. The horizon finding that changes how today's trainings may be read
+     8	
+     9	`LR-CONVERGENCE-SWEEP-2026-09-10.md` (`/home/sat/mcrl-v025-c1c2-ws`), landed 15:13Z:
+    10	
+    11	- **21 of 21 route x learning-rate cells fail a convergence rule fixed before the sweep**;
+    12	- **none of the three current literals** (`1e-2` C1, `1e-3` C2, `1e-3` C3) is admissible;
+    13	- the runner takes **one deterministic full-batch Adam update per epoch**, so "500 epochs" is
+    14	  **500 gradient steps**, and C3 loss still moves **6.89-8.96%** between step 400 and 500.
+    15	
+    16	This sweep computed **no EE quantity**, and its rule was fixed in `spec.md` before running.
+    17	It is an optimisation-validity finding, not an outcome-selected one.
+    18	
+    19	**Consequence, declared now.** Both live trainings (v1 13:55Z, v2 14:25Z) finish ~16:45Z at
+    20	500 gradient steps. Whatever route contrast they produce is a contrast **between unconverged
+    21	models at equal budget**. That is a valid paired comparison. It is **not** evidence that a
+    22	route is dead. A negative contrast at 500 steps and a negative contrast at convergence are
+    23	different findings and will be reported as different findings.
+    24	
+    25	**No learning rate may be selected from that sweep.** It ranked nothing; it disqualified
+    26	everything. Selecting the best-at-500 rate would be choosing against an observed result.
+    27	
+    28	## B. The z-score reading rule, fixed in advance
+    29	
+    30	The intervention widens Q1 `15 -> 30` and Q2 `22 -> 44`, which **doubles first-layer
+    31	parameters**. Amendment 1 to ZSCORE (issued 15:24Z, before any result) adds two FULL-only
+    32	controls: **`raw_dup`** `[raw||raw]` — same width, zero new information — and **`z_perm`** —
+    33	same normalisation, statistics taken over a permuted grouping so that a user is no longer
+    34	normalised against the users it actually competes with.
+    35	
+    36	Four `FULL` runs on one axis at equal budget: **non-z**, `raw_dup`, `z_perm`, `[raw||z]`.
+    37	
+    38	| observed | reading, fixed now |
+    39	|---|---|
+    40	| `[raw\|\|z]` > both controls | the **cross-user normalisation** carries the gain |
+    41	| `[raw\|\|z]` ~= `raw_dup` | the gain is **capacity**. Say so. |
+    42	| `[raw\|\|z]` ~= `z_perm` > non-z | the gain is **having a normalised block**, not cross-user coupling — a materially different and weaker claim |
+    43	| all four ~= | the sibling project's intervention **does not transfer** |
+    44	| any arm gains while **service falls** | **not admissible** under the service guard, whatever the EE |
+    45	
+    46	## C. The outcome that is most dangerous to the stated goal, named before it can happen
+    47	
+    48	The owner's requirement is **three Catfish, each raising EE**.
+    49	
+    50	**If z-score raises EE substantially AND the route contrasts stay degenerate, then the gain
+    51	belongs to the normalisation and not to C1/C2/C3.** The honest paper would then say: the
+    52	headline improvement is an input transform; the three-route decomposition rides on top of it
+    53	and must find its own headroom **above the corrected base**, or be restated.
+    54	
+    55	I am naming this now because it is the outcome I would be most tempted to reframe later.
+    56	
+    57	**There is a specific reason to take it seriously.** I already observed the signature of a
+    58	degenerate reference and blamed it on something else: eight route contrasts taking only four
+    59	distinct values, with `FULL - ALL_NEUTRAL_CONTROL` **bit-identical** to `FULL - ONLY_C1`. I
+    60	attributed that to a smoke-test artefact (`anchor_count: 1`). A degenerate `a0` produces the
+    61	same signature. **Those two explanations have never been separated.** Separating them is what
+    62	COLLAPSE plus the corrected trainings will do.
+    63	
+    64	## D. If the gain is real, what must be rebuilt — scoped now, not after
+    65	
+    66	**Everything derived from the operating point changes. The sealed protocol mostly survives.**
+    67	
+    68	| item | fate if the base moves | why |
+    69	|---|---|---|
+    70	| **`eta_ref`** | **must be recomputed — highest risk** | it is a frozen offline TRAIN calibration equal to pooled base EE, and it is the **exchange rate between bits and joules** in `F = B - eta_ref*E`. If base EE moves by a large factor, the selector is optimising the wrong trade-off **silently** — nothing errors. |
+    71	| source corpus (176,223 rows) | **regenerate** | rows were rolled out under the current policy; the visited state distribution is the collapsed one. This is distribution shift, not a label defect — separate from the known surrogate-label defect. |
+    72	| C3 coalition shards (4,552 rows / 22 anchors) | **regenerate** | same reason |
+    73	| bounded catalogue (~991 rows deployed) | **rebuild** | constructed from `a0` |
+    74	| panel ceilings (+1.944795% / +1.045609% / +0.905261%) | **recompute** | local to `a0`'s neighbourhood — see erratum 17 discussion and KILLTRIAGE |
+    75	| 16 seeds, 10 s coordinator budget, three forecast offsets | **survive** | none is a function of the operating point |
+    76	| **+0.5% decision margin** | **survives** | expressed as a percentage, so a level change does not move it |
+    77	| C1/C2/C3 **definitions** | **survive** | difference surplus / persistence forecast / interaction are structural; their **values** change |
+    78	| §3.2 `F = B - eta_ref*E - Phi` | **survives as written**; becomes a formulation change **only** if `eta_ref` is made adaptive | Calvo-Fullana Prop. 1 targets exactly the fixed-scalarisation form, so this is a live design question, not a bug fix |
+    79	
+    80	**The cost is dominated by corpus regeneration, not by retraining.** Training is ~10 min per
+    81	seed. The exact source build has been running **2.3 hours** and is not finished. Any statement
+    82	of the form "we can just rerun it" is about the cheap half.
+    83	
+    84	## E. Held, with a stated trigger — not dispatched
+    85	
+    86	- **`ZCONTROL`** (`raw_dup` + `z_perm`, FULL only): Amendment 1 was appended to the prompt file
+    87	  after ZSCORE had already read it, so **it will not reach the running job.** The controls run
+    88	  as a follow-up reusing ZSCORE's view builder. Trigger: ZSCORE completes.
+    89	- **`DUALETA`** (adaptive vs frozen `eta_ref`, the second remedy in the same literature):
+    90	  **held on CROWDCOST.** If crowding is cheap in this physics, both z-score and dual-eta are
+    91	  remedies for a problem that does not exist here, and dispatching it now would be dispatching
+    92	  on a hunch.
+    93	- **Longer horizon rerun:** held until the 500-step contrasts exist, so that the horizon change
+    94	  is justified by LRSWEEP's pre-declared rule and not by a disliked outcome.
+    95	
+    96	---
+    97	
+    98	## Amendment 1 to this document — 2026-09-10 ~15:35Z, still before any contrast exists
+    99	
+   100	**Item E's reasoning about the horizon was backwards, and I am reversing it.**
+   101	
+   102	E said: hold the longer-horizon rerun "until the 500-step contrasts exist, so that the horizon
+   103	change is justified by LRSWEEP's pre-declared rule and not by a disliked outcome."
+   104	
+   105	That gets it exactly the wrong way round. LRSWEEP's rule was **already** fixed before it ran,
+   106	and LRSWEEP computed **no EE**. Acting on it **now** is acting on a criterion that predates
+   107	every outcome. Waiting until the 500-step contrast lands and *then* extending would apply the
+   108	same rule **after** seeing the result — which is the contaminated version, not the clean one.
+   109	
+   110	**Deciding the horizon now is strictly cleaner than deciding it later.** Held-then-acted is
+   111	the pattern I have to avoid, not the pattern I should follow.
+   112	
+   113	### What I will not do
+   114	
+   115	**Pick a bigger number.** "500 is inadequate, so use 2000" is choosing a horizon by feel.
+   116	LRSWEEP does not say what horizon suffices, and its C3 loss was still moving 6.89-8.96% per
+   117	100 steps at step 500, so 2000 may not suffice either.
+   118	
+   119	### What replaces it
+   120	
+   121	**Make the horizon a stopping rule against LRSWEEP's already-declared criterion**, not a
+   122	literal: run with cadence-100 checkpoints to a stated cap, and take the **first checkpoint
+   123	that satisfies the pre-declared stability condition** (objective within 1%, level R2 within
+   124	0.01, ordering and top-1 within 0.005, over the preceding 100 steps). If no checkpoint in the
+   125	run satisfies it, the run reports **non-convergent**, and no head from it is used to state that
+   126	a route is dead.
+   127	
+   128	### The prior question, dispatched as `HORIZON`
+   129	
+   130	Before committing the compute, establish **which lever is actually needed**, because the two
+   131	differ by more than an order of magnitude in cost:
+   132	
+   133	- **more steps** — safe, changes nothing procedurally; at ~11 min per 500-step seed, a
+   134	  4,000-step 16-seed run is roughly **23 hours**, which does not fit alongside the current
+   135	  board;
+   136	- **minibatching** — the runner currently takes **one full-batch Adam update per epoch**, so
+   137	  36,360 rows produce **one** update. Minibatches of 256 would give ~142 updates per pass and
+   138	  reach in one pass what the present configuration reaches in 142 epochs. This is a **training
+   139	  procedure change**, not a hyperparameter, and it must be declared as one.
+   140	
+   141	`HORIZON` runs one seed and one route both ways, applies LRSWEEP's existing rule to both, and
+   142	reports which reaches admissibility and at what wall cost. **It selects nothing on EE and
+   143	computes no EE.**
+   144	
+   145	### Standing consequence for tonight's two runs
+   146	
+   147	They continue to completion. They remain a valid **paired** comparison at equal budget. If
+   148	`HORIZON` shows the present configuration cannot reach admissibility at any practical horizon,
+   149	then the correct reading of tonight's runs is **"the optimisation was under-run"**, and that
+   150	reading was fixed here, before the contrasts were seen.
+=================== V025-CONTROLLER-SYNTHESIS-THE-HEAD-DOES-NOT-FIT-2026-09-10.md
+     1	# Synthesis — three independent lines say the sealed head does not fit, and two "route is dead" readings depend on it
+     2	
+     3	Date: 2026-09-10 ~16:26Z · Controller
+     4	**Cross-report synthesis. No single job could see this; each saw one line.**
+     5	
+     6	## The three lines
+     7	
+     8	**1. No learning rate converges.** `LR-CONVERGENCE-SWEEP-2026-09-10.md`, under a rule fixed
+     9	before it ran and computing no EE: **21 of 21** route x constant-lr cells fail at 500
+    10	full-batch updates; none of `1e-2` (C1), `1e-3` (C2), `1e-3` (C3) is admissible.
+    11	
+    12	**2. No horizon and no batching fixes it.** `HORIZON-LEVER-2026-09-10.md`, same rule, 4,000-update
+    13	cap: full-batch `NONE`, minibatch `NONE`, and no minibatch advantage at equal wall time either.
+    14	Full-batch at the cap passes held-out R2, ordering and top-1 but fails the objective-motion
+    15	tolerance at **2.961%**, decaying with oscillation.
+    16	
+    17	**3. The sealed head loses to plain linear regression.** Not once, and not on a broken schema:
+    18	
+    19	| route | sealed head | plain linear | gap |
+    20	|---|---:|---:|---:|
+    21	| C2, Q1-v2 schema, LOAO ordering | 0.5131 | **0.6605** | **−0.1474** |
+    22	| C2, widened `(128,64,64)` | 0.5648 | 0.6605 | −0.0957 |
+    23	| C2, **repaired Q2-v2** (4 slots replaced, elevation added) | 0.5531 | **0.6477** | **−0.0946** |
+    24	| C1, level R2 | −0.272 | **−0.1506** | linear better |
+    25	| C1, high-capacity `16-256-256` random-feature ridge | — | **R2 +0.0933, ordering 0.6197** | best observed |
+    26	
+    27	## What this does to two recorded conclusions
+    28	
+    29	**A head that loses to plain linear on the same features has established nothing about the
+    30	target.** Linear regression is a head. If linear extracts more, the target carries more signal
+    31	than the sealed head reports.
+    32	
+    33	- **C2's headline — "the declared C2 target must change rather than the features" — does not
+    34	  follow.** `Q2-SCHEMA-V2-AND-RETEST` is careful and says "the target **or the head**"; the
+    35	  earlier `C2-DECLARED-TARGET-LEARNABILITY-V2` headline foreclosed the head. **The honest
+    36	  statement is the disjunction, and lines 1 and 2 make the head branch the live one.**
+    37	- **C1's "the observed ceiling looks predominantly informational"** is weakened by its own
+    38	  body: a high-capacity fit on the same 16 slots reaches R2 `+0.0933` where the sealed head sits
+    39	  at `−0.272`. The report labels this an "architectural/optimization penalty" — lines 1 and 2
+    40	  now give that penalty a measured cause.
+    41	
+    42	**Neither route is thereby alive.** C1's best observed R2 is `0.0933`, which is low in absolute
+    43	terms. The claim here is narrower and it is about *attribution*: **these were read as
+    44	information ceilings, and at least part of what was measured is a head that does not fit.**
+    45	
+    46	## The preflight that was missing
+    47	
+    48	**Before any declared target is called unlearnable, the head must be shown to fit at all.** The
+    49	cheapest sufficient check is the one already sitting in these reports: **does it beat plain
+    50	linear on the same features?** For C2 it does not, across three schema variants.
+    51	
+    52	This is the same shape as the other preflights missed today — the arm-difference check
+    53	(`SCALE`), the evaluator-path declaration (`SURFACE`), the width derivation (`PANELFIX`). In
+    54	every case the information needed was cheap and the omission surfaced late.
+    55	
+    56	## Sequencing — no new dispatch
+    57	
+    58	`DECAY` is already testing the third lever, a decaying learning rate, against the **unchanged**
+    59	pre-declared rule. The residual shape in line 2 — held-out metrics stable, objective decaying
+    60	but oscillating — is the standard signature that lever addresses.
+    61	
+    62	- If `DECAY` reaches admissibility, the C1 and C2 learnability screens must be **re-run on a
+    63	  converged head** before any target is called unlearnable.
+    64	- If all three levers return `NONE`, the problem is the **objective or the architecture**, and
+    65	  the sealed `(100,50,50)` / `(64,64)` heads losing to linear is then the primary evidence, not
+    66	  a footnote.
+    67	
+    68	**Do not re-run the learnability screens before `DECAY` reports.** Re-running them now would
+    69	measure the same non-fitting head again.
+    70	
+    71	## What is not claimed here
+    72	
+    73	No EE quantity appears in any of the three lines. Loss values and held-out metrics are
+    74	convergence and fit diagnostics only. Nothing here says any route raises EE, and nothing here
+    75	overturns a kill — `KILLTRIAGE` buckets both C1 and C2 declared-target screens as **M**
+    76	(mechanism), and this synthesis does not move them; it questions which mechanism.
+=================== V025-CONTROLLER-RULING-C3-ENCODER-CONTRACT-2026-09-10.md
+     1	# Ruling — the C3 encoder width contract
+     2	
+     3	Date: 2026-09-10 ~16:22Z · Controller
+     4	Proposal from: `PANELFIX`, in its stop-for-authorisation output
+     5	Ruling: **ADOPT THE DERIVATION NOW, DEFER THE FORMAT CHANGE**
+     6	
+     7	## The defect
+     8	
+     9	Four mutually incompatible C3 context widths exist simultaneously, and **no file declares one
+    10	authoritatively**:
+    11	
+    12	| producer | C1 | C2 | C3 |
+    13	|---|---:|---:|---:|
+    14	| v1 run = production encoder (Q1 v1) | 16 | 22 | **240** |
+    15	| v2 run (Q1 v2) | 15 | 22 | **236** |
+    16	| z-view run (Q1 v2 + cross-user z) | 30 | 44 | **296** |
+    17	| the panel PANELBUILD shipped | 16 | 22 | **237** |
+    18	
+    19	**237 is a builder defect**, not a schema: `build_stagec_scoring_panel.py:147` truncated the
+    20	six-field ordered global suffix to three fields and did not fail. The other three are correct
+    21	consequences of their Q1 schemas.
+    22	
+    23	**Both sides derive the width from checkpoint weights and compare against whatever the panel
+    24	happens to contain.** Neither consults a declared constant. That is why the drift was silent
+    25	and why it surfaced only at scoring time.
+    26	
+    27	## What is already established, and is stronger than the proposal assumed
+    28	
+    29	The width is **not** an arbitrary per-producer choice. It is a function:
+    30	
+    31	```
+    32	member_width = 2 * Q1_width + 6
+    33	C3_width     = 1 + 2 * member_width + 4*7 + (32*4 + 1) + 6
+    34	```
+    35	
+    36	Verified against **three independent real checkpoints**: `Q1=16 -> 240`, `Q1=15 -> 236`,
+    37	`Q1=30 -> 296`. The z case was **predicted before it was measured** and matched exactly.
+    38	
+    39	**A contract does not need to be stored to be checkable — it needs to be derivable and
+    40	enforced.** That changes the ruling.
+    41	
+    42	## Ruling
+    43	
+    44	**1. ADOPT, effective immediately, as validation rather than format.**
+    45	
+    46	Every producer and every consumer of a C3 state vector must, before use, derive the expected
+    47	width from the Q1 schema in hand and **fail closed** on mismatch. No checkpoint field, no panel
+    48	field, no format version is required for this. It can be added today, to code that is already
+    49	running, without touching the three live runs.
+    50	
+    51	**2. ADOPT the fail-closed builder fix.** Already authorised to `PANELFIX2`: silent truncation
+    52	is the defect that produced 237. A build that now fails was always wrong.
+    53	
+    54	**3. DEFER the stored-digest half of the proposal to the next training generation.**
+    55	
+    56	Storing an authenticated encoder-contract digest in both checkpoint and panel, and comparing
+    57	digests before scoring, is the right end state. **It is a checkpoint format change, and three
+    58	16-seed runs are writing checkpoints in the current format right now** (landing ~17:05Z,
+    59	~17:20Z, ~18:20Z). Changing the format today would strand them.
+    60	
+    61	It is declared here as the **next generation's** format, to be applied when a training run is
+    62	next launched from a clean start — not retrofitted.
+    63	
+    64	**4. REJECT one-panel-per-schema as the permanent answer.** `PANELZ` is asked whether one panel
+    65	carrying a per-schema state block can serve all widths. If it can, that is the target: the
+    66	20-anchor **physical** content is schema-independent — the catalogue, the full-buffer outcomes,
+    67	the fixed point, the anytime incumbent — and only the state encoding varies. Rebuilding
+    68	identical physics per schema is waste and is itself a drift surface.
+    69	
+    70	## Why this is engineering, not science
+    71	
+    72	**No number changes.** No estimand, reference, numerator or arm definition is affected. This
+    73	governs whether two artefacts may be compared at all, not what the comparison says. It touches
+    74	no sealed declaration and requires no versioned model amendment.
+    75	
+    76	## The general rule this instance is an example of
+    77	
+    78	**A quantity that three producers compute independently and no file declares will drift, and it
+    79	will surface at the most expensive step.** Here it surfaced at scoring, an hour before three
+    80	trainings landed, and only because the scorer was run against a real checkpoint instead of
+    81	being trusted.
+    82	
+    83	Where a quantity is **derivable**, enforce the derivation at every boundary and fail closed.
+    84	Where it is **chosen**, one file declares it and everyone reads that file. What must not happen
+    85	is what happened here: everyone infers it from whatever they were handed.
+=================== V025-CONTROLLER-DECLARATION-SCHEDULE-CHOICE-2026-09-10.md
+     1	# Declaration — the training schedule, chosen before any EE exists
+     2	
+     3	Date: 2026-09-10 ~16:32Z · Controller
+     4	**No EE quantity exists for any schedule. None was computed anywhere in this chain.**
+     5	
+     6	## What was established, and by whom
+     7	
+     8	Three jobs, all using a convergence rule fixed in `.scratch/lr-convergence-sweep/spec.md`
+     9	**before the first of them ran**, all computing **no EE**:
+    10	
+    11	| job | finding |
+    12	|---|---|
+    13	| `LRSWEEP` | 21 of 21 route x **constant** learning-rate cells fail at 500 full-batch updates |
+    14	| `HORIZON` | at a 4,000-update cap, **more steps** `NONE` and **minibatching** `NONE`, with no minibatch advantage at equal wall time |
+    15	| `DECAY` | **three of four decay schedules reach the unchanged criterion** |
+    16	
+    17	`DECAY` reproduced `HORIZON` Arm A's parity exactly before reporting anything, and it was
+    18	instructed **not to name a winner**. It did not.
+    19	
+    20	| schedule | start | first admissible update | 16-seed x 5-arm cost |
+    21	|---|---:|---:|---:|
+    22	| **step decay**, factor 0.1 after 2,000 and 3,000 | `1e-3` | **2,200** | **0.28–0.32 CPU-h** |
+    23	| step decay, same shape | `3e-3` | 2,300 | 0.32–0.35 CPU-h |
+    24	| plateau decay, factor 0.5, `n=3` | `1e-3` | 2,800 | 0.36–0.40 CPU-h |
+    25	| cosine to zero at 4,000 | `1e-3` | 3,200 | 0.47–0.55 CPU-h |
+    26	| inverse-time, `tau=1000` | `1e-3` | **NONE** (objective motion 1.9460% vs 1%) | — |
+    27	
+    28	## The choice, and the grounds
+    29	
+    30	**Adopt step decay from `1e-3`, factor 0.1 after 2,000 and after 3,000 updates.**
+    31	
+    32	Two grounds, **both computable without any EE and both known before this declaration**:
+    33	
+    34	1. **Earliest first-admissible update** — 2,200, the smallest of the admissible set.
+    35	2. **Lowest extrapolated production cost** — 0.28–0.32 CPU-hours, the smallest of the
+    36	   admissible set.
+    37	
+    38	**It wins on both simultaneously, so no weighting between them has to be argued.** Had they
+    39	disagreed I would have had to declare a weighting, and that declaration would have been the
+    40	place an outcome could leak in. It did not arise.
+    41	
+    42	**What was NOT used as a ground:** predictive quality at any epoch, any held-out metric level,
+    43	any route contrast, and any EE quantity. `DECAY` reports held-out metrics as convergence
+    44	diagnostics only; they play no part here.
+    45	
+    46	## The horizon is a stopping rule, not a literal
+    47	
+    48	Run to a stated cap with cadence-100 checkpoints and take **the first checkpoint satisfying the
+    49	pre-declared stability condition** — objective relative motion `<= 0.01`, held-out level R2
+    50	within `0.01`, ordering and top-1 each within `0.005`, over the preceding 100 updates. If no
+    51	checkpoint satisfies it, the run reports **non-convergent** and no head from it may be used to
+    52	say a route is dead.
+    53	
+    54	`2,200` is the expected first-admissible point for C3 on this panel, not a horizon literal. Set
+    55	the cap at 4,000 so the stopping rule has room, and record where it actually stopped.
+    56	
+    57	## Consequences for tonight's three runs
+    58	
+    59	The v1 (13:55Z), v2 (14:25Z) and z (15:12Z) runs are all **500 constant-`1e-3` updates**.
+    60	They are therefore **under-run by construction**, and that reading was fixed in
+    61	`V025-CONTROLLER-PREDECLARATION-ZSCORE-AND-HORIZON-2026-09-10.md` **before** any contrast from
+    62	them existed.
+    63	
+    64	**They still run to completion and are still scored.** They remain a valid **paired** comparison
+    65	at equal budget, and they are the only artefacts the rebuilt panels can be acceptance-tested
+    66	against. What they cannot do is establish that a route is dead.
+    67	
+    68	**A converged rerun costs about 0.3 CPU-hours per configuration.** That is the obvious next
+    69	generation, and per `V025-CONTROLLER-RULING-C3-ENCODER-CONTRACT-2026-09-10.md` it is the launch
+    70	at which the stored encoder-contract digest is introduced, since it starts from a clean state.
+    71	
+    72	## Not authorised here
+    73	
+    74	This declaration fixes the schedule. **It does not authorise a rerun.** Two things gate that:
+    75	`SCALE`, which may show the five arms never make different decisions — in which case no schedule
+    76	makes the ablation informative — and `STATICS2`, which is rebuilding the reference scale the
+    77	rerun would be measured against. Launching before those report would be launching on a hunch.

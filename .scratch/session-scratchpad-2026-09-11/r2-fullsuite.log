@@ -1,0 +1,2768 @@
+.......................................................s........F....... [  3%]
+........................................................................ [  6%]
+........................................................................ [  9%]
+........................................................................ [ 12%]
+........................................................................ [ 15%]
+........................................................................ [ 18%]
+........................................................................ [ 21%]
+........................................................................ [ 24%]
+........................................................................ [ 27%]
+........................................................................ [ 30%]
+........................................................................ [ 34%]
+........................................................................ [ 37%]
+........................................................................ [ 40%]
+........................................................................ [ 43%]
+..........................................F............................. [ 46%]
+........................................................................ [ 49%]
+........................................................................ [ 52%]
+........................................................................ [ 55%]
+........................................................................ [ 58%]
+.................FFFFFFFFFFFFFFFFFFFFFFFFF.............................. [ 61%]
+.......................................................FFFFFFFF...FFFFF. [ 65%]
+........................................................................ [ 68%]
+........................................................................ [ 71%]
+........................................................................ [ 74%]
+........................................................................ [ 77%]
+.............s.s............FFFFFFFFFFF......F...F............F......... [ 80%]
+....................................................F................... [ 83%]
+.............................................s.......................... [ 86%]
+........................................................................ [ 89%]
+........................................................................ [ 92%]
+........................................................................ [ 96%]
+........................................................................ [ 99%]
+....................                                                     [100%]
+=================================== FAILURES ===================================
+_________________ test_no_new_module_mentions_a_forbidden_term _________________
+
+    def test_no_new_module_mentions_a_forbidden_term():
+        offenders: list[str] = []
+        for path in _python_files():
+            relative = path.relative_to(SRC).as_posix()
+            allowed = AWAITING_W09.get(relative, set())
+            text = path.read_text().lower()
+            for term in FORBIDDEN_TERMS:
+                if term in text and term not in allowed:
+                    offenders.append(f"{relative}: {term}")
+>       assert not offenders, "forbidden vocabulary outside its exemption:\n" + "\n".join(
+            offenders
+        )
+E       AssertionError: forbidden vocabulary outside its exemption:
+E         algorithms/ee_axis_action_shared.py: catfish
+E         algorithms/ee_axis_action_shared_meanmax.py: catfish
+E         algorithms/ee_axis_lcsrs_c3_head.py: catfish
+E         algorithms/ee_axis_lcsrs_three_route.py: catfish
+E         algorithms/ee_axis_pairwise.py: catfish
+E         algorithms/ee_axis_relational_zr_c3_head.py: catfish
+E         algorithms/ee_axis_relational_zr_c3_head_v019.py: catfish
+E         algorithms/ee_axis_v014_head.py: catfish
+E         algorithms/ee_axis_v014_q3_support_head.py: catfish
+E         algorithms/ee_axis_v04_c2_parallel.py: catfish
+E         algorithms/ee_axis_v04_hybrid.py: catfish
+E         algorithms/ee_axis_v06_c2_k1.py: catfish
+E         algorithms/ee_axis_v07_c2_fast_q2.py: catfish
+E         algorithms/ee_axis_v07_c2_focal_next.py: catfish
+E         env/observation_provenance.py: catfish
+E         runtime/ee_axis_b402_c3_softkl.py: catfish
+E         runtime/ee_axis_c1_dull_source.py: catfish
+E         runtime/ee_axis_c1_selector.py: catfish
+E         runtime/ee_axis_c2_neutral_source.py: catfish
+E         runtime/ee_axis_calibration.py: catfish
+E         runtime/ee_axis_coalition_residual_c3.py: catfish
+E         runtime/ee_axis_e1_c2_schedule.py: catfish
+E         runtime/ee_axis_e1_ladder.py: catfish
+E         runtime/ee_axis_e1_split.py: catfish
+E         runtime/ee_axis_evaluation.py: catfish
+E         runtime/ee_axis_expected_zr_c3.py: catfish
+E         runtime/ee_axis_instrument_validity.py: catfish
+E         runtime/ee_axis_joint_c3.py: catfish
+E         runtime/ee_axis_lcsrs_c3_dataset.py: catfish
+E         runtime/ee_axis_lcsrs_c3_encoder.py: catfish
+E         runtime/ee_axis_lcsrs_c3_gate_fit.py: catfish
+E         runtime/ee_axis_lcsrs_c3_learner.py: catfish
+E         runtime/ee_axis_lcsrs_c3_pipeline.py: catfish
+E         runtime/ee_axis_lcsrs_c3_placebo.py: catfish
+E         runtime/ee_axis_lcsrs_c3_source_artifact.py: catfish
+E         runtime/ee_axis_lcsrs_c3_state.py: v_max
+E         runtime/ee_axis_lcsrs_c3_state.py: catfish
+E         runtime/ee_axis_lcsrs_c3_teacher.py: catfish
+E         runtime/ee_axis_lcsrs_c3_topology.py: catfish
+E         runtime/ee_axis_matched_opening.py: catfish
+E         runtime/ee_axis_opening_dataset.py: catfish
+E         runtime/ee_axis_opening_pairs.py: catfish
+E         runtime/ee_axis_opening_runner.py: catfish
+E         runtime/ee_axis_opening_source.py: catfish
+E         runtime/ee_axis_ops3.py: catfish
+E         runtime/ee_axis_ops3_live.py: catfish
+E         runtime/ee_axis_pilot_runner.py: catfish
+E         runtime/ee_axis_pnfe.py: catfish
+E         runtime/ee_axis_pnfe_live.py: catfish
+E         runtime/ee_axis_reference_probe.py: catfish
+E         runtime/ee_axis_relational_zr_c3.py: catfish
+E         runtime/ee_axis_source_selectors.py: catfish
+E         runtime/ee_axis_state.py: catfish
+E         runtime/ee_axis_targets.py: catfish
+E         runtime/ee_axis_temporal_dataset.py: catfish
+E         runtime/ee_axis_temporal_pairs.py: catfish
+E         runtime/ee_axis_training_schedule.py: catfish
+E         runtime/ee_axis_v014_q2_state.py: catfish
+E         runtime/ee_axis_v014_q3_state.py: catfish
+E         runtime/ee_axis_v015_c3_csr.py: catfish
+E         runtime/ee_axis_v015_c3_pivotal.py: catfish
+E         runtime/ee_axis_v015_c3_reference_state.py: catfish
+E         runtime/ee_axis_v015_c3_selector.py: catfish
+E         runtime/ee_axis_v015_c3_state.py: catfish
+E         runtime/ee_axis_v016_c3_origin_state.py: catfish
+E         runtime/ee_axis_v023_episode_screen.py: catfish
+E         runtime/ee_axis_v04_c2_q13_continuation.py: catfish
+E         runtime/ee_axis_v04_c2_sibling_schedule.py: catfish
+E         runtime/ee_axis_v04_c3_dataset.py: catfish
+E         runtime/ee_axis_v04_c3_opening_source.py: catfish
+E         runtime/ee_axis_v04_c3_schedule.py: catfish
+E         runtime/ee_axis_v04_c3_selector.py: catfish
+E         runtime/ee_axis_v04_c3_state.py: catfish
+E         runtime/ee_axis_v05_c2_controlled_tape.py: catfish
+E         runtime/ee_axis_v06_c2_k1.py: catfish
+E         runtime/ee_axis_v06_c2_k1_formal_verdict_writer.py: catfish
+E         runtime/ee_axis_v06_c2_k1_learner.py: catfish
+E         runtime/ee_axis_v06_c2_k1_learner_contract_v2.py: catfish
+E         runtime/ee_axis_v06_c2_k1_learner_prep.py: catfish
+E         runtime/ee_axis_v06_c2_k1_state_authority.py: catfish
+E         runtime/ee_axis_v07_c2_d2.py: catfish
+E         runtime/ee_axis_v07_c2_dataset.py: catfish
+E         runtime/ee_axis_v07_c2_fast_proxy.py: catfish
+E         runtime/ee_axis_v07_c2_focal_next.py: catfish
+E         runtime/ee_axis_v07_c2_parallel_manifest.py: catfish
+E         runtime/ee_axis_v07_c2_parallel_targets.py: catfish
+E         runtime/ee_axis_v07_c2_policy.py: catfish
+E         runtime/ee_axis_v07_c2_robust_proxy.py: catfish
+E         runtime/ee_axis_v07_c2_state.py: catfish
+E         runtime/ee_axis_zero_marginal_c3.py: catfish
+E         runtime/ee_axis_zero_marginal_c3_live.py: catfish
+E         runtime/ee_surplus_targets.py: catfish
+E       assert not ['algorithms/ee_axis_action_shared.py: catfish', 'algorithms/ee_axis_action_shared_meanmax.py: catfish', 'algorithms/e...e.py: catfish', 'algorithms/ee_axis_pairwise.py: catfish', 'algorithms/ee_axis_relational_zr_c3_head.py: catfish', ...]
+
+tests/test_g6_forbidden_list.py:67: AssertionError
+____ test_balanced_logit_prior_correction_and_thresholded_nonnegative_bonus ____
+
+    def test_balanced_logit_prior_correction_and_thresholded_nonnegative_bonus() -> None:
+        corrected = natural_probability_from_balanced_logit(
+            torch.tensor([0.0]), positive_prior=0.04
+        )
+        assert float(corrected[0]) == pytest.approx(0.04)
+    
+        learner = _learner()
+        states, masks, references, targets, compatibility = _batch()
+        with torch.no_grad():
+            for network in (learner.classifier, learner.positive_amplitude):
+                for parameter in network.parameters():
+                    parameter.zero_()
+        metrics = learner.update(states, masks, references, targets, compatibility)
+        assert metrics["support_count"] == 1
+        assert metrics["comparison_count"] == 4
+>       assert metrics["balanced_bce"] == pytest.approx(np.log(2.0))
+E       assert 1.0397207736968994 == 0.6931471805599453 ± 6.9e-07
+E         
+E         comparison failed
+E         Obtained: 1.0397207736968994
+E         Expected: 0.6931471805599453 ± 6.9e-07
+
+tests/test_w158_ee_axis_v014_q3_support_head.py:74: AssertionError
+_____ test_encoder_emits_exact_shapes_bounded_immutable_and_digest_stable ______
+
+    def test_encoder_emits_exact_shapes_bounded_immutable_and_digest_stable() -> None:
+>       fixture = _fixture(trap_sinr=True)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:265: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_________ test_predecision_capture_binds_topology_before_pair_features _________
+
+    def test_predecision_capture_binds_topology_before_pair_features() -> None:
+>       captured = _capture(_fixture())
+                            ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:283: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+__________ test_physical_pair_destination_tie_and_occupancy_sentinels __________
+
+    def test_physical_pair_destination_tie_and_occupancy_sentinels() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:297: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+___________ test_relation_mask_has_focal_partner_and_physical_union ____________
+
+    def test_relation_mask_has_focal_partner_and_physical_union() -> None:
+>       view = _encode(_fixture())
+                       ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:320: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_________ test_candidate_sinr_and_rng_or_live_state_do_not_change_view _________
+
+    def test_candidate_sinr_and_rng_or_live_state_do_not_change_view() -> None:
+>       fixture = _fixture(trap_sinr=True)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:334: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_______ test_native_observation_event_is_bound_to_q12_and_outer_capture ________
+
+    def test_native_observation_event_is_bound_to_q12_and_outer_capture() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:343: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_____ test_temporal_context_is_candidate_independent_and_missing_is_exact ______
+
+    def test_temporal_context_is_candidate_independent_and_missing_is_exact() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:381: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_______ test_warm_started_segment_age_saturates_at_episode_length[0-0.0] _______
+
+age_steps = 0, expected = 0.0
+
+    @pytest.mark.parametrize(
+        ("age_steps", "expected"),
+        (
+            (0, 0.0),
+            (2, 0.2),
+            (9, 0.9),
+            (10, 1.0),
+            (11, 1.0),
+            (18, 1.0),
+        ),
+    )
+    def test_warm_started_segment_age_saturates_at_episode_length(
+        age_steps: int | np.integer,
+        expected: float,
+    ) -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_______ test_warm_started_segment_age_saturates_at_episode_length[2-0.2] _______
+
+age_steps = 2, expected = 0.2
+
+    @pytest.mark.parametrize(
+        ("age_steps", "expected"),
+        (
+            (0, 0.0),
+            (2, 0.2),
+            (9, 0.9),
+            (10, 1.0),
+            (11, 1.0),
+            (18, 1.0),
+        ),
+    )
+    def test_warm_started_segment_age_saturates_at_episode_length(
+        age_steps: int | np.integer,
+        expected: float,
+    ) -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_______ test_warm_started_segment_age_saturates_at_episode_length[9-0.9] _______
+
+age_steps = 9, expected = 0.9
+
+    @pytest.mark.parametrize(
+        ("age_steps", "expected"),
+        (
+            (0, 0.0),
+            (2, 0.2),
+            (9, 0.9),
+            (10, 1.0),
+            (11, 1.0),
+            (18, 1.0),
+        ),
+    )
+    def test_warm_started_segment_age_saturates_at_episode_length(
+        age_steps: int | np.integer,
+        expected: float,
+    ) -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+______ test_warm_started_segment_age_saturates_at_episode_length[10-1.0] _______
+
+age_steps = 10, expected = 1.0
+
+    @pytest.mark.parametrize(
+        ("age_steps", "expected"),
+        (
+            (0, 0.0),
+            (2, 0.2),
+            (9, 0.9),
+            (10, 1.0),
+            (11, 1.0),
+            (18, 1.0),
+        ),
+    )
+    def test_warm_started_segment_age_saturates_at_episode_length(
+        age_steps: int | np.integer,
+        expected: float,
+    ) -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+______ test_warm_started_segment_age_saturates_at_episode_length[11-1.0] _______
+
+age_steps = 11, expected = 1.0
+
+    @pytest.mark.parametrize(
+        ("age_steps", "expected"),
+        (
+            (0, 0.0),
+            (2, 0.2),
+            (9, 0.9),
+            (10, 1.0),
+            (11, 1.0),
+            (18, 1.0),
+        ),
+    )
+    def test_warm_started_segment_age_saturates_at_episode_length(
+        age_steps: int | np.integer,
+        expected: float,
+    ) -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+______ test_warm_started_segment_age_saturates_at_episode_length[18-1.0] _______
+
+age_steps = 18, expected = 1.0
+
+    @pytest.mark.parametrize(
+        ("age_steps", "expected"),
+        (
+            (0, 0.0),
+            (2, 0.2),
+            (9, 0.9),
+            (10, 1.0),
+            (11, 1.0),
+            (18, 1.0),
+        ),
+    )
+    def test_warm_started_segment_age_saturates_at_episode_length(
+        age_steps: int | np.integer,
+        expected: float,
+    ) -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:459: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+____ test_old_incumbent_missing_from_candidate_surface_keeps_exact_sentinel ____
+
+    def test_old_incumbent_missing_from_candidate_surface_keeps_exact_sentinel() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:495: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+______ test_stale_slot_index_geometry_is_rejected_against_physical_driver ______
+
+    def test_stale_slot_index_geometry_is_rejected_against_physical_driver() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:523: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+__ test_same_occupancy_but_changed_victim_geometry_changes_relational_physics __
+
+    def test_same_occupancy_but_changed_victim_geometry_changes_relational_physics() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:530: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+___ test_slot_permutation_preserves_physical_features_and_lowest_native_tie ____
+
+    def test_slot_permutation_preserves_physical_features_and_lowest_native_tie() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:561: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+____________ test_rejects_opening_mask_drift_and_illegal_reference _____________
+
+    def test_rejects_opening_mask_drift_and_illegal_reference() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:607: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_______________ test_rejects_raw_q12_and_a_forged_opening_subset _______________
+
+    def test_rejects_raw_q12_and_a_forged_opening_subset() -> None:
+>       fixture = _fixture()
+                  ^^^^^^^^^^
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:643: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:223: in _fixture
+    _detached_q12(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = array([[  10.,    4.,    4., -100., -100., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100...0., -100., -100., -100., -100.,
+        -100., -100., -100., -100., -100., -100., -100., -100., -100.,
+        -100.]])
+source_state_digest = '3981a963c6b440b80ab797b94689983b4cf7c7d295e9606347f627f6a7e26483'
+native_observation_event_digest = 'dba77be088e615b7751e87c78c0aa3a55e91448ce22cc0d7ea345579c59f008d'
+
+    def _detached_q12(
+        values: np.ndarray,
+        *,
+        source_state_digest: str,
+        native_observation_event_digest: str,
+    ) -> DetachedQ12Snapshot:
+        q1 = np.asarray(values, dtype=np.float32)
+        q2 = np.zeros_like(q1)
+        model_digest = hashlib.sha256(q1.tobytes(order="C") + b"model").hexdigest()
+>       return DetachedQ12Snapshot(
+            q1=q1,
+            q2=q2,
+            source_state_digest=source_state_digest,
+            native_observation_event_digest=native_observation_event_digest,
+            model_digest=model_digest,
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w184_ee_axis_lcsrs_c3_encoder.py:49: TypeError
+_____ test_exactly_three_independent_networks_optimizers_and_route_shapes ______
+
+    def test_exactly_three_independent_networks_optimizers_and_route_shapes() -> None:
+        model = EEAxisLCSRSThreeRoute(_config(), train_seed=17)
+        assert len(model.q_networks) == 3
+        assert len(model.optimizers) == 3
+        parameter_ids = [
+            {id(parameter) for parameter in network.parameters()}
+            for network in model.q_networks
+        ]
+        assert not parameter_ids[0] & parameter_ids[1]
+        assert not parameter_ids[0] & parameter_ids[2]
+        assert not parameter_ids[1] & parameter_ids[2]
+    
+        states = np.zeros((3, 228), dtype=np.float32)
+>       snapshot = _capture_q12(model, states)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:97: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = EEAxisLCSRSThreeRoute(
+  (q_networks): ModuleList(
+    (0): ActionSharedQNetwork(
+      (scorer): Sequential(
+        ...s=64, bias=True)
+        (3): ReLU()
+        (4): Linear(in_features=64, out_features=1, bias=True)
+      )
+    )
+  )
+)
+states = array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0....., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0.]], dtype=float32)
+
+    def _capture_q12(model: EEAxisLCSRSThreeRoute, states: object) -> DetachedQ12Snapshot:
+>       return model.capture_q12(
+            states,
+            native_observation_event_digest=_NATIVE_EVENT_DIGEST,
+        )
+E       TypeError: EEAxisLCSRSThreeRoute.capture_q12() missing 2 required keyword-only arguments: 'q2_states' and 'q2_action_masks'
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:46: TypeError
+________ test_one_sum_one_argmax_uses_snapshot_without_recomputing_q12 _________
+
+    def test_one_sum_one_argmax_uses_snapshot_without_recomputing_q12() -> None:
+        model = EEAxisLCSRSThreeRoute(_config(), train_seed=23)
+>       snapshot = _capture_q12(model, np.zeros((2, 228), dtype=np.float32))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = EEAxisLCSRSThreeRoute(
+  (q_networks): ModuleList(
+    (0): ActionSharedQNetwork(
+      (scorer): Sequential(
+        ...s=64, bias=True)
+        (3): ReLU()
+        (4): Linear(in_features=64, out_features=1, bias=True)
+      )
+    )
+  )
+)
+states = array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0....., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0.]], dtype=float32)
+
+    def _capture_q12(model: EEAxisLCSRSThreeRoute, states: object) -> DetachedQ12Snapshot:
+>       return model.capture_q12(
+            states,
+            native_observation_event_digest=_NATIVE_EVENT_DIGEST,
+        )
+E       TypeError: EEAxisLCSRSThreeRoute.capture_q12() missing 2 required keyword-only arguments: 'q2_states' and 'q2_action_masks'
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:46: TypeError
+____________ test_q12_snapshot_binds_source_state_and_model_digests ____________
+
+    def test_q12_snapshot_binds_source_state_and_model_digests() -> None:
+        model = EEAxisLCSRSThreeRoute(_config(), train_seed=24)
+        first_states = np.zeros((2, 228), dtype=np.float32)
+>       first = _capture_q12(model, first_states)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:126: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = EEAxisLCSRSThreeRoute(
+  (q_networks): ModuleList(
+    (0): ActionSharedQNetwork(
+      (scorer): Sequential(
+        ...s=64, bias=True)
+        (3): ReLU()
+        (4): Linear(in_features=64, out_features=1, bias=True)
+      )
+    )
+  )
+)
+states = array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0....., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0.]], dtype=float32)
+
+    def _capture_q12(model: EEAxisLCSRSThreeRoute, states: object) -> DetachedQ12Snapshot:
+>       return model.capture_q12(
+            states,
+            native_observation_event_digest=_NATIVE_EVENT_DIGEST,
+        )
+E       TypeError: EEAxisLCSRSThreeRoute.capture_q12() missing 2 required keyword-only arguments: 'q2_states' and 'q2_action_masks'
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:46: TypeError
+_________ test_c3_view_reference_must_equal_snapshot_masked_q12_argmax _________
+
+    def test_c3_view_reference_must_equal_snapshot_masked_q12_argmax() -> None:
+        model = EEAxisLCSRSThreeRoute(_config(), train_seed=29)
+>       snapshot = _capture_q12(model, np.zeros((2, 228), dtype=np.float32))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:146: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = EEAxisLCSRSThreeRoute(
+  (q_networks): ModuleList(
+    (0): ActionSharedQNetwork(
+      (scorer): Sequential(
+        ...s=64, bias=True)
+        (3): ReLU()
+        (4): Linear(in_features=64, out_features=1, bias=True)
+      )
+    )
+  )
+)
+states = array([[0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0....., 0.,
+        0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+        0., 0., 0., 0.]], dtype=float32)
+
+    def _capture_q12(model: EEAxisLCSRSThreeRoute, states: object) -> DetachedQ12Snapshot:
+>       return model.capture_q12(
+            states,
+            native_observation_event_digest=_NATIVE_EVENT_DIGEST,
+        )
+E       TypeError: EEAxisLCSRSThreeRoute.capture_q12() missing 2 required keyword-only arguments: 'q2_states' and 'q2_action_masks'
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:46: TypeError
+_________________ test_loads_only_q1_q2_from_legacy_background _________________
+
+    def test_loads_only_q1_q2_from_legacy_background() -> None:
+        config = _config()
+        legacy = EEAxisActionSharedTrainer(config.q12, train_seed=31)
+        model = EEAxisLCSRSThreeRoute(config, train_seed=37)
+        q3_before = deepcopy(model.q3.state_dict())
+>       model.load_q12_background(legacy.checkpoint_state(update_count=3000))
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:165: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/mcrl/algorithms/ee_axis_lcsrs_three_route.py:439: in load_q12_background
+    self.q2.load_state_dict(networks[1])
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = V014ActionSetQNetwork(
+  (scorer): Sequential(
+    (0): Linear(in_features=48, out_features=100, bias=True)
+    (1): T...atures=50, out_features=50, bias=True)
+    (5): Tanh()
+    (6): Linear(in_features=50, out_features=1, bias=True)
+  )
+)
+state_dict = OrderedDict({'scorer.0.weight': tensor([[ 0.0115, -0.0295, -0.1916, -0.0320,  0.2106,  0.1054, -0.2802,  0.0649,
+     ...          0.0622, -0.0223, -0.0728, -0.0579, -0.1378, -0.2394,  0.1550,  0.1759]]), 'scorer.2.bias': tensor([0.1157])})
+strict = True, assign = False
+
+    def load_state_dict(
+        self, state_dict: Mapping[str, Any], strict: bool = True, assign: bool = False
+    ):
+        r"""Copy parameters and buffers from :attr:`state_dict` into this module and its descendants.
+    
+        If :attr:`strict` is ``True``, then
+        the keys of :attr:`state_dict` must exactly match the keys returned
+        by this module's :meth:`~torch.nn.Module.state_dict` function.
+    
+        .. warning::
+            If :attr:`assign` is ``True`` the optimizer must be created after
+            the call to :attr:`load_state_dict` unless
+            :func:`~torch.__future__.get_swap_module_params_on_conversion` is ``True``.
+    
+        Args:
+            state_dict (dict): a dict containing parameters and
+                persistent buffers.
+            strict (bool, optional): whether to strictly enforce that the keys
+                in :attr:`state_dict` match the keys returned by this module's
+                :meth:`~torch.nn.Module.state_dict` function. Default: ``True``
+            assign (bool, optional): When set to ``False``, the properties of the tensors
+                in the current module are preserved whereas setting it to ``True`` preserves
+                properties of the Tensors in the state dict. The only
+                exception is the ``requires_grad`` field of :class:`~torch.nn.Parameter`
+                for which the value from the module is preserved. Default: ``False``
+    
+        Returns:
+            ``NamedTuple`` with ``missing_keys`` and ``unexpected_keys`` fields:
+                * ``missing_keys`` is a list of str containing any keys that are expected
+                    by this module but missing from the provided ``state_dict``.
+                * ``unexpected_keys`` is a list of str containing the keys that are not
+                    expected by this module but present in the provided ``state_dict``.
+    
+        Note:
+            If a parameter or buffer is registered as ``None`` and its corresponding key
+            exists in :attr:`state_dict`, :meth:`load_state_dict` will raise a
+            ``RuntimeError``.
+        """
+        if not isinstance(state_dict, Mapping):
+            raise TypeError(
+                f"Expected state_dict to be dict-like, got {type(state_dict)}."
+            )
+    
+        missing_keys: list[str] = []
+        unexpected_keys: list[str] = []
+        error_msgs: list[str] = []
+    
+        # copy state_dict so _load_from_state_dict can modify it
+        metadata = getattr(state_dict, "_metadata", None)
+        state_dict = OrderedDict(state_dict)
+        if metadata is not None:
+            # mypy isn't aware that "_metadata" exists in state_dict
+            state_dict._metadata = metadata  # type: ignore[attr-defined]
+    
+        def load(module, local_state_dict, prefix="") -> None:
+            local_metadata = {} if metadata is None else metadata.get(prefix[:-1], {})
+            if assign:
+                local_metadata["assign_to_params_buffers"] = assign
+            module._load_from_state_dict(
+                local_state_dict,
+                prefix,
+                local_metadata,
+                True,
+                missing_keys,
+                unexpected_keys,
+                error_msgs,
+            )
+            for name, child in module._modules.items():
+                if child is not None:
+                    child_prefix = prefix + name + "."
+                    child_state_dict = {
+                        k: v
+                        for k, v in local_state_dict.items()
+                        if k.startswith(child_prefix)
+                    }
+                    load(child, child_state_dict, child_prefix)  # noqa: F821
+    
+            # Note that the hook can modify missing_keys and unexpected_keys.
+            incompatible_keys = _IncompatibleKeys(missing_keys, unexpected_keys)
+            for hook in module._load_state_dict_post_hooks.values():
+                out = hook(module, incompatible_keys)
+                if out is not None:
+                    raise AssertionError(
+                        "Hooks registered with ``register_load_state_dict_post_hook`` are not "
+                        "expected to return new values, if incompatible_keys need to be modified, "
+                        "it should be done inplace."
+                    )
+    
+        load(self, state_dict)
+        del load
+    
+        if strict:
+            if len(unexpected_keys) > 0:
+                error_msgs.insert(
+                    0,
+                    "Unexpected key(s) in state_dict: {}. ".format(
+                        ", ".join(f'"{k}"' for k in unexpected_keys)
+                    ),
+                )
+            if len(missing_keys) > 0:
+                error_msgs.insert(
+                    0,
+                    "Missing key(s) in state_dict: {}. ".format(
+                        ", ".join(f'"{k}"' for k in missing_keys)
+                    ),
+                )
+    
+        if len(error_msgs) > 0:
+>           raise RuntimeError(
+                "Error(s) in loading state_dict for {}:\n\t{}".format(
+                    self.__class__.__name__, "\n\t".join(error_msgs)
+                )
+            )
+E           RuntimeError: Error(s) in loading state_dict for V014ActionSetQNetwork:
+E           	Missing key(s) in state_dict: "scorer.4.weight", "scorer.4.bias", "scorer.6.weight", "scorer.6.bias". 
+E           	size mismatch for scorer.0.weight: copying a param with shape torch.Size([16, 12]) from checkpoint, the shape in current model is torch.Size([100, 48]).
+E           	size mismatch for scorer.0.bias: copying a param with shape torch.Size([16]) from checkpoint, the shape in current model is torch.Size([100]).
+E           	size mismatch for scorer.2.weight: copying a param with shape torch.Size([1, 16]) from checkpoint, the shape in current model is torch.Size([50, 100]).
+E           	size mismatch for scorer.2.bias: copying a param with shape torch.Size([1]) from checkpoint, the shape in current model is torch.Size([50]).
+
+.venv/lib/python3.12/site-packages/torch/nn/modules/module.py:2638: RuntimeError
+___________ test_three_route_checkpoint_round_trip_and_schema_guard ____________
+
+    def test_three_route_checkpoint_round_trip_and_schema_guard() -> None:
+        config = _config()
+        source = EEAxisLCSRSThreeRoute(config, train_seed=41)
+        state = source.checkpoint_state(update_count=12)
+        target = EEAxisLCSRSThreeRoute(config, train_seed=41)
+        assert target.load_checkpoint_state(state) == 12
+        probe = np.ones((2, 228), dtype=np.float32)
+>       first = _capture_q12(source, probe)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:183: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+model = EEAxisLCSRSThreeRoute(
+  (q_networks): ModuleList(
+    (0): ActionSharedQNetwork(
+      (scorer): Sequential(
+        ...s=64, bias=True)
+        (3): ReLU()
+        (4): Linear(in_features=64, out_features=1, bias=True)
+      )
+    )
+  )
+)
+states = array([[1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.,
+        1., 1., 1., 1., 1., 1., 1., 1., 1., 1....., 1.,
+        1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1., 1.,
+        1., 1., 1., 1.]], dtype=float32)
+
+    def _capture_q12(model: EEAxisLCSRSThreeRoute, states: object) -> DetachedQ12Snapshot:
+>       return model.capture_q12(
+            states,
+            native_observation_event_digest=_NATIVE_EVENT_DIGEST,
+        )
+E       TypeError: EEAxisLCSRSThreeRoute.capture_q12() missing 2 required keyword-only arguments: 'q2_states' and 'q2_action_masks'
+
+tests/test_w185_ee_axis_lcsrs_three_route.py:46: TypeError
+________ test_anchor_enumerates_exact_two_pair_and_exact_three_no_close ________
+
+    def test_anchor_enumerates_exact_two_pair_and_exact_three_no_close() -> None:
+>       capture = _capture()
+                  ^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:94: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = False, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+________ test_destination_set_is_legal_opening_occupied_and_q12_frozen _________
+
+    def test_destination_set_is_legal_opening_occupied_and_q12_frozen() -> None:
+>       capture = _capture(split_opening=True)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = True, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+__________ test_exact_two_pair_requires_both_reference_links_to_open ___________
+
+    def test_exact_two_pair_requires_both_reference_links_to_open() -> None:
+>       receipt = enumerate_lcsrs_c3_anchor(_capture(closed_pair_source=True))
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:171: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = False, closed_pair_source = True
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+____ test_world_and_schedule_are_phase_ordered_and_emit_pair_gate_receipts _____
+
+    def test_world_and_schedule_are_phase_ordered_and_emit_pair_gate_receipts() -> None:
+>       phases = tuple(_capture(phase=phase) for phase in range(1, 10))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:177: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:177: in <genexpr>
+    phases = tuple(_capture(phase=phase) for phase in range(1, 10))
+                   ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = False, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+____________ test_schedule_receipt_rejects_non_frozen_minimum_pairs ____________
+
+    def test_schedule_receipt_rejects_non_frozen_minimum_pairs() -> None:
+        world = enumerate_lcsrs_c3_world(
+>           tuple(_capture(world_id=7, phase=phase) for phase in range(1, 10))
+        )
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:213: in <genexpr>
+    tuple(_capture(world_id=7, phase=phase) for phase in range(1, 10))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = False, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+__________ test_retention_records_empty_classes_and_no_pair_coverage ___________
+
+    def test_retention_records_empty_classes_and_no_pair_coverage() -> None:
+>       no_pair = enumerate_lcsrs_c3_anchor(_capture(no_pair=True))
+                                            ^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:220: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = True, no_opening = False
+split_opening = False, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+_________ test_duplicate_pair_receipt_and_incomplete_world_fail_closed _________
+
+    def test_duplicate_pair_receipt_and_incomplete_world_fail_closed() -> None:
+>       receipt = enumerate_lcsrs_c3_anchor(_capture())
+                                            ^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:270: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = False, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+___________ test_anchor_capture_rejects_an_unauthenticated_q12_array ___________
+
+    def test_anchor_capture_rejects_an_unauthenticated_q12_array() -> None:
+>       capture = _capture()
+                  ^^^^^^^^^^
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:282: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+world_id = 7, phase = 1, no_pair = False, no_opening = False
+split_opening = False, closed_pair_source = False
+
+    def _capture(
+        *,
+        world_id: int = 7,
+        phase: int = 1,
+        no_pair: bool = False,
+        no_opening: bool = False,
+        split_opening: bool = False,
+        closed_pair_source: bool = False,
+    ) -> LCSRSC3AnchorCapture:
+        """Seven users: one exact-two source, one exact-three source, and controls."""
+    
+        users = 7
+        mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        mask[:, :3] = True
+        opening = np.array(mask, copy=True)
+        if no_opening:
+            opening[:, 1:] = False
+        if split_opening:
+            opening[1, 1] = False
+        if closed_pair_source:
+            opening[1, 0] = False
+    
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        if no_pair:
+            sources = [(100 + user, 0) for user in range(users)]
+        else:
+            sources = [(10, 0), (10, 0), (30, 2), (40, 3), (50, 4), (50, 4), (50, 4)]
+        for user, source in enumerate(sources):
+            if no_pair:
+                destinations = [source, (200 + user, 1), (300 + user, 2)]
+            elif user in (0, 1):
+                destinations = [source, (30, 2), (40, 3)]
+            elif user == 2:
+                destinations = [source, (10, 0), (40, 3)]
+            elif user == 3:
+                destinations = [source, (10, 0), (30, 2)]
+            else:
+                destinations = [source, (30, 2), (40, 3)]
+            for action, physical_key in enumerate(destinations):
+                keys[user, action] = physical_key
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float64)
+        q12[:, :3] = np.asarray([10.0, 5.0, 5.0], dtype=np.float64)
+        q1 = np.asarray(q12, dtype=np.float32)
+>       snapshot = DetachedQ12Snapshot(
+            q1=q1,
+            q2=np.zeros_like(q1),
+            source_state_digest=hashlib.sha256(q1.tobytes() + b"state").hexdigest(),
+            native_observation_event_digest=hashlib.sha256(
+                q1.tobytes() + b"native-observation-event"
+            ).hexdigest(),
+            model_digest=hashlib.sha256(q1.tobytes() + b"model").hexdigest(),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w190_ee_axis_lcsrs_c3_topology.py:73: TypeError
+______ test_bind_produces_one_immutable_surface_record_and_stable_digest _______
+
+    def test_bind_produces_one_immutable_surface_record_and_stable_digest() -> None:
+>       predecision = _predecision()
+                      ^^^^^^^^^^^^^^
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+phase = 1
+
+    def _predecision(*, phase: int = 1) -> LCSRSC3PredecisionCapture:
+        """Build a small but fully authenticated two-pair, four-user anchor."""
+    
+        users = 4
+        action_mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        action_mask[:, :3] = True
+        opening = np.array(action_mask, copy=True)
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        key_rows = (
+            ((10, 0), (30, 2), (100, 0)),
+            ((10, 0), (30, 2), (101, 0)),
+            ((30, 2), (10, 0), (102, 0)),
+            ((30, 2), (10, 0), (103, 0)),
+        )
+        for user, row in enumerate(key_rows):
+            keys[user, :3] = np.asarray(row, dtype=np.int64)
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float32)
+        q12[:, :3] = np.asarray([10.0, 4.0, 3.0], dtype=np.float32)
+        observation_sinr = np.ones((users, NUM_ACTIONS), dtype=np.float64)
+        rng = np.random.default_rng(192)
+        field = KeyedFadingField.from_components("w192", phase)
+        provenance = build_native_observation_provenance(
+            step_index=phase,
+            candidate_sinr=observation_sinr,
+            rng=rng,
+            rng_pre_state_sha256=numpy_rng_state_sha256(rng),
+            fading_field=field,
+            sinr_provenance="w192-authenticated-fixture",
+        )
+        state_sha = _digest(q12.tobytes(order="C") + b"state")
+>       snapshot = DetachedQ12Snapshot(
+            q1=q12,
+            q2=np.zeros_like(q12),
+            source_state_digest=state_sha,
+            native_observation_event_digest=provenance.content_digest,
+            model_digest=_digest(q12.tobytes(order="C") + b"model"),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:75: TypeError
+________ test_teacher_pair_set_must_be_exact_and_membership_must_match _________
+
+    def test_teacher_pair_set_must_be_exact_and_membership_must_match() -> None:
+>       predecision = _predecision()
+                      ^^^^^^^^^^^^^^
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:239: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+phase = 1
+
+    def _predecision(*, phase: int = 1) -> LCSRSC3PredecisionCapture:
+        """Build a small but fully authenticated two-pair, four-user anchor."""
+    
+        users = 4
+        action_mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        action_mask[:, :3] = True
+        opening = np.array(action_mask, copy=True)
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        key_rows = (
+            ((10, 0), (30, 2), (100, 0)),
+            ((10, 0), (30, 2), (101, 0)),
+            ((30, 2), (10, 0), (102, 0)),
+            ((30, 2), (10, 0), (103, 0)),
+        )
+        for user, row in enumerate(key_rows):
+            keys[user, :3] = np.asarray(row, dtype=np.int64)
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float32)
+        q12[:, :3] = np.asarray([10.0, 4.0, 3.0], dtype=np.float32)
+        observation_sinr = np.ones((users, NUM_ACTIONS), dtype=np.float64)
+        rng = np.random.default_rng(192)
+        field = KeyedFadingField.from_components("w192", phase)
+        provenance = build_native_observation_provenance(
+            step_index=phase,
+            candidate_sinr=observation_sinr,
+            rng=rng,
+            rng_pre_state_sha256=numpy_rng_state_sha256(rng),
+            fading_field=field,
+            sinr_provenance="w192-authenticated-fixture",
+        )
+        state_sha = _digest(q12.tobytes(order="C") + b"state")
+>       snapshot = DetachedQ12Snapshot(
+            q1=q12,
+            q2=np.zeros_like(q12),
+            source_state_digest=state_sha,
+            native_observation_event_digest=provenance.content_digest,
+            model_digest=_digest(q12.tobytes(order="C") + b"model"),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:75: TypeError
+______ test_teacher_profile_baseline_must_match_topology_reference_vector ______
+
+    def test_teacher_profile_baseline_must_match_topology_reference_vector() -> None:
+>       predecision = _predecision()
+                      ^^^^^^^^^^^^^^
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:267: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+phase = 1
+
+    def _predecision(*, phase: int = 1) -> LCSRSC3PredecisionCapture:
+        """Build a small but fully authenticated two-pair, four-user anchor."""
+    
+        users = 4
+        action_mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        action_mask[:, :3] = True
+        opening = np.array(action_mask, copy=True)
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        key_rows = (
+            ((10, 0), (30, 2), (100, 0)),
+            ((10, 0), (30, 2), (101, 0)),
+            ((30, 2), (10, 0), (102, 0)),
+            ((30, 2), (10, 0), (103, 0)),
+        )
+        for user, row in enumerate(key_rows):
+            keys[user, :3] = np.asarray(row, dtype=np.int64)
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float32)
+        q12[:, :3] = np.asarray([10.0, 4.0, 3.0], dtype=np.float32)
+        observation_sinr = np.ones((users, NUM_ACTIONS), dtype=np.float64)
+        rng = np.random.default_rng(192)
+        field = KeyedFadingField.from_components("w192", phase)
+        provenance = build_native_observation_provenance(
+            step_index=phase,
+            candidate_sinr=observation_sinr,
+            rng=rng,
+            rng_pre_state_sha256=numpy_rng_state_sha256(rng),
+            fading_field=field,
+            sinr_provenance="w192-authenticated-fixture",
+        )
+        state_sha = _digest(q12.tobytes(order="C") + b"state")
+>       snapshot = DetachedQ12Snapshot(
+            q1=q12,
+            q2=np.zeros_like(q12),
+            source_state_digest=state_sha,
+            native_observation_event_digest=provenance.content_digest,
+            model_digest=_digest(q12.tobytes(order="C") + b"model"),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:75: TypeError
+_ test_teacher_reordering_is_canonical_but_tampering_and_phase_zero_fail_closed _
+
+    def test_teacher_reordering_is_canonical_but_tampering_and_phase_zero_fail_closed() -> None:
+>       predecision = _predecision()
+                      ^^^^^^^^^^^^^^
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:281: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+phase = 1
+
+    def _predecision(*, phase: int = 1) -> LCSRSC3PredecisionCapture:
+        """Build a small but fully authenticated two-pair, four-user anchor."""
+    
+        users = 4
+        action_mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        action_mask[:, :3] = True
+        opening = np.array(action_mask, copy=True)
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        key_rows = (
+            ((10, 0), (30, 2), (100, 0)),
+            ((10, 0), (30, 2), (101, 0)),
+            ((30, 2), (10, 0), (102, 0)),
+            ((30, 2), (10, 0), (103, 0)),
+        )
+        for user, row in enumerate(key_rows):
+            keys[user, :3] = np.asarray(row, dtype=np.int64)
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float32)
+        q12[:, :3] = np.asarray([10.0, 4.0, 3.0], dtype=np.float32)
+        observation_sinr = np.ones((users, NUM_ACTIONS), dtype=np.float64)
+        rng = np.random.default_rng(192)
+        field = KeyedFadingField.from_components("w192", phase)
+        provenance = build_native_observation_provenance(
+            step_index=phase,
+            candidate_sinr=observation_sinr,
+            rng=rng,
+            rng_pre_state_sha256=numpy_rng_state_sha256(rng),
+            fading_field=field,
+            sinr_provenance="w192-authenticated-fixture",
+        )
+        state_sha = _digest(q12.tobytes(order="C") + b"state")
+>       snapshot = DetachedQ12Snapshot(
+            q1=q12,
+            q2=np.zeros_like(q12),
+            source_state_digest=state_sha,
+            native_observation_event_digest=provenance.content_digest,
+            model_digest=_digest(q12.tobytes(order="C") + b"model"),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:75: TypeError
+__________________ test_bound_object_rejects_digest_tampering __________________
+
+    def test_bound_object_rejects_digest_tampering() -> None:
+>       predecision = _predecision()
+                      ^^^^^^^^^^^^^^
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:301: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+phase = 1
+
+    def _predecision(*, phase: int = 1) -> LCSRSC3PredecisionCapture:
+        """Build a small but fully authenticated two-pair, four-user anchor."""
+    
+        users = 4
+        action_mask = np.zeros((users, NUM_ACTIONS), dtype=np.bool_)
+        action_mask[:, :3] = True
+        opening = np.array(action_mask, copy=True)
+        keys = np.full((users, NUM_ACTIONS, 2), -1, dtype=np.int64)
+        key_rows = (
+            ((10, 0), (30, 2), (100, 0)),
+            ((10, 0), (30, 2), (101, 0)),
+            ((30, 2), (10, 0), (102, 0)),
+            ((30, 2), (10, 0), (103, 0)),
+        )
+        for user, row in enumerate(key_rows):
+            keys[user, :3] = np.asarray(row, dtype=np.int64)
+    
+        q12 = np.full((users, NUM_ACTIONS), -100.0, dtype=np.float32)
+        q12[:, :3] = np.asarray([10.0, 4.0, 3.0], dtype=np.float32)
+        observation_sinr = np.ones((users, NUM_ACTIONS), dtype=np.float64)
+        rng = np.random.default_rng(192)
+        field = KeyedFadingField.from_components("w192", phase)
+        provenance = build_native_observation_provenance(
+            step_index=phase,
+            candidate_sinr=observation_sinr,
+            rng=rng,
+            rng_pre_state_sha256=numpy_rng_state_sha256(rng),
+            fading_field=field,
+            sinr_provenance="w192-authenticated-fixture",
+        )
+        state_sha = _digest(q12.tobytes(order="C") + b"state")
+>       snapshot = DetachedQ12Snapshot(
+            q1=q12,
+            q2=np.zeros_like(q12),
+            source_state_digest=state_sha,
+            native_observation_event_digest=provenance.content_digest,
+            model_digest=_digest(q12.tobytes(order="C") + b"model"),
+        )
+E       TypeError: DetachedQ12Snapshot.__init__() missing 2 required positional arguments: 'q2_state_digest' and 'q2_action_mask_digest'
+
+tests/test_w192_ee_axis_lcsrs_c3_pipeline.py:75: TypeError
+______________ test_master_authority_rejects_changed_runtime_pin _______________
+
+    def test_master_authority_rejects_changed_runtime_pin():
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:119: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_________ test_master_authority_rejects_protocol_drift[episodes-1500] __________
+
+field = 'episodes', value = 1500
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+______ test_master_authority_rejects_protocol_drift[resume_allowed-True] _______
+
+field = 'resume_allowed', value = True
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_ test_master_authority_rejects_protocol_drift[source_checkpoint_reuse_only-False] _
+
+field = 'source_checkpoint_reuse_only', value = False
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_ test_master_authority_rejects_protocol_drift[new_r7_training_authorized-True] _
+
+field = 'new_r7_training_authorized', value = True
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+__ test_master_authority_rejects_protocol_drift[fresh_training_required-True] __
+
+field = 'fresh_training_required', value = True
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+__ test_master_authority_rejects_protocol_drift[selected_learning_rate-0.001] __
+
+field = 'selected_learning_rate', value = 0.001
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_____ test_master_authority_rejects_protocol_drift[ablation_order-value6] ______
+
+field = 'ablation_order', value = ['A011', 'A101', 'A110']
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_____ test_master_authority_rejects_protocol_drift[resource_policy-value7] _____
+
+field = 'resource_policy', value = {}
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_ test_master_authority_rejects_protocol_drift[outcome_values_used_to_freeze-True] _
+
+field = 'outcome_values_used_to_freeze', value = True
+
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("episodes", 1500),
+            ("resume_allowed", True),
+            ("source_checkpoint_reuse_only", False),
+            ("new_r7_training_authorized", True),
+            ("fresh_training_required", True),
+            ("selected_learning_rate", 0.001),
+            ("ablation_order", ["A011", "A101", "A110"]),
+            ("resource_policy", {}),
+            ("outcome_values_used_to_freeze", True),
+        ],
+    )
+    def test_master_authority_rejects_protocol_drift(field, value):
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:101: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_______ test_master_authority_rejects_unknown_field_and_false_timestamp ________
+
+    def test_master_authority_rejects_unknown_field_and_false_timestamp():
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:108: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+___ test_r5_request_is_source_checkpoint_reuse_only_and_forbids_new_training ___
+
+    def test_r5_request_is_source_checkpoint_reuse_only_and_forbids_new_training():
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:67: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_ test_required_five_labels_are_exact_and_present_in_the_svg_and_claim_artifacts _
+
+tmp_path = PosixPath('/tmp/pytest-of-u24/pytest-11/test_required_five_labels_are_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x74966dbfa5a0>
+
+    def test_required_five_labels_are_exact_and_present_in_the_svg_and_claim_artifacts(
+        tmp_path, monkeypatch
+    ):
+        assert authority.REQUIRED_LABELS == [
+            "500-EP PRELIMINARY",
+            "ONE TRAINED POLICY",
+            "MAIN-ONLY HELD-OUT TEST EVALUATION",
+            "NOT A CHAPTER 5 RESULT",
+            "NOT FORMAL EFFICACY",
+        ]
+        assert len(set(authority.REQUIRED_LABELS)) == 5
+        summary = [
+            {"arm": label, "users": users, "mean_ee_bits_per_j": 1_000_000.0}
+            for label in evaluator.ARM_LABELS.values()
+            for users in authority.EVALUATION_USERS
+        ]
+        output = tmp_path / "fixture.svg"
+        evaluator.write_svg_plot(
+            output,
+            summary,
+            learning_rate=0.001,
+            title="Synthetic control-plane fixture",
+            labels=list(evaluator.ARM_LABELS.values()),
+        )
+        svg = output.read_text(encoding="utf-8")
+        for label in authority.REQUIRED_LABELS:
+            assert label in svg
+    
+        _, _, bridge_path, reconciliation_path = _prefix_lineage_fixture(
+            tmp_path / "lineage", monkeypatch
+        )
+        evaluation_path = _evaluation_fixture(
+            tmp_path / "evaluation",
+            learning_rate=0.001,
+            baseline_ee=100.0,
+            full_ee=110.0,
+        )
+        evaluation_receipt = json.loads(evaluation_path.read_text(encoding="utf-8"))
+        claim_artifacts = [
+>           freezer.build_request(),
+            ^^^^^^^^^^^^^^^^^^^^^^^
+            json.loads(bridge_path.read_text(encoding="utf-8")),
+            json.loads(reconciliation_path.read_text(encoding="utf-8")),
+            evaluation_receipt,
+            json.loads(
+                Path(evaluation_receipt["artifacts"]["raw"]["path"]).read_text(
+                    encoding="utf-8"
+                )
+            ),
+            json.loads(
+                Path(evaluation_receipt["artifacts"]["summary"]["path"]).read_text(
+                    encoding="utf-8"
+                )
+            ),
+            _evaluation_gate(),
+        ]
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:2155: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+_ test_runtime_closure_has_55_unique_source_reuse_files_and_package_initializers _
+
+    def test_runtime_closure_has_55_unique_source_reuse_files_and_package_initializers():
+        manifest = REPO / authority.RUNTIME_CLOSURE_MANIFEST
+        rows = manifest.read_text(encoding="utf-8").splitlines()
+        assert len(rows) == authority.RUNTIME_CLOSURE_FILE_COUNT == 55
+        assert rows == sorted(set(rows))
+>       request = freezer.build_request()
+                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+.scratch/c2-v03a-trend/test_r7_500_control_plane.py:2182: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+repo = PosixPath('/home/u24/papers/mcrl-leo-handover')
+
+    def build_request(*, repo: Path = REPO) -> dict[str, Any]:
+        repo = Path(repo).expanduser().resolve()
+        pin_paths = set(authority.REQUIRED_R7_PINNED_FILES) | set(
+            authority.BASE_AUTHORITIES.values()
+        )
+        missing = [relative for relative in sorted(pin_paths) if not (repo / relative).is_file()]
+        if missing:
+>           raise FileNotFoundError("R7 runtime pin closure is missing: " + ", ".join(missing))
+E           FileNotFoundError: R7 runtime pin closure is missing: artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p001.json, artifacts/multi-catfish-v03a-intermediate-authority-20260830-r2/1500-lr0p01.json, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-2026-08-30.md, docs/MULTI-CATFISH-500EP-PRE-REVEAL-RUNTIME-AMENDMENT-R7-R5-2026-08-31.md
+
+.scratch/c2-v03a-trend/freeze_r7_500_authority.py:33: FileNotFoundError
+___ test_sealed_v03b_prereg_and_manifest_validate_against_current_source_set ___
+
+    def test_sealed_v03b_prereg_and_manifest_validate_against_current_source_set() -> None:
+        artifact_dir = ROOT / "artifacts" / "c2-v03b-reactive-keyed-physical-headroom-gate-20260831"
+        prereg, prereg_sha256 = gate._read_sealed_prereg(
+            artifact_dir / "prereg.json", artifact_dir / "prereg.sha256"
+        )
+        gate._validate_prereg(prereg)
+        manifest = gate._read_source_manifest(artifact_dir / "source-manifest.json")
+>       manifest_sha256 = gate._validate_source_manifest(
+            manifest, expected_paths=gate._source_paths()
+        )
+
+tests/test_w41_c2_v03b_reactive_gate_integrity.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+manifest = {'files': [{'path': '.scratch/c2-v03/c2_stage0_receipt_adapter.py', 'sha256': '11f067796e7bc2d773b34e05dc1d508c1c0f766...df5b96ad780f99c0906ec4e184eb9868c76d6032bc78', 'schema': 'multi-catfish-mcrl-v03b-c2-reactive-gate-source-manifest-v1'}
+expected_paths = [PosixPath('/home/u24/papers/mcrl-leo-handover/.scratch/c2-v03/c2_stage0_receipt_adapter.py'), PosixPath('/home/u24/pa...runner.py'), PosixPath('/home/u24/papers/mcrl-leo-handover/.scratch/c2-v03/c2_temporal_fork_forecast_adapter.py'), ...]
+
+    def _validate_source_manifest(
+        manifest: Mapping[str, Any], *, expected_paths: Sequence[Path] | None = None
+    ) -> str:
+        """Re-hash every listed file and reject omissions, duplicates, or drift."""
+    
+        if manifest.get("schema") != SOURCE_MANIFEST_SCHEMA:
+            raise RuntimeError("V0.3B source manifest schema is not supported")
+        files = manifest.get("files")
+        supplied_digest = manifest.get("manifest_sha256")
+        if not isinstance(files, list) or not files:
+            raise RuntimeError("V0.3B source manifest has no files")
+        if not isinstance(supplied_digest, str):
+            raise RuntimeError("V0.3B source manifest has no manifest SHA-256")
+        payload = {"schema": manifest["schema"], "files": files}
+        actual_digest = hashlib.sha256(_canonical_json_bytes(payload)).hexdigest()
+        if actual_digest != supplied_digest:
+            raise RuntimeError("V0.3B source manifest digest disagrees with contents")
+    
+        repo = REPO.resolve()
+        seen: set[str] = set()
+        for entry in files:
+            if not isinstance(entry, Mapping):
+                raise RuntimeError("V0.3B source manifest entry is not an object")
+            relative = entry.get("path")
+            expected_sha = entry.get("sha256")
+            expected_size = entry.get("size_bytes")
+            if (
+                not isinstance(relative, str)
+                or not relative
+                or relative in seen
+                or not isinstance(expected_sha, str)
+                or not isinstance(expected_size, int)
+                or expected_size < 0
+            ):
+                raise RuntimeError("V0.3B source manifest contains a malformed entry")
+            seen.add(relative)
+            path = (repo / relative).resolve()
+            if not path.is_relative_to(repo) or not path.is_file():
+                raise RuntimeError(
+                    f"V0.3B source manifest file is missing or escapes repository: {relative}"
+                )
+            if path.stat().st_size != expected_size or _file_sha256(path) != expected_sha:
+>               raise RuntimeError(f"V0.3B source manifest SHA-256 mismatch: {relative}")
+E               RuntimeError: V0.3B source manifest SHA-256 mismatch: .scratch/c2-v03/c2_temporal_fork_trainer_backend.py
+
+.scratch/ee-axis-redesign/run_c2_v03b_keyed_physical_headroom_gate.py:232: RuntimeError
+=========================== short test summary info ============================
+FAILED tests/test_g6_forbidden_list.py::test_no_new_module_mentions_a_forbidden_term
+FAILED tests/test_w158_ee_axis_v014_q3_support_head.py::test_balanced_logit_prior_correction_and_thresholded_nonnegative_bonus
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_encoder_emits_exact_shapes_bounded_immutable_and_digest_stable
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_predecision_capture_binds_topology_before_pair_features
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_physical_pair_destination_tie_and_occupancy_sentinels
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_relation_mask_has_focal_partner_and_physical_union
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_candidate_sinr_and_rng_or_live_state_do_not_change_view
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_native_observation_event_is_bound_to_q12_and_outer_capture
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_temporal_context_is_candidate_independent_and_missing_is_exact
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_warm_started_segment_age_saturates_at_episode_length[0-0.0]
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_warm_started_segment_age_saturates_at_episode_length[2-0.2]
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_warm_started_segment_age_saturates_at_episode_length[9-0.9]
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_warm_started_segment_age_saturates_at_episode_length[10-1.0]
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_warm_started_segment_age_saturates_at_episode_length[11-1.0]
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_warm_started_segment_age_saturates_at_episode_length[18-1.0]
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_old_incumbent_missing_from_candidate_surface_keeps_exact_sentinel
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_stale_slot_index_geometry_is_rejected_against_physical_driver
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_same_occupancy_but_changed_victim_geometry_changes_relational_physics
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_slot_permutation_preserves_physical_features_and_lowest_native_tie
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_rejects_opening_mask_drift_and_illegal_reference
+FAILED tests/test_w184_ee_axis_lcsrs_c3_encoder.py::test_rejects_raw_q12_and_a_forged_opening_subset
+FAILED tests/test_w185_ee_axis_lcsrs_three_route.py::test_exactly_three_independent_networks_optimizers_and_route_shapes
+FAILED tests/test_w185_ee_axis_lcsrs_three_route.py::test_one_sum_one_argmax_uses_snapshot_without_recomputing_q12
+FAILED tests/test_w185_ee_axis_lcsrs_three_route.py::test_q12_snapshot_binds_source_state_and_model_digests
+FAILED tests/test_w185_ee_axis_lcsrs_three_route.py::test_c3_view_reference_must_equal_snapshot_masked_q12_argmax
+FAILED tests/test_w185_ee_axis_lcsrs_three_route.py::test_loads_only_q1_q2_from_legacy_background
+FAILED tests/test_w185_ee_axis_lcsrs_three_route.py::test_three_route_checkpoint_round_trip_and_schema_guard
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_anchor_enumerates_exact_two_pair_and_exact_three_no_close
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_destination_set_is_legal_opening_occupied_and_q12_frozen
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_exact_two_pair_requires_both_reference_links_to_open
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_world_and_schedule_are_phase_ordered_and_emit_pair_gate_receipts
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_schedule_receipt_rejects_non_frozen_minimum_pairs
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_retention_records_empty_classes_and_no_pair_coverage
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_duplicate_pair_receipt_and_incomplete_world_fail_closed
+FAILED tests/test_w190_ee_axis_lcsrs_c3_topology.py::test_anchor_capture_rejects_an_unauthenticated_q12_array
+FAILED tests/test_w192_ee_axis_lcsrs_c3_pipeline.py::test_bind_produces_one_immutable_surface_record_and_stable_digest
+FAILED tests/test_w192_ee_axis_lcsrs_c3_pipeline.py::test_teacher_pair_set_must_be_exact_and_membership_must_match
+FAILED tests/test_w192_ee_axis_lcsrs_c3_pipeline.py::test_teacher_profile_baseline_must_match_topology_reference_vector
+FAILED tests/test_w192_ee_axis_lcsrs_c3_pipeline.py::test_teacher_reordering_is_canonical_but_tampering_and_phase_zero_fail_closed
+FAILED tests/test_w192_ee_axis_lcsrs_c3_pipeline.py::test_bound_object_rejects_digest_tampering
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_changed_runtime_pin
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[episodes-1500]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[resume_allowed-True]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[source_checkpoint_reuse_only-False]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[new_r7_training_authorized-True]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[fresh_training_required-True]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[selected_learning_rate-0.001]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[ablation_order-value6]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[resource_policy-value7]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_protocol_drift[outcome_values_used_to_freeze-True]
+FAILED tests/test_w33_r7_500_control_plane.py::test_master_authority_rejects_unknown_field_and_false_timestamp
+FAILED tests/test_w33_r7_500_control_plane.py::test_r5_request_is_source_checkpoint_reuse_only_and_forbids_new_training
+FAILED tests/test_w33_r7_500_control_plane.py::test_required_five_labels_are_exact_and_present_in_the_svg_and_claim_artifacts
+FAILED tests/test_w33_r7_500_control_plane.py::test_runtime_closure_has_55_unique_source_reuse_files_and_package_initializers
+FAILED tests/test_w41_c2_v03b_reactive_gate_integrity.py::test_sealed_v03b_prereg_and_manifest_validate_against_current_source_set

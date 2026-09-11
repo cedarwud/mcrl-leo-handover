@@ -1,0 +1,204 @@
+=================== V025-CONTROLLER-FINDING-LITERATURE-2026-09-10.md
+     1	# Controller finding — the mechanism is novel against the field, and its headline may be a table-edge artefact
+     2	Recorded 2026-09-10, from a review of seven energy-efficiency papers in the project's own reading set. `DIAGNOSTIC_NOT_CLAIM`.
+     3	
+     4	## Novelty: yes, but narrower than it looked
+     5	No paper in the set contains the occupancy to mode to power to servability chain, and **not one reports that consolidation beats spreading**. All five that take a position argue for spreading, and every one gives the same single reason: inter-beam co-channel interference under frequency reuse.
+     6	
+     7	But the **upper half of the chain is already published, twice**. The nearest prior work shares our Ka-band multi-LEO multi-beam setting, our equal-share intra-beam rule, our per-user rate floor, our per-beam power cap and our pooled efficiency objective, and never draws the inference: its occupancy symbol appears three times in the whole paper and never enters the power-control section. With continuous Shannon rate its occupancy term is purely a **cost**.
+     8	
+     9	Two algebraic notes that constrain how we may claim this. Equal-bandwidth division and equal-airtime multiplexing give the **same** map from occupancy to required spectral efficiency, so the sharing model is not ours to claim. And **no paper in the set uses a discrete mode table at all**; every one uses continuous Shannon. So what is new is precisely: replacing continuous rate with a discrete mode ladder **inverts the sign** of the occupancy term.
+    10	
+    11	The complete-evacuation discontinuity is **not** new. It is the terrestrial sleep-mode and cell-DTX model, and a satellite beam-shut-off paper already exists. It must be cited, not presented as a finding.
+    12	
+    13	## The load-bearing objection
+    14	At occupancy 1 the required spectral efficiency is the **lowest** it ever is, selecting the most robust mode with the **lowest** threshold. At a given transmit power that is the situation with the **largest** margin. Our model calls it unservable, which inverts the physics.
+    15	
+    16	The cap cannot explain it: if the cap bound at occupancy 1 it would bind harder at occupancy 3, whose target threshold is higher. So "1 fails, 3 succeeds" can only come from the selection running off the **bottom of the mode table**.
+    17	
+    18	My own reading of the code agrees on the mechanics and adds what I think is the deeper cause. Power is provisioned so the nominal signal-to-noise ratio lands **exactly** on the target threshold, so the nominal margin is zero at **every** occupancy by construction. The asymmetry is only that at higher occupancy there are lower modes to fall back to. That reframes the finding from "low occupancy is physically bad" to "**we provision no margin and only high occupancy has somewhere to fall**". A check is running to settle it and to re-measure the +6.359 % under a formulation that provisions for threshold plus margin instead.
+    19	
+    20	If the effect does not survive, two strategic reviews will have recommended building a paper on a truncation artefact, and what remains is the evacuation discontinuity, which is prior art.
+    21	
+    22	## Three further problems the field's conventions expose
+    23	**The realised margin is whatever the table spacing happens to be.** Because power lands on mode M's threshold and mode M−1 is transmitted, the margin equals the gap between adjacent thresholds, typically 0.5 to 1.5 dB against Ka-band rain margins of several dB. Margin is not a parameter we set; it varies rung to rung. And a demoted mode delivers less than the required spectral efficiency, so **the rate target is missed on every served beam**.
+    24	
+    25	**"Full power, zero credited bits, still attached" has no precedent in the set.** The field offers exactly two treatments of a user that cannot meet its target: outage, removed from numerator and denominator, or admission control, never admitted. We do neither. That is defensible as a deliberate choice but must be declared as one, or it reads as omitted admission control.
+    26	
+    27	**The pooled metric plus an always-on per-chain cost generates a consolidation incentive by itself**, with no mode physics involved. One paper produces the same shape with no rate floor and no discrete modes. Our defence is the hard per-user target, but that only holds if unserved users are penalised somewhere. The recommended test is to report the summed per-entity efficiency alongside the pooled one: **if the effect survives that, it is mechanism; if it vanishes, it was the metric.**
+    28	
+    29	## Conventions worth adopting
+    30	Pooled bits per joule is the modal choice in the field and is described as having the strongest physical interpretation, so our estimand is conventional. But both papers offering the choice warn about exactly our failure mode, which a referee will use as ready-made vocabulary.
+    31	
+    32	Comparators are three to seven cheap interpretable heuristics plus one prior learned method plus internal ablations. **Nobody compares against an oracle.** Two conventions to copy: strengthen the baseline along the dimension not being claimed, and present an upper bound re-scored under real conditions. And the field will expect the **anti-thesis run, not argued**: a load-balancing policy under our own physics.
+    33	
+    34	## Positioning, if the mechanism survives
+    35	Prior work had equal-share allocation, a rate floor, a power cap and a pooled objective, and with continuous rate the occupancy term is a cost. We show that a discrete mode ladder inverts its sign, and that the resulting policy is consolidation rather than the interference-driven spreading the beam-hopping literature uniformly assumes. Load balancing is not refuted: it is optimal for the blocking objective it was designed for.
+    36	
+    37	## Standing
+    38	No sealed value changes. No run is authorised. The variant formulation under test is evaluated on a copy and the declared physics is unchanged.
+=================== V025-CONTROLLER-STATUS-2026-09-10.md
+     1	# Controller status — end of 2026-09-10
+     2	A single readable state of the project. Every number below has a receipt in a dated record in this directory. `DIAGNOSTIC_NOT_CLAIM` throughout: nothing sealed was modified today except one false provenance comment, and no training or policy run was authorised.
+     3	
+     4	## The owner's requirement, stated exactly
+     5	Each of the three learned routes must individually raise pooled energy efficiency, and the ordering must hold: full system above any two, any two above the control. Magnitudes need not add.
+     6	
+     7	This is **contract §C3**, the neutral-source substitution contrast: for a named route, its training source is replaced by a neutral one while all heads are retained, updated and deployed. It is **not** §C4, which the contract itself heads *coordination attribution, beyond the source claim*. I conflated the two all day; that is erratum 14.
+     8	
+     9	**§C3 has never been measured at scale.** The only run touching it was a two-seed, one-world, five-anchor pilot in which six of ten decisions fell outside the training support.
+    10	
+    11	## The five decisions
+    12	| | decision | state |
+    13	|---|---|---|
+    14	| 1 | correct the provisioning rule | **blocked on framing.** The numerical blocker is discharged; the remaining objection stands: v1.9 §1 says in terms that the margin must not be re-solved into transmit power, and v1.1 calls the rate figure nominal and permits partial delivery. It may proceed only as an explicitly declared **policy change**, with the rationale independent of what it does to any route's sign. |
+    15	| 2 | beam-width convention | **tied to 1.** The adjudication requires the sealed width frozen for the provisioning comparison, with any antenna change given its own separate decision. |
+    16	| 3 | open the contract for direct prediction | **closed: no.** It removes the three-route structure the requirement is stated over. |
+    17	| 4 | promote the deadline comparator | **closed: no.** A competent anytime unilateral already holds 81.7 % and 87.9 % of its converged gain at the 30.08-second interval. |
+    18	| 5 | add three single-informative-route arms | **pending the tier verification now running.** |
+    19	
+    20	## The corrected-physics coordination picture
+    21	| panel | pairing | span |
+    22	|---|---|---:|
+    23	| twenty anchors | **correct** | **+1.2913 %**, 1/20 negative |
+    24	| thirty dates | old | +0.717 %, CI [+0.436 %, +0.997 %], 4/30 negative |
+    25	| five widths, strict numerics | old | −0.1768 % at the sealed width, +2.3460 % at the source's width |
+    26	
+    27	Small, positive, with a lower interval edge approaching immateriality. Three routes must each show a resolvable positive marginal — but the marginals are **not** bounded by this band, because a leave-one-out arm can select worse than its fallback, and the owner's bar is an ordering rather than a per-contrast threshold.
+    28	
+    29	Every exploratory route on the coordination side is closed: the deadline route, the prefix-removal route (seeding from raw geometry recovers 5–6 % of the prefix's uplift), and the reparametrisation route.
+    30	
+    31	## What is known about each route
+    32	**First route — the bottleneck.** Held-out `R² 0.151`, pairwise ordering `0.650`; 79.3 % of target variance sits in whole-network coupled terms and 98.9 % of the externality is within-anchor so none cancels in ranking. An oracle removing only the cross-user externality reaches `0.902`. Verdict `TARGET_REFORMULATE`. Ridge reaches EV `+0.089`, positive on 10/10 leave-one-step-out folds; collision-bound variance is **zero**. The one admissible feature found bought exactly nothing because it is constant at all thirty anchors. A test of the cheapest remaining repair — giving it the resource context the interaction head already consumes — is running.
+    33	
+    34	**Second route — best posed.** Target verdict `TARGET_WELL_POSED`; its reviewer explicitly declined to redesign it. Ridge EV `+0.301`, positive on 8/8 folds. **But its stored survival flags are wrong on 822 of 1,784 rows** through an adapter that writes geometric legality into both the validity and survival fields. That repair is owed and has not been made.
+    35	
+    36	**Third route — its named threat is refuted.** Learned interaction head 3.618 mean selection regret against a size-only prior's 13.114 and zero's 13.683: knowing the coalition size is worth 0.569, the learned head is worth 9.496. Its decision-level justification is the exact-pair replay: pairwise truncation reverses the winner at 27.8 % of anchors, 92 % of those beyond the project's margin.
+    37	
+    38	## Execution order from here
+    39	1. finish the four running jobs;
+    40	2. repair the second route's adapter defect;
+    41	3. draft the provisioning **policy-change declaration** if decision 1 proceeds, on the adjudication's stated conditions;
+    42	4. build the §C3 panel on whatever tier the verification says is sound, with a degeneracy screen that disqualifies any arm sitting below the certified fixed point before any ordering is read;
+    43	5. **run §C3.** This is where the owner's question is answered for the first time.
+    44	
+    45	## My estimate
+    46	Roughly 3 to 3.5 in 10, with the first route as the binding constraint. Composition matters more than the number: the third route improved today, the second is best-posed but needs its adapter fixed, and the first has no known path until the running test reports.
+    47	
+    48	## The methodological record
+    49	Eighteen corrections today, listed in the errata records. **Not one was caught by my own review**; each came from adversarial review, independent replication, external reading, or the owner. Twice I rebuilt a case against a sealed declaration that a prior adversarial review had already rejected.
+    50	
+    51	The rule that follows, and that I have written into memory: **a controller claim sourced from one model, one panel, or one intermediate file is a hypothesis until an independent line confirms it.** The findings that survived the day all have two independent sources.
+=================== V025-CONTROLLER-DECISION-ARMS-ADDED-2026-09-10.md
+     1	# Controller decision — add the three single-informative arms, and how to measure them cheaply
+     2	Recorded 2026-09-10. Decided under the owner's criterion that every ruling be judged by whether it serves the goal of all three routes individually raising pooled efficiency. Evidence: an ultra-effort verification that read the deployed code **and executed a real-anchor probe** rather than arguing. `DIAGNOSTIC_NOT_CLAIM`; nothing sealed modified, no learner fitted, existing checkpoints rehydrated without perturbation.
+     3	
+     4	**Decision: add them.** The leave-one-in contrast is half of the owner's stated requirement, and without those arms that half cannot be evaluated at all. The cost objection is now resolved with measurements rather than assertions.
+     5	
+     6	## The reviewers' disagreement, resolved
+     7	One reviewer said the singles are necessary; the other said not to add them and cited a matched-anchor tier that would make nine arms cost about one. **They were describing two different settings, and both were partly right.**
+     8	
+     9	The dependence is real: the proposal is a per-user argmax over the first two routes' outputs, the infeasibility repair uses their summed scores, and the bounded catalogue builder generates candidates **around whatever seed it is given** — copying that base's mapping, computing surplus relative to it, and constructing evacuations from the beams it occupies.
+    10	
+    11	But **no production caller connects those two functions.** The existing pilot supplies a common carrier reference rather than the learned proposal. So the shared-catalogue lookup is sound *for the pipeline as implemented*, and unsound the moment arms carry their own learned seeds.
+    12	
+    13	## The measurement that settles it
+    14	On three real anchors, comparing the full arm's catalogue with the first-route drop arm's:
+    15	
+    16	| step | full | drop | **intersection** | union | Jaccard |
+    17	|---|---:|---:|---:|---:|---:|
+    18	| 0 | 908 | 910 | **0** | 1,818 | **0** |
+    19	| 1 | 911 | 912 | **0** | 1,823 | **0** |
+    20	| 2 | 910 | 909 | **0** | 1,819 | **0** |
+    21	
+    22	**Zero cross-arm reuse.** Reseeding does not produce even approximately shared coverage, so "nine arms for the price of one" is false whenever arms reseed.
+    23	
+    24	## A structural asymmetry that must be stated in any §C3 result
+    25	Proposed assignments changed, against the full arm:
+    26	
+    27	| arm | assignments changed |
+    28	|---|---:|
+    29	| first-route drop | 12 to 26 |
+    30	| second-route drop | 29 to 69 |
+    31	| **third-route drop** | **0 at every anchor** |
+    32	| all-neutral | 64 to 92 |
+    33	
+    34	**The third route's ablation acts through ranking alone; the first two act through both the proposal and the ranking.** The three routes are not mechanistically symmetric, and a §C3 table that does not say so invites a reviewer to assume they are.
+    35	
+    36	## The construction adopted
+    37	Each arm keeps **its own seed and catalogue**, preserving its proposal, repair, candidate restrictions, reference contexts and score. A **shared physical cache** evaluates a configuration once per identical physical context, and each arm looks up its own candidates. For the one-step pooled comparison, only the **union of chosen configurations** is realised — at most nine outcomes per anchor. Realising every catalogue row is needed only for candidate-level regret questions.
+    38	
+    39	Two rules carried verbatim into the design: **cached realised outcomes must never leak into selection**, and cache keys must bind tape, world, time, physical and run settings, evaluator identity, the nominal-versus-realised field, the boundary set and the prefix history — raw configuration identifiers are not sufficient because base identifiers embed carrier names.
+    40	
+    41	Measured cost: a catalogue build takes 3.17 to 10.41 seconds at 701 nominal boundary evaluations; forty-eight profiles over forty-eight boundaries take 5.41 seconds; repeated lookups take microseconds. So the dominant per-anchor cost is **one catalogue build per arm**, not realisation.
+    42	
+    43	## Standing
+    44	This decides how to measure the contrast, not what the contrast is. No arm definition, source, catalogue rule or acceptance criterion changes. The captured probe is a component measurement on pilot heads, not deployment conformance and not source-benefit evidence.
+=================== V025-CONTROLLER-FINDING-LOAD-REGIME-CLOSED-2026-09-10.md
+     1	# Controller finding — the load-regime hypothesis was mine, and it is false
+     2	Recorded 2026-09-10 from the load-regime sweep. `DIAGNOSTIC_NOT_CLAIM`. The sealed per-user rate remains 50 Mbit/s; every row is a separate evaluation on a copied run setting and no sealed constant was changed.
+     3	
+     4	## The hypothesis I proposed, and where it came from
+     5	When the owner asked whether I had used my own knowledge rather than only the papers, I offered this: the joint-over-unilateral gap is small in the current setting because the system is lightly loaded in the relevant sense, and the price-of-anarchy literature says such gaps concentrate in **constrained** regimes. I argued that offered load and the per-user rate target were a cleaner axis than antenna width, because moving them carries no "you chose a favourable antenna" objection.
+     6	
+     7	**On this system it is false.**
+     8	
+     9	## What was measured
+    10	Load axis at the sealed rate, corrected provisioning:
+    11	
+    12	| users | joint over unilateral | negative anchors |
+    13	|---:|---:|---:|
+    14	| 100 | **−0.287 %** | 2/8 |
+    15	| 125 | +0.066 % | 3/8 |
+    16	| 150 | +0.581 % | 1/8 |
+    17	| 200 | +0.296 % | 1/8 |
+    18	
+    19	Non-monotone and uniformly small. Pushing both axes together gives +0.400 %, +0.644 % and +0.978 % — the last on four anchors rather than eight — and **never crosses one per cent**. Under the sealed rule the joint sequence is also non-monotone: +3.116 %, +1.596 %, +2.661 %.
+    20	
+    21	The rate axis spanned required spectral efficiencies of roughly 0.84 to 3.36 bit/s/Hz at a representative occupancy of seven, against a table maximum near 3.71. So the sweep did reach the constrained end of the ladder, and the gap did not open there.
+    22	
+    23	## A calibration fact worth keeping
+    24	On the common eight-anchor subset the current operating point reads **−0.287 %**, where the twenty-anchor strict receipt reads **+0.513 %**. The report is explicit that this is a **sampling distinction, not a changed operating point** — the eight rows match the archived anchors exactly.
+    25	
+    26	**Eight-anchor panels read systematically lower than the twenty-anchor panel here.** That matters for reading the five-width beam curve, which is also an eight-anchor panel.
+    27	
+    28	## What this closes
+    29	Every exploratory direction on the coordination side is now measured and closed: the deadline comparator, removing the non-learned prefix, reparametrising the score, and now offered load and the rate target. The remaining axis is antenna width, and the provisioning adjudication has already ruled that the sealed width must be frozen for that comparison and that any antenna change requires its own separate design decision.
+    30	
+    31	**The coordination span is what it is: small, positive, around one per cent. No regime was found that enlarges it.**
+    32	
+    33	## What it does not touch
+    34	The owner's requirement is the §C3 source-training contrast, whose arms are compared with each other. Its marginals are not bounded by this span, because a leave-one-out arm can select worse than its own fallback. Nothing measured here bears on it, and it has still never been run at scale.
+=================== V025-CONTROLLER-FINDING-C1-INTERFACE-2026-09-10.md
+     1	# Controller finding — the first route's problem is its interface, not its features
+     2	Recorded 2026-09-10 from the resource-context diagnostic, whose arms, metrics, estimator family, grid, split and seed were declared before any fitting. `DIAGNOSTIC_NOT_CLAIM`. Offline fit on copies; nothing sealed modified.
+     3	
+     4	## The hypothesis, and its result
+     5	I assembled it from three of today's reports: the design review measured the first route's pairwise ordering at 0.650 against 0.902 for an oracle that removes only the cross-user externality; the sufficiency diagnostic found the interaction head already receives 163 resource-context coordinates the per-user head does not; and the parametrisation comparison measured those coordinates as worth 1.067 in mean selection regret. So: perhaps the missing information already exists, is already consumed at decision time, and the per-user head simply does not receive it.
+     6	
+     7	**Result: held-out pairwise ordering 0.619236 with the admissible context against 0.620817 without it. A gain of −0.001581**, closing −0.63 % of the gap, with leave-one-step-out gains ranging −0.006425 to +0.004496. Against the frozen materiality rule — at least 0.0252 and positive on every omission — this is **not material**, and its sign is negative.
+     8	
+     9	## Why, and this is the part that matters
+    10	The coordinate formulas are admissible: they are built from the reference assignment and the decision-time tape, read static cross-gain arrays, and accept no evaluator or outcome. But **a coalition-wide vector depends on the other proposed members' actions, while the first route's interface is action-local.** The stored values could therefore not be handed over; the same 163 formulas had to be rebuilt from the reference profile and the focal user-action alone.
+    11	
+    12	Rebuilt that way, **only 28 of the 163 slots vary across held-out singleton actions.** The coalition-induced variation in the remaining 135 is unavailable under an action-local rule.
+    13	
+    14	**The useful variation in those coordinates is coalition-level, and the first route is per-user by interface. It cannot receive it.** This is not a feature-plumbing problem.
+    15	
+    16	## The same lesson as this morning, from the other side
+    17	| arm | validation RMSE |
+    18	|---|---:|
+    19	| sealed vector only | 11.418 |
+    20	| plus admissible context | **8.123** |
+    21	| plus context, externality removed from the target | **5.356** |
+    22	| leaky oracle, not deployable | 0.000036 |
+    23	
+    24	The context improves **value** prediction substantially and makes **ordering** slightly worse. The parametrisation comparison found the mirror image — those same coordinates worsened pointwise interaction calibration while improving selection regret by 1.067. **Value error and ranking are different quantities, and the one we need is ranking.**
+    25	
+    26	## What this closes and what it does not
+    27	It closes the cheapest remaining repair for the identified bottleneck, and it is the **second** first-route repair today to buy exactly nothing — the first being an admissible feature that turned out constant at all thirty anchors. The difference is that this time the reason is structural: any real fix would have to change what that route sees at the interface, which is fixed by contract §C1 — the same class of change I declined earlier today for the third route on the grounds that it removes the structure the owner's requirement is stated over.
+    28	
+    29	**It does not establish that the first route's ablation marginal is zero.** These diagnostics measure how well its target can be predicted from pre-decision information. The owner's contrast measures whether informative source training changes the committed outcome relative to neutral training — a different question. The tier probe measured that dropping this route changes **12 to 26 proposed assignments** at every anchor tested, so it demonstrably moves the decision. Whether it moves it for the better is exactly what has never been run.
+    30	
+    31	## Standing
+    32	I am proposing no third repair. Two of my own have now bought nothing. The next step is to run the contrast and let the route answer for itself.

@@ -10,6 +10,24 @@ document that says so, the row says "(inferred)".
 
 ## 0. Reading list for anyone starting fresh — the in-force set, in reading order
 
+> **Controller update, 2026-09-11 ~11:15 UTC — read this block first.**
+> **Start with `.scratch/HANDOFF-2026-09-11.md`** (current state, live runs, next steps, do-not-use list).
+> Since CURATE wrote this list, three pre-result documents joined item 1 and **override parts of it**:
+> - `V025-CONTROLLER-AMENDMENT-2-EE-ONLY-2026-09-11.md` — **EE is the only target**: `lambda ≡ 0`, C-H is
+>   *reported*, not a constraint; C-S service floor stays. This **supersedes item 2's C-H** and item 1's
+>   "dual lambda for C-H" and "C2 INACTIVE rule".
+> - `V025-CONTROLLER-AMENDMENT-3-PREGENERATED-SOURCE-POOLS-2026-09-11.md` — catfish (and NULL3) sources are
+>   **pre-generated 100-episode pools** per seed per source, loaded once; no streaming source envs.
+> - `.scratch/cf3-pilot/DECLARATION-ADDENDUM.md` — the implementer's binding choices (12 runs: seeds 0-2;
+>   seeds 3-4 deferred for CPU contention; learning-speed readings at ep 100/250/500/750/1000 + AUC;
+>   per-episode reseeded evaluation; `H_intra` reported; report script = worktree HEAD).
+> - `V025-CONTROLLER-FORECAST-BEFORE-CF3-PILOT-2026-09-11.md` — the controller's forecast and blind spots,
+>   written **before** any result (read it before reading the result).
+> - Erratum 29 — 30 cross-condition comparisons remain in in-force documents; nine carry a banner.
+> - Code reviews of the pilot: `.scratch/cf3-review/CF3-CODE-REVIEW-2026-09-11.md` (0 INVALIDATES, 1 BIASES:
+>   stale report script — fixed), `.scratch/reviews/cf3-agy/CF3-AGY-REVIEW.md` (0/0),
+>   `.scratch/reviews/cf3-agy-2/CF3-AGY-REVIEW-2.md` (the final-diff review that gates the launch).
+
 All paths are in `.scratch/multi-catfish-v025-physics-successor/` unless stated.
 
 | # | read | why |

@@ -1,0 +1,255 @@
+=================== V025-CONTROLLER-ADJUDICATION-PROVISIONING-NOT-YET-2026-09-10.md
+     1	# Controller adjudication — do not authorise the provisioning change, and I have rebuilt a case I was already corrected on once
+     2	Recorded 2026-09-10 from an adversarial adjudication at ultra effort, commissioned with an explicit instruction to argue against the change and told that the controller already favoured it. `DIAGNOSTIC_NOT_CLAIM`. Nothing was run and nothing sealed was modified.
+     3	
+     4	**Verdict: do not authorise yet.**
+     5	
+     6	## The part I have to own
+     7	The sealed declaration **v1.9 §1** states, in terms: *"The margin must not be re-solved into transmit power."* The change I spent the day building a case for reverses exactly that instruction.
+     8	
+     9	On 2026-09-09 I declared that same margin rule wrong, an adversarial review ruled **KEEP_AND_DOCUMENT** and listed sixteen over-claims, and the recorded lesson was that I had attacked a strawman. **I rebuilt the same case against the same instruction, from a different direction, and did not notice.**
+    10	
+    11	My load-bearing argument — that zero of 2,000 users attain the rate target, so the model never delivers what it promises — does not survive contact with the declarations:
+    12	- **v1.1** calls the 50 Mbit/s figure a *nominal, synthetic* operating point, expressly permits partial delivery, credits achieved full-buffer bits, and separates physical service from target attainment;
+    13	- **v1.7 §1** had already withdrawn the availability rationale and named the tenth percentile as a pre-specified **scoring** convention.
+    14	
+    15	Zero attainment is therefore not a breached contract. **No such promise was ever made.** The convention I called an error is coherent: spend power for a nominal operating point, then choose a more robust mode under a conservative channel view — provided the target is a control setpoint rather than promised delivery, the demoted mode is actually transmitted, failed attempts still cost energy and interference, and neither guaranteed delivery nor network availability is claimed. Those conditions match the declarations and the implementation.
+    16	
+    17	## The concrete blocker
+    18	The evidence I assembled **mixes two different numerical implementations**.
+    19	
+    20	- **Simple division** divides the target by the quantile and stops. It leaves **1,179 uncapped occupancy-one no-mode attempts sitting 5.76 × 10⁻¹² to 2.616 × 10⁻⁹ dB below threshold** — numerically induced failures.
+    21	- **Strict clearance** adds a loop verifying both nominal and quantile-adjusted target-mode clearance.
+    22	
+    23	| panel | simple | strict |
+    24	|---|---:|---:|
+    25	| twenty-anchor joint-over-unilateral | +0.544766 % | +0.512537 % |
+    26	| eight-anchor at the sealed width | **−0.302750 %** | **−0.176800 %** |
+    27	
+    28	Committed assignments agree at only **18 of 24**. **The five-width curve has never been produced under the strict implementation**, so every corrected-physics beam-width number the project holds comes from the defective one. This also corrects my earlier explanation of that discrepancy: it was never an intermediate file, it was a different algorithm.
+    29	
+    30	A job is running to produce the strict five-width curve with all three arms side by side.
+    31	
+    32	## Other over-claims corrected
+    33	- **"Ninety per cent availability" is wrong.** Target-mode decoding requires the desired fade to clear `q × (N + I_realised)/(N + I_nominal)`, not `q`. An elevation-binned desired-link quantile does not deliver a percentile of coupled signal-to-interference-and-noise ratio, network availability, or endpoint delivery.
+    34	- **The corrected rule loses service at middling occupancy.** Decoded instances fall 24,351 → 22,046 at occupancy three, 30,800 → 24,561 at four, 9,029 → 7,619 at five. I reported the low-occupancy restoration and not this.
+    35	- **"Every user's power rises 1.107 to 4.830 dB" is inaccurate.** That range is the imposed target margin; the realised ratio also carries the interference term.
+    36	- **"2,000 users" is twenty populations of one hundred**, and the 12,000 sweep results reuse users, steps and arms across five widths. These are census denominators, not independent samples.
+    37	- The cap-onset occupancy is not universal, and the counterfactual restoration shares are not a unique additive causal decomposition.
+    38	
+    39	## What survives
+    40	The veto is not absolute. **Versioning can legitimately change the policy** — but as an explicitly justified change of planning objective, acknowledging the earlier declaration, disclosing that every outcome was known before the decision, and with the rationale made **independent of the third component's sign**.
+    41	
+    42	The conditions attached are extensive and I accept them in full: preserve the original primary, seals, receipts, figures and unfavourable findings as results of the nominal-power convention; **freeze the sealed beam width for the provisioning comparison** and give any antenna change its own separate decision, never promoting a favourable width to erase the original primary; specify and review the clearance algorithm at every scalar and dense site before regenerating anything; publish both rules, all widths, energy costs, user losses, caps, failures and negative signs including the simple-versus-strict distinction; and report the strict full-width comparison as **uncompleted until it exists**.
+    43	
+    44	## The lesson, restated because once was not enough
+    45	A prior adversarial review already told me this. The failure mode is not that I lack the correction — it is that I did not check whether a new argument was the old argument wearing different evidence. **Before assembling any case against a sealed declaration, the first step is to read that declaration and every amendment to it, and to search the record for whether I have attacked it before.**
+=================== V025-CONTROLLER-DECISION-CLOSED-NO-DIRECT-2026-09-10.md
+     1	# Controller decision — closed: do not open the contract for the direct parametrisation
+     2	Recorded 2026-09-10. Decided under the owner's stated criterion that every ruling be judged by whether it serves the goal of all three learned routes individually raising pooled efficiency. Evidence: an ultra-effort design analysis that read the deployed code rather than the design documents. `DIAGNOSTIC_NOT_CLAIM`; nothing was run and nothing sealed was modified.
+     3	
+     4	**Decision: no.** Not on cost, and not on the strength of the ranking result. On the ground that the replacement **removes the structure the owner's requirement is stated over**.
+     5	
+     6	## Why the three routes are not interchangeable in the deployed system
+     7	Read from the live implementation, which is the three-route model and profile selector, not the older compatibility path:
+     8	
+     9	- **the first route's** per-action outputs enter every candidate's score **and** the per-user argmax that builds the reference proposal and repairs an infeasible one;
+    10	- **the second route's** outputs do the same, independently;
+    11	- **the third route** supplies a single whole-set scalar to ranking only, is **hard zero on empty and singleton sets**, and never touches the proposal or repair path.
+    12	
+    13	A single set-conditioned score collapses the ranking path into one head. The leave-one-out arms for the first and third routes then no longer mean what the contract says they mean.
+    14	
+    15	## The construction that could preserve them, and why it is not available
+    16	A shared direct readout consuming the original heads' outputs — the first route entering through its per-user terms, the third through its interaction scalar, the second through its own sum — would keep three source interventions defined. Three things disqualify it now:
+    17	
+    18	1. **It is a proposed formulation, not existing code.**
+    19	2. **The measured ranking advantage does not transfer to it.** The 32.92 % regret reduction belongs to the model that was measured; its transfer is unverified.
+    20	3. **The all-neutral control stops being all-neutral.** It would be neutral for the three original routes while still containing informative training in the shared readout, so the claim sentence becomes conditional on that predictor rather than describing a three-head system with all learned supervision neutral.
+    21	
+    22	The alternative of retargeting the third route's supervision was also examined and rejected: it supplies unilateral supervision even to the neutral arm, which changes the sealed labels, the neutral training and the control background. It is not the contracted contrast.
+    23	
+    24	Under the fixed requirements neither construction conforms: §B4 fixes the factor identity, §C1 fixes the per-user surrogates, §C2 fixes residual-only third-route supervision, singleton zero anchoring and the deployed sum. Retaining the exact decomposition as a reporting known-answer test would not make a different deployed score satisfy §C2.
+    25	
+    26	## Erratum 16
+    27	I told the owner that both per-user feature schema digests would have to change. **They do not**, provided their raw fields and scales are unchanged; a new readout schema would be a separate object. I overstated the blast radius.
+    28	
+    29	## What this does not close
+    30	The ranking result stands as a measurement: direct prediction ranks better on these pools. If the project ever pursues a selector whose contribution claim is about decision quality rather than three separable routes, that measurement is the starting point. It is simply not usable for the requirement as the owner has stated it.
+    31	
+    32	## Standing
+    33	No contract opened, no sealed artefact touched, no run authorised. Existing sealed artefacts remain historical evidence and their write-once implementation would reject overwriting in any case.
+=================== V025-CONTROLLER-DECISION-CLOSED-NO-DEADLINE-2026-09-10.md
+     1	# Controller decision — closed: the deadline framing is not available, and the unilateral baseline is stronger than we recorded
+     2	Recorded 2026-09-10 from the anytime-curve measurement, built on the standing harness with a pre-declared timing contract. `DIAGNOSTIC_NOT_CLAIM`. No learner, no training run, no policy run; nothing sealed changed.
+     3	
+     4	**Decision: no.** The operational within-interval comparison cannot carry the project's claim.
+     5	
+     6	## The measurement
+     7	At the 30.08-second decision interval, a competently implemented anytime unilateral search has already obtained **81.74 %** of its converged gain under the sealed rule and **87.85 %** under the corrected one. Measured against the archived endpoints those fractions are **89.39 %** and **89.60 %**. By twenty seconds it already holds 69.51 % and 77.03 %.
+     8	
+     9	The argument I had been building — the exact search misses the interval, so a learned method may claim the within-interval win — therefore fails. A learned method must beat the **actual anytime incumbent** at the same wall clock, not the legal base configuration and not a convergence-certificate time.
+    10	
+    11	## Two escape routes closed with it
+    12	**Certification is not the bottleneck.** I had hoped most of the sixty-five seconds was proving that no improvement remained. It is not: median finding time is **55.94 s** against a **7.43 s** certificate under the sealed rule, and 44.77 s against 4.11 s under the corrected one. Removing the certification sweep buys almost nothing.
+    13	
+    14	**The baseline is better than the one we have been citing.** Simply accepting the first strict improvement instead of completing a best-improvement sweep changes the search path and the fixed point on **all twenty anchors under both rules**, and converges to a pooled efficiency **8.13 % above** the archived endpoint under the sealed rule and **1.62 % above** it under the corrected one. The "certified unilateral fixed point" the project has been comparing against was not even the best cheap thing available. Every coordination span measured against it is correspondingly overstated.
+    15	
+    16	## Why the measurement is admissible
+    17	The stopwatch starts before base construction and legal-option enumeration and includes all candidate construction, physical evaluation and cache misses. A checkpoint receives only a move whose evaluation **completed** by that timestamp, so nothing is credited with hindsight. The forty-eight-boundary committed evaluation runs after timing and cannot influence the search path, and the final no-move sweep is a separate probe excluded from the anytime and joint caches. Scalar evaluation was piloted, found to take 176.84 s on the first anchor, and rejected as an implementation defect in favour of the sealed dense evaluator's native vectorised path — which is precisely the ordinary implementation improvement an external review said must be made before declaring a baseline infeasible.
+    18	
+    19	## What this does and does not affect
+    20	It does **not** bear on the owner's requirement directly. That requirement is the §C3 source-training contrast, whose arms are compared with each other, not with this comparator.
+    21	
+    22	It does close the §C4 positioning route, and it makes the coordination span smaller than every figure recorded today, because the comparator it is measured against improves by 8.13 % under the sealed rule once its search order is fixed.
+    23	
+    24	## Standing
+    25	No claim priority was changed and no comparator was promoted; the question was whether one could be, and the answer is no. The converged comparison remains the one in the contract.
+=================== V025-CONTROLLER-FINDING-SEARCH-ORDER-2026-09-10.md
+     1	# Controller finding — every coordination number today is paired against the wrong baseline
+     2	Recorded 2026-09-10, derived by placing two of today's reports side by side rather than by any new run. `DIAGNOSTIC_NOT_CLAIM`. Nothing sealed changed; a corrected measurement is running.
+     3	
+     4	## What the arithmetic says
+     5	The anytime measurement reports that accepting the **first** strict improvement, rather than completing a best-improvement sweep, changes the search path and the fixed point on **all twenty anchors under both provisioning rules**, and converges **8.13 % above** the archived endpoint under the sealed rule and **1.62 % above** it under the corrected one.
+     6	
+     7	Applying those to the archived pooled figures:
+     8	
+     9	| sealed rule | pooled efficiency, Mbit/J |
+    10	|---|---:|
+    11	| archived unilateral, best-improvement | 28.4709 |
+    12	| **archived bounded joint selector** | **30.2814** |
+    13	| **first-improvement unilateral** | **≈ 30.79** |
+    14	
+    15	The sixty-second row of the anytime curve gives the same answer independently: 29.5396 is 95.39 % of the first-improvement prize, which puts convergence at about 30.787.
+    16	
+    17	Under the corrected rule the first-improvement endpoint lands near 43.71 against the archived joint selector's 43.24.
+    18	
+    19	**Under both rules, changing nothing but the order in which the local search accepts improvements produces a unilateral endpoint that exceeds the bounded joint selector it was supposed to be beaten by.**
+    20	
+    21	## What this does and does not license
+    22	It does **not** license "coordination is worthless". The joint selector was **seeded from the best-improvement fixed point**. Re-seeding it from the better endpoint should improve it too, and it may still win.
+    23	
+    24	What it licenses is narrower and worse: **the comparison as run is mispaired.** Every coordination figure the project holds — the archived +6.359 %, the corrected +0.51 %, the five-point beam-width curve, the thirty-date interval and its confidence bounds — measures a joint selector seeded from one local optimum against that same local optimum, when a different traversal order of the same neighbourhood reaches a better one. **The real span is unknown.**
+    25	
+    26	This is also the concrete form of a caution the provisioning adjudication gave and I did not fully absorb: the unilateral certificate establishes local optimality **in the specified neighbourhood**, and the joint result establishes a maximum **over its bounded candidate family**. Neither is a global optimum, and neither is invariant to the traversal order. We have been treating one particular local optimum as though the word "certified" made it canonical.
+    27	
+    28	## What is running
+    29	A four-arm re-measurement on the same twenty anchors under both rules: the two unilateral endpoints, the joint selector seeded from each, and both cross pairings so that the seed effect and the search-order effect can be separated. Its first line must state the correctly paired span, and it is instructed to lead with the fact if that span is near zero or negative.
+    30	
+    31	## Standing
+    32	No result is withdrawn yet, because the corrected pairing has not been measured. But no coordination figure recorded today should be carried forward until it has been.
+=================== V025-CONTROLLER-FINDING-PREFIX-IS-THE-VALUE-2026-09-10.md
+     1	# Controller finding — the non-learned prefix is not a convenience, it is the value
+     2	Recorded 2026-09-10 from the prefix ablation: eight real anchors fixed before results, identical world digests across rules, identical catalogue rules, caps, objective, price, tie-break and served-count guard between arms; only the seed configuration changes. `DIAGNOSTIC_NOT_CLAIM`. No learner, no training run, nothing sealed modified.
+     3	
+     4	## The owner's masking concern, answered
+     5	The owner observed that a coordination layer sitting on top of a learned network re-scatters what was learned, so the learning effect cannot be seen. That is true, and this measurement establishes the reason it cannot simply be removed.
+     6	
+     7	Seeding the bounded joint catalogue from the **raw geometric assignment** instead of from the iterated unilateral fixed point recovers only **6.03 %** of the prefix's pooled uplift under the sealed rule and **4.99 %** under the corrected one. Against the geometric baseline the catalogue-only arm gains **+35.78 %** and **+21.63 %**, where the prefix gains **+593.06 %** and **+433.66 %**.
+     8	
+     9	**The raw geometric state does not expose a large one-catalogue learning band. The non-learned prefix creates almost all of it.**
+    10	
+    11	## Why, structurally
+    12	The catalogue can move only prescribed groups of at least two users, each member restricted to a single alternate computed at the current seed. The unilateral search instead makes a long sequence of context-dependent **singleton** moves, changing the interference and occupancy context at each step and recomputing against it.
+    13	
+    14	The report's decisive observation: **no accepted unilateral transition is directly expressible as a catalogue row**, and the unilateral endpoint configuration **is absent from all eight initial catalogue-only candidate sets** under both rules.
+    15	
+    16	## Iterating the catalogue does not substitute either
+    17	| arm | against the prefix | per-anchor | cost per anchor |
+    18	|---|---:|---|---|
+    19	| corrected rule, sixteen catalogue rounds | **−20.93 %** | **worse on 8 of 8** | 60,198 evaluations, 904.8 s |
+    20	| sealed rule, sixteen catalogue rounds | +9.38 % | **worse on 5 of 8** | 61,372 evaluations, 603.9 s |
+    21	| the prefix itself | — | — | ~12,000 evaluations, 30–36 s |
+    22	
+    23	Under the sealed rule iterated set-level moves do eventually exceed the prefix's pooled value, but at roughly twenty times the evaluation cost while still losing on most anchors. The honest reading, which the report states itself, is that the prefix is a **much cheaper route to broadly high quality**, not that the catalogue-only asymptote is necessarily lower.
+    24	
+    25	## What this closes
+    26	Together with two other measurements today, every route for making the coordination layer's contribution look larger is now closed:
+    27	
+    28	- **the deadline route** — a competent anytime unilateral already holds 82 % to 88 % of its converged gain at the 30.08-second interval;
+    29	- **the prefix-removal route** — this measurement;
+    30	- **the reparametrisation route** — direct prediction ranks better but removes the three-route structure the owner's requirement is stated over.
+    31	
+    32	The coordination span itself is currently **unknown**, because every figure recorded today is paired against a local optimum that a different traversal order improves on. That re-measurement is running.
+    33	
+    34	## The consequence for where effort goes
+    35	There is no remaining exploratory direction on the coordination side. What has never been measured at scale is the owner's actual requirement — the source-training contrast over the three routes — whose arms are compared with each other and are therefore untouched by all of the above. That is where the remaining effort belongs.
+=================== V025-CONTROLLER-FINDING-SPAN-AND-C3-2026-09-10.md
+     1	# Controller finding — the corrected span is more than double what I reported, and the third route is not a size penalty
+     2	Recorded 2026-09-10 from two pre-declared measurements that landed within a minute of each other. Both reuse frozen splits, seeds, estimator families and tie-breaks from earlier work; neither tuned any scorer. `DIAGNOSTIC_NOT_CLAIM`. No learner deployed, no training run, no policy run, nothing sealed modified.
+     3	
+     4	## The coordination span, correctly paired
+     5	Every span recorded today compared a joint selector seeded from one local optimum against that same optimum, when a different traversal order of the same neighbourhood reaches a better one. Re-measured with **both arms on the better search**:
+     6	
+     7	| rule | mispaired | **correctly paired** | negative anchors |
+     8	|---|---:|---:|---:|
+     9	| sealed | +6.3590 % | **+4.6046 %** | 1 of 20 |
+    10	| **corrected** | **+0.5448 %** | **+1.2913 %** | 6 of 20 |
+    11	
+    12	**Under the corrected physics the span is more than double what I have been reporting all day.** The mispairing overstated the sealed figure by 1.75 points and **understated** the corrected one by 0.75 points — opposite directions, which is why no ratio may be used to extrapolate the other figures.
+    13	
+    14	My inference that the better unilateral endpoint would overtake the archived joint selector was correct — 30.7869 against 30.2814 under the sealed rule. But the joint selector re-seeded from that better endpoint overtakes it again, at **32.2045**. **Coordination is real, not an artefact of traversal order.**
+    15	
+    16	The two sign counts answer different questions and must not be merged: on the selection-time objective the joint selector strictly improves on its seed at **20 of 20** anchors under both rules; on the forty-eight-boundary committed efficiency it is positive at 19 of 20 under the sealed rule and 14 of 20 under the corrected one.
+    17	
+    18	One detail worth keeping: under the corrected rule the better unilateral endpoint delivers **fewer** bits than the archived one, 3.169 against 3.202 Tbit, while spending far less energy, 72,516 against 74,453 J. First-improvement trades bits for energy there.
+    19	
+    20	## The third route is not a size penalty
+    21	A design reviewer's specific objection was that the interaction route's correction is a large, nearly size-proportional term, and that until the system beats a fixed per-size prior the honest description is that the sum needs a size penalty and this route supplies one. Tested:
+    22	
+    23	| scorer | held-out mean selection regret |
+    24	|---|---:|
+    25	| **learned interaction head** | **3.618** |
+    26	| size-only prior | 13.114 |
+    27	| zero interaction | 13.683 |
+    28	
+    29	The learned head's advantage over the size prior is **9.496**; the size prior's advantage over zero is **0.569**. **Knowing the coalition size is worth almost nothing; nearly all of the learned head's value is set-specific.**
+    30	
+    31	The fitted prior is instructive rather than weak: it does capture the large negative at size one hundred, at −12.402 against small positives at sizes two to four, and it still lands at 13.114. Reproducing the size effect is not the same as ranking.
+    32	
+    33	## What this changes and what it does not
+    34	It raises my estimate for the third route materially — its one named threat is now tested and failed — and it more than doubles the budget the three routes have to share under corrected physics.
+    35	
+    36	It does **not** measure the owner's requirement. Both results are offline measurements on labelled candidate pools with exact labels, not closed-loop policy runs, and the source-training contrast over the three routes has still never been run at scale.
+    37	
+    38	## An immediate consequence for a result I reported tonight
+    39	The five-point beam-width curve was computed with the same mispairing. I told the owner that coordination is **negative** at the width we currently model, at −0.303 %. On the twenty-anchor panel that same mispairing understated the corrected span by a factor of 2.4. That curve must be recomputed with correct pairing before the "this design point is dead" conclusion stands. I am not extrapolating the factor; it must be measured.
+=================== V025-CONTROLLER-FINDING-CORRECTED-PICTURE-2026-09-10.md
+     1	# Controller finding — the corrected-physics coordination picture, from two panels
+     2	Recorded 2026-09-10 from the strict-clearance beam-width curve and the thirty-date corrected panel. `DIAGNOSTIC_NOT_CLAIM`. No learner, no training run, no policy run; nothing sealed modified.
+     3	
+     4	## The numerical-implementation question is settled
+     5	Two implementations of the corrected provisioning existed, and an adjudication blocked a decision until the stricter one had produced a full five-width curve. It has:
+     6	
+     7	| one-sided width | simple division | **strict clearance** | difference |
+     8	|---:|---:|---:|---:|
+     9	| **1.66°** (sealed) | −0.3028 % (5/8 negative) | **−0.1768 % (3/8 negative)** | +0.126 |
+    10	| 2.40° | +1.2089 % | **+1.9483 %** | +0.739 |
+    11	| **3.32°** (the source's own value) | +0.9848 % | **+2.3460 %** | **+1.361** |
+    12	| 4.50° | +3.2052 % | +3.0077 % | −0.197 |
+    13	| 6.65° | +7.3153 % | **+8.1628 %** | +0.847 |
+    14	
+    15	**No sign changes.** Both remain negative only at the sealed width, so the attempt to rescue a positive value through the stricter numerics fails — exactly as the adjudication predicted.
+    16	
+    17	**The shape does change**, and this corrects something I reported to the owner. Simple division dips from +1.209 % at 2.40° to +0.985 % at 3.32°; strict clearance rises at **every** sampled step. My statement that the monotone rise "does not survive" was an artefact of the defective numerics: under the correct implementation it does survive.
+    18	
+    19	## Thirty dates under the corrected rule
+    20	**Mean +0.717 %, sample SD 0.751 %, 95 % interval [+0.436 %, +0.997 %], positive on 26 of 30 dates.** The four negatives are small: −0.075 %, −0.070 %, −0.265 % and −0.230 %. Maximum +3.246 %.
+    21	
+    22	The report leads with the honest reading and I adopt it: **the corrected gap is small and its interval includes practically immaterial values.**
+    23	
+    24	Its compatibility gate is the standard I want everywhere: before any corrected date was run, the copied evaluator was compiled with its divisor set to one and three complete six-anchor dates rerun, with **every deterministic receipt field bit-identical** — world identity, seed, epoch, search paths and counts, terminal certificates, configuration identifiers, committed bits, joules and served counts, and summaries — excluding only wall and CPU timing.
+    25	
+    26	## The finding I did not anticipate
+    27	The Spearman rank correlation between the per-date gains under the two provisioning rules is **ρ = +0.006**. Which dates favour coordination under the sealed rule tells you **nothing** about which favour it under the corrected one, and four dates flip from favourable to non-positive. Any date-selection intuition carried over from the sealed rule is worthless.
+    28	
+    29	## Both panels carry the old pairing
+    30	| panel | pairing | corrected span |
+    31	|---|---|---:|
+    32	| twenty anchors | **correct** | **+1.29 %** |
+    33	| thirty dates | old | +0.717 % [+0.436, +0.997] |
+    34	| five widths | old | −0.177 % at the sealed width |
+    35	
+    36	Both of the latter were started before the pairing defect was found. On the twenty-anchor panel correct pairing raised the corrected figure by 0.75 points. **I am not extrapolating that**; the five-width curve is being re-measured with strict clearance and correct pairing together, and the thirty-date panel's transferable value is its variance structure rather than its point estimate.
+    37	
+    38	## Where this leaves the coordination side
+    39	Small, positive, with an interval whose lower edge approaches immateriality. Three routes must each show a resolvable positive marginal inside that band. It is tight — but the owner's bar is an ordering rather than a fixed per-contrast threshold, and a leave-one-out arm can fall **below** the fixed point, so the marginals are not bounded by the band.

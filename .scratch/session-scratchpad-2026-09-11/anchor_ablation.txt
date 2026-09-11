@@ -1,0 +1,25 @@
+# N_EP=24/cell, frozen seeds (42/1337/7), dt=30.080000000000002s, no update().
+# pooled EE = sum(bits)/sum(joules), two running totals divided once.
+# override impl sha256 a534244755f1df55ebc12b96a67fce93fe34e91c9b7d886aef4ae6276378f03a
+# every cell builds a FRESH env so _age_rng is matched across arms.
+
+## physics = none
+arm                       pooled bits  pooled joules        pooled EE          sem  served      ho
+RANDOM_MASKED            1.842866e+14   3.473162e+06  53060175.561473     394443.7  0.9360  0.8680
+MAX_NOMINAL_GAIN         3.266731e+14   2.929683e+06 111504571.388934    1095687.3  0.9981  0.7120
+GREEDY_R1R2              2.617496e+14   3.454818e+06  75763635.837306     633758.9  0.9955  0.1418
+TRAINED e6b063ef         2.848622e+14   3.059385e+06  93110907.973748     902313.3  0.9988  0.2799
+
+## physics = ablate_anchor
+arm                       pooled bits  pooled joules        pooled EE          sem  served      ho
+RANDOM_MASKED            1.904807e+14   3.691411e+06  51601064.615128     411727.9  1.0000  0.8655
+MAX_NOMINAL_GAIN         3.262056e+14   2.896868e+06 112606306.113578    1079024.6  1.0000  0.7105
+GREEDY_R1R2              2.549917e+14   3.408890e+06  74801972.369057     641485.8  1.0000  0.1389
+TRAINED e6b063ef         2.845606e+14   3.088655e+06  92130894.383621     941007.3  1.0000  0.2825
+
+# none           MAX_NOMINAL_GAIN / TRAINED = 1.1975  (delta +1.839366e+07 bit/J, 13.0 sem)
+# ablate_anchor  MAX_NOMINAL_GAIN / TRAINED = 1.2222  (delta +2.047541e+07 bit/J, 14.3 sem)
+
+# previous shared-env anchored run: MAX 111553182.845841, TRAINED 93137893.020321, ratio 1.1977
+
+# total wall 944.3 s
