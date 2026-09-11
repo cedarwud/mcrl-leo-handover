@@ -1,0 +1,51 @@
+# N_EP=24/arm, frozen seeds (42/1337/7), dt=30.080000000000002s, no update().
+# xi_max=0.35, p_sat=5.217758 W
+# fixed terms identical in all three accountings: P_cir=0.338 W/beam, P_BB=0.200 W/sat
+# pooled EE = sum(bits)/sum(joules), two running totals divided once.
+
+## RANDOM_MASKED
+   bits 1.842866e+14  served 0.9360  ho 0.8680  mean_active_beams 76.642
+   PARITY |MAX_recomputed - env P^N| max over steps = 2.274e-13 W
+   MAX          joules   3.473162e+06  EE  53060175.561473  sem     394443.7
+   TDM_AIRTIME  joules   3.466698e+06  EE  53159114.238023  sem     395231.6
+   ADDITIVE     joules   3.755301e+06  EE  49073720.120940  sem     400747.6
+
+## MAX_NOMINAL_GAIN
+   bits 3.266731e+14  served 0.9981  ho 0.7120  mean_active_beams 63.717
+   PARITY |MAX_recomputed - env P^N| max over steps = 2.274e-13 W
+   MAX          joules   2.929683e+06  EE 111504571.388934  sem    1095687.3
+   TDM_AIRTIME  joules   2.913089e+06  EE 112139763.262919  sem    1122380.9
+   ADDITIVE     joules   3.491118e+06  EE  93572620.065326  sem     960658.0
+   LOO MAX          n= 14225 mean +0.055058 W (+1.6562 J)  mean|d| 0.055058 W  med +0.000000  p10 +0.0000  p90 +0.1178  zero 0.7907  neg 0.0422
+   LOO TDM_AIRTIME  n= 14225 mean +0.000000 W (+0.0000 J)  mean|d| 0.062090 W  med +0.000000  p10 -0.0972  p90 +0.0903  zero 0.4690  neg 0.2203
+   LOO ADDITIVE     n= 14225 mean +2.116591 W (+63.6671 J)  mean|d| 2.116591 W  med +2.263490  p10 +1.5157  p90 +2.4718  zero 0.0000  neg 0.0000
+
+## GREEDY_R1R2
+   bits 2.617496e+14  served 0.9955  ho 0.1418  mean_active_beams 76.300
+   PARITY |MAX_recomputed - env P^N| max over steps = 2.274e-13 W
+   MAX          joules   3.454818e+06  EE  75763635.837306  sem     633758.9
+   TDM_AIRTIME  joules   3.428135e+06  EE  76353338.783410  sem     644788.5
+   ADDITIVE     joules   3.811517e+06  EE  68673335.399907  sem     665445.9
+
+## TRAINED e6b063ef
+   bits 2.848622e+14  served 0.9988  ho 0.2799  mean_active_beams 67.904
+   PARITY |MAX_recomputed - env P^N| max over steps = 2.274e-13 W
+   MAX          joules   3.059385e+06  EE  93110907.973748  sem     902313.3
+   TDM_AIRTIME  joules   3.026859e+06  EE  94111458.319511  sem     895971.5
+   ADDITIVE     joules   3.540181e+06  EE  80465428.823841  sem     888512.3
+   LOO MAX          n= 13219 mean +0.127561 W (+3.8370 J)  mean|d| 0.127561 W  med +0.000000  p10 +0.0000  p90 +0.4273  zero 0.6656  neg 0.0179
+   LOO TDM_AIRTIME  n= 13219 mean +0.000000 W (+0.0000 J)  mean|d| 0.135037 W  med +0.000000  p10 -0.2198  p90 +0.2188  zero 0.2536  neg 0.3633
+   LOO ADDITIVE     n= 13219 mean +2.145875 W (+64.5479 J)  mean|d| 2.145875 W  med +2.288288  p10 +1.4653  p90 +2.6632  zero 0.0000  neg 0.0000
+
+## CANONICAL MARGINAL INSTANCE (p_tilde = p0 = 0.825 W, U_b = 2 -> 3)
+   MAX          5.927900 W -> 5.927900 W   delta +0.000000 W = +0.0000 J over dt
+   TDM_AIRTIME  5.927900 W -> 5.927900 W   delta +0.000000 W = +0.0000 J over dt
+   ADDITIVE     8.383317 W -> 10.267425 W   delta +1.884108 W = +56.6740 J over dt
+
+## DECISION TABLE
+accounting        MAX_NOMINAL_GAIN EE         trained EE     ratio   sem gap
+MAX                      111504571.39        93110907.97    1.1975      13.0
+TDM_AIRTIME              112139763.26        94111458.32    1.1916      12.6
+ADDITIVE                  93572620.07        80465428.82    1.1629      10.0
+
+# total wall 351.9 s
