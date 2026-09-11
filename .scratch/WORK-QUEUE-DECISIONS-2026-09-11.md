@@ -412,3 +412,58 @@ Expected finish 23:25–23:45 UTC; the controller re-derives the ep-300 numbers 
 - No new arm, no training, no design change, no edit to any sealed document.
 - The controller did not open `sat:ws/eval/`, `ws/report/`, `readings.jsonl` or `PROGRESS.md` lines 149–182.
 - Q7 was not started "because it can run any time": it competes for the server with Q1 and only matters if Q5 runs.
+
+---
+
+# 2026-09-12 — E1 closed, Catfish-2 closed at zero, S1 frozen
+
+## E1 (Amendment 10) — `D3-T0` PASSES
+
+Full record and provenance in `.scratch/dev-training/E1-RESULT-2026-09-12.md` (`1dd29ab5`); freeze and the S1 proposal
+in `.scratch/dev-training/E1-FREEZE-AND-S1-PROPOSAL-2026-09-12.md` (`5cab1fb1`). Read by the controller from the nine
+ep-300 DEVVAL JSONs under `run_root + config_hash + seed_index + checkpoint_episode`, pinned TLE asserted, 27 cells,
+9 distinct config hashes, zero collisions.
+
+`D3-T0` vs paired `D0` on fresh DEV k = 3/4/5: **+7.88 / +10.46 / +9.91 %**, seed mean **+9.42 %**, direction 3/3.
+`D2-T0 τ = 0.3`: +8.96 / +8.85 / +9.38 %, mean +9.06 %. QoS floors met with room — worst Δserved −0.054 pp (floor
+−0.5), worst p10 ratio 1.144 × (floor 0.5 ×, so p10 *improved* 14–52 %), worst bits ratio 1.0428 (floor 0.95).
+Paired per-episode **144/144 positive**, minimum +1.55 %.
+
+**Neither Amendment 10 §4 reopen condition fired.** D2 wins only on k = 3 (+1.00 %) and loses on k = 4 (−1.45 %) and
+k = 5 (−0.49 %) — not across the board, not consistent, not substantive.
+
+Two things recorded prospectively, both before the owner ruled:
+1. **The gain decays with depth but the decay decelerates** — 12.71 % → 9.72 % → 9.42 % at ep 100/200/300; the last
+   100 episodes moved it only 0.3 pp, with both arms flattening ~9.5 pp apart. S1's depth was already fixed at 1000,
+   so no depth can be chosen from this; a materially smaller gap at S1 is a legitimate outcome, not a bug.
+2. **Closer imitation of T0 does not help more** — ep-300 `t0_agreement` is 0.36 (D0), 0.70–0.72 (D3-T0), 0.74–0.75
+   (D2-T0). The soft arm tracks T0 more closely on all three seeds and scores slightly lower. T0 is a prior the
+   learner improves on, not a target to converge to.
+
+## Catfish-2 Stage 0 — zero survivors, and the controller's independent check
+
+Agent report and artefacts at `99263da9`. **Controller re-derivation from `results/STAGE0-AGGREGATE-A11.json`
+confirms every headline claim**: `C_Q_local` CR 0.5037 at disagreement 0.0024; `C_Q_global` 0.4798 / 0.0760;
+`C_RC_local` 0.4229 / 0.2311; `A_m12dB` 0.4847 / 0.5286. Every arm with disagreement ≥ 0.25 has CR ≤ 0.485; the only
+arm with CR ≥ 0.5 differs from T0 on 0.24 % of decisions; **all nine arms have negative Δ mean *and* negative Δ
+median**. `LPend_c0` matches `MAX_NOMINAL_GAIN` and `LPend_chigh` matches `B1_NO_NEW_BEAM` in every column, so the
+decomposition endpoints do reproduce their controls exactly, as claimed.
+
+The T0 decomposition is **rejected**; T0 remains one source. Per Amendment 13 §6: `A m=12dB` is **not** promoted
+despite its near miss, the CR threshold does **not** move, and no `D3-A12` canary runs. A successor lane must target
+information T0 does not already use — not another reweighting of the same two observation blocks.
+
+**Consequence for the narrative: there is one catfish, and it now has fresh-seed stability evidence.** The
+multi-catfish line is closed for now, and that is stated plainly rather than packaged as a positive.
+
+## S1 is frozen (Amendment 13, owner)
+
+Six trained arms — `D0`, `D3-T0`, `D3-null`, `D3-XEP`, `D2-T0 τ = 0.3`, `MODQN eq.(16) @1000` — plus the frozen
+`e6b063ef…` @9000 rolled once as the separately labelled published reference. Baseline **Option A**: the 9000-episode
+checkpoint is not a conjunctive veto, and beating only the 1000-episode baseline is claimed as *same-budget
+superiority*. Fresh formal namespaces `S1-TRAIN 9_251_000/9_252_000/9_253_000 + k` and `S1-NULL (9_261_000, k)`;
+DEV streams may not be reused. `T0-XEP` keeps its one sealed DEV-NULL reference trajectory.
+
+Conditional launch authority is granted against eight preflight conditions (Amendment 13 §7). **The controller runs
+the fresh-context review and presses the button; S1-PREP does not launch.** The complete 18-run matrix launches
+together — the formal set is never partially opened.
