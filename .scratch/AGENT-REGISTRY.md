@@ -1,6 +1,6 @@
 # Agent registry — resume after any interruption
 
-Last updated: 2026-09-11 ~14:10Z. **Read this first after a session restart, a usage limit, or a crash.**
+Last updated: 2026-09-11 ~09:40Z (after the second usage-limit reset). **Read this first after a session restart, a usage limit, or a crash.**
 
 ## How to resume a Claude sub-agent
 
@@ -18,16 +18,21 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 
 ## Running — Claude sub-agents
 
-| name | agentId | workspace | report (first line = verdict) |
-|---|---|---|---|
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-| LFDSCREEN | `a07cab0dcf4626ed2` | local `.scratch/lfd-family-screen` | `LFD-FAMILY-SCREEN-2026-09-11.md` | screen offline/advantage-weighted/guide-policy/constrained/MORL families against the 8 hard constraints |
-| ENDPOINTREV-astra | codex `gpt-6-astra` ultra | `/home/sat/mcrl-v025-endpoint-review-ws` | `ENDPOINT-REVIEW-ASTRA.md` | cross-model review of the endpoint decision; auto-resumes via `run_resumable2.sh` |
-| C1VSGAIN | `ae6dc407144ed2d9b` | `/home/sat/mcrl-v025-c1vsgain-ws` | `C1-VS-GAIN-HEURISTIC-2026-09-11.md` | exact C1 vs 52.042303 **and** 62.502712, both at full 48 |
-| SPECPROFILE | `abea2d51b138e045a` | `/home/sat/mcrl-v025-specprofile-ws` | `SPECIALIST-QOS-PROFILE-2026-09-11.md` | **resumed** — re-score the same configurations under the declared 0.062/0.142 s handover interruption |
-| CATFISHSURFACE | `a450f049afc5a76ea` | local `.scratch/catfish-surface` | `CATFISH-ATTACHMENT-SURFACE-2026-09-11.md` | **resumed (3rd)** — pooled EE (ratio of sums) for every scripted arm |
-| ZCLOSE | `a5797d33c85b506f8` | local `.scratch/zclose` | `Z-CLOSURE-AND-COLLAPSE-INDICATORS-2026-09-11.md` | retrieve MODQNZ from `/home/sat/mcrl-v025-mqz-ws/`; compute all four G-3 indicators |
+| **FEASFRONT** | `a295ca3c20644fd7b` | local `.scratch/feasible-frontier` | `FEASIBLE-FRONTIER-2026-09-11.md` | hysteresis / consolidation / satellite-lock frontier; **then** the JSRL guide-horizon coverage sweep `h = 0..10` |
+| **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | fix per-head bootstrap, outage free ride, uncalibrated logged scalar; 500-ep pilot |
+| **POWERACCT** | `ab622bcc795b950d8` | local `.scratch/beam-power-accounting` | `BEAM-POWER-ACCOUNTING-2026-09-11.md` | **resumed** — re-score frozen actions under `MAX` / `TDM_AIRTIME` / `ADDITIVE`; **can invalidate the 19.8% result** |
+| **PENALTYARM** | `a846df68eb09cb7ab` | local `.scratch/penalty-arm` + `/home/sat/mcrl-v025-penalty-ws` | `PENALTY-ARM-2026-09-11.md` | **resumed** — OFF / PENALTY / NULL_PENALTY, 500 ep each |
+
+**Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
+terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
+`SendMessage`. PENALTYARM's resume message also carried two coordination notes (B0 tree,
+`max`-accounting caveat) — **re-send those if it is ever replaced by a fresh agent.**
+
+Completed today and not to be resumed: LFDSCREEN, ENDPOINTREV-astra, C1VSGAIN,
+SPECPROFILE, CATFISHSURFACE, ZCLOSE, ZWHY, R23HISTORY, DQFDGROUND, CATFISHFACT,
+**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`).
 
 **Usage-limit interruption 2026-09-11 ~04:20Z.** All five running agents were terminated
 mid-task by an HTTP 429 session limit; four were resumed by `SendMessage` after the reset
