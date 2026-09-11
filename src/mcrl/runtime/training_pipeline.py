@@ -12,6 +12,7 @@ import datetime as dt
 import hashlib
 import importlib.metadata
 import json
+import os
 import platform
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -769,9 +770,60 @@ def _frozen_reward_scales(record: PreregRecord) -> tuple[float, float, float]:
     return values  # type: ignore[return-value]
 
 
+TLE_ROOT_ENV_VAR = "MCRL_TLE_ROOT"
+"""Optional override of the TLE archive root (2026-09-11 host-pin ruling).
+
+Unset, the root is ``TLE_ROOT_DEFAULT`` exactly as before.  It exists because
+two hosts' ``~/demo/tle_data/starlink/tle`` held DIFFERENT archives (sat: the
+frozen 373 files; local: those 373 plus 19 later days), so the same seed drew
+different episode epochs and the random arm differed between hosts.  Point it
+at a workspace-local copy of the pinned archive; never edit a shared one.
+"""
+
+
+def resolve_tle_root() -> Path:
+    """The archive root every training-environment constructor must use."""
+    override = os.environ.get(TLE_ROOT_ENV_VAR)
+    return Path(override or TLE_ROOT_DEFAULT).expanduser()
+
+
+def pinned_tle_file_set_sha256(prereg_path: Path = CANONICAL_PREREG) -> str:
+    """The pinned archive's content hash: the frozen R2 record's own value.
+
+    ``file_set_sha256`` is ``env.ephemeris.file_set_hash`` over
+    ``(file, sha256)`` rows -- read from the canonical prereg rather than
+    written out again, so there is one authority for it.
+    """
+    frozen = read_prereg(prereg_path).sections["ephemeris"]
+    return str(frozen["file_set_sha256"])
+
+
+def assert_tle_archive_pinned(
+    root: Path | None = None,
+    *,
+    prereg_path: Path = CANONICAL_PREREG,
+) -> str:
+    """Raise unless the archive at ``root`` IS the pinned frozen archive.
+
+    Returns the verified file-set hash.  Any file added, removed or changed
+    moves the hash -- including the 19 extra days that made the two hosts
+    disagree.
+    """
+    archive = TleArchive(root or resolve_tle_root())
+    live = file_set_hash(archive.manifest_rows(list(archive.dates)))
+    pinned = pinned_tle_file_set_sha256(prereg_path)
+    if live != pinned:
+        raise MCRLContractError(
+            f"TLE archive at {archive.root} has file_set_sha256 {live}, not the "
+            f"pinned frozen archive {pinned}; set {TLE_ROOT_ENV_VAR} to a copy "
+            "of the pinned archive"
+        )
+    return live
+
+
 def make_training_environment(*, users: int = 100) -> TrainerEnvironment:
     """Construct a fresh real-ephemeris environment on the frozen train split."""
-    archive = TleArchive(Path(TLE_ROOT_DEFAULT).expanduser())
+    archive = TleArchive(resolve_tle_root())
     driver = ScenarioDriver(
         archive,
         ScenarioConfig(mobility=MobilityConfig(num_users=users)),
@@ -791,7 +843,7 @@ def assert_ephemeris_matches_record(
     frozen = record.sections.get("ephemeris")
     if not isinstance(frozen, dict):
         raise MCRLContractError("the frozen record has no ephemeris contract")
-    live_archive = archive or TleArchive(Path(TLE_ROOT_DEFAULT).expanduser())
+    live_archive = archive or TleArchive(resolve_tle_root())
     dates = list(live_archive.dates)
     rows = live_archive.manifest_rows(dates)
     first, last = live_archive.date_range
