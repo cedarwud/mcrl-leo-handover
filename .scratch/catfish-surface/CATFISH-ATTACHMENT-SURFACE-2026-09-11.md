@@ -272,3 +272,144 @@ A second reason, close behind and worth pre-declaring rather than discovering: *
 **Taken from the companion facts doc without re-verification:** the `S_UNI` 600-second non-certification, and that nothing DFT+WMMSE-shaped exists in either tree.
 
 **Not established here:** what the sibling's ACRM arms measured on EE (I read their instrumentation, not their outcome); whether the +260-line `modqn.py` delta in commit `14174d60` touched `update()`/`train()` semantics or only added diagnostics — I verified the hashes differ and the line counts, not the semantic content of that diff; whether DQfD's published results are independently reproduced (DQFDGROUND's question, not mine).
+
+---
+
+## Follow-up: is there a demonstrator on the MODQN action space
+
+**Answer in one line: the premise as handed to me does not survive checking — `41.28` is a beam count, not an EE — but the underlying question has a better answer than my §10 gave, because a one-line rule that IS expressible on the MODQN action space beats the trained MODQN checkpoint by +23.9% on r1, measured by me on the MODQN harness this session. It is not `GAIN_IN_SET`, it is `RSS_MAX`, and on MODQN's own scalarized objective it is worse than the learner, not better.**
+
+Added 2026-09-11 after the coordinator's follow-up. Still read-only: no training, no gradient step, one scripted rollout in the env, four read-only `ssh sat` file reads. Nothing written outside this report, `PROGRESS.md`, and the session scratchpad.
+
+### 4 first, because it decides the rest — the premise does not check out
+
+The coordinator's framing was *"`GAIN_IN_SET` … measured at pooled EE 62.502712 Mbit/J … against the learned policy's 41.28."* I read both source documents on `sat`. **That comparison is not like-for-like, and it is not a comparison of two EEs.**
+
+**(i) `41.28` is a beam count, not an EE.** **[V]** `/home/sat/mcrl-v025-probe-ws/BASE-COLLAPSE-DIAGNOSIS-2026-09-10.md:30` is a row of a table whose column headers are at `:25`:
+
+| Profile | Profiles | `modal_frac` | **Active beams mean [range]** | Active satellites | `argmax_distinct` | Null users |
+|---|---|---|---|---|---|---|
+| Learned `a0`, q1-v1 sensitivity | 286 | 0.06864 | **41.28 [1, 60]** | 5.57 | 0.41283 | 4.51 |
+
+`41.28` is the mean number of distinct selected physical beams. Its own document says at `:5`: *"This is a design-phase diagnostic, not a performance or EE claim."* Comparing `62.502712 Mbit/J` to `41.28 beams` is a unit mismatch. (I note the near-coincidence that `RSS_MAX` pooled EE is **41.621560** Mbit/J on the same panel family — two different quantities that both round to "41.")
+
+**(ii) The learned policy's EE on that panel was never measured. The job that would have measured it was stopped.** **[V]** `/home/sat/mcrl-v025-beamcount-ws/BEAM-COUNT-CAP-2026-09-10.md:279-289`, heading verbatim: **"Part 3 — where the current policies land: NOT COMPLETED"**, body: *"was launched and then **stopped by the controller's cost-control instruction before its first anchor completed**. No projected number is reported and **none should be inferred**."* And on the two counts it does cite: *"Those counts are on the 22 TRAIN anchors, not this 12-anchor panel, and **carry no EE**."*
+
+**(iii) `62.502712` is not a rule's score. It is a search winner selected on a proxy field.** **[V]** From the same report `:156-207`: the C = 50 winner is the best of nine declared rules **plus** first-improvement single-user local search (up to 3 passes) **plus** the nested winners of every smaller cap and `RSS_MAX`, with the winner picked by **boundary-0** EE. The best *declared rule* at C = 50 is `S2 + A2` at **52.042303** Mbit/J (`:222-241` table), 16.7% below the headline. And `/home/sat/mcrl-v025-specprofile-ws/PROGRESS.md:47` states the provenance outright: *"`GAIN_IN_SET` = the BEAMCOUNT `CAP_050` winner; winner_start `RSS_MAX_within_cap` (polished) at step 0 and `INHERITED_CAP_030_WINNER` at steps 1-3."* The name `GAIN_IN_SET` appears **nowhere** in `/home/sat/mcrl-v025-beamcount-ws/` (grep, 0 hits) — it is a later label for a search output, not a rule. The beamcount report also discloses that its selection field overstates: *"the uncapped search raised boundary-0 EE from `RSS_MAX` 71.84 to 114.06 while full-48 EE *fell* to 65.38"* (`:327-331`).
+
+**(iv) Neither number is on the MODQN harness.** Both are V0.25 `a-r0` successor physics, 12 development anchors, `V025_PROBE/world/1`, 4 physical steps. The MODQN baseline is a different environment entirely. **[V]**
+
+So the answer to question 4 is: **no, "the demonstrator beats the learner" was not a like-for-like claim, and it was not measured. It should not be carried forward.** This is precisely the shape the standing memory note *「報數字要帶四個欄位」* (reference point / information class / estimator / numerator) exists to catch.
+
+### 1. The MODQN action space and per-step observation, precisely
+
+**Action space** — `src/mcrl/env/action_contract.py:14-16`: **[V]**
+
+```
+a = 7·l + j        l ∈ {0,1,2,3} satellite slot,  j ∈ {0,…,6} beam slot
+```
+
+`NUM_SATELLITE_SLOTS = 4` (`:40`), `NUM_BEAM_SLOTS = 7` (`:43`), `NUM_ACTIONS = 28` (`:68`), plus `NO_OP_ACTION = -1` (`:71`) which is *"not a beam index and not maskable: it is the absence of a decision."*
+
+**The decisive property: the index is user-relative, and it is not a beam identity.** `:43-58` — `J_w = 7` is *"how many cells one **user** can reach (their own plus the six neighbours)"*, and the module's load-bearing rule at `:16-18` is *"handover is decided from the REALISED ASSOCIATION (norad_id, cell_id), **never from the action index**"*, because the candidate table *"changes between steps"* (`state_encoding.py:149-151`). **[V]** User A's action 5 and user B's action 5 are different physical beams. (The MODQN-COLLAPSE report on `sat` reached the same conclusion from the other side: MODQN is concentrated in *local action-slot* indices while being physically spread.)
+
+**Observation** — 112 = 4 × 28 (`state_encoding.py:139`), four blocks, built at `src/mcrl/env/step.py:1125-1184`: **[V]**
+
+| Block | Content | Built at | What it gives a rule |
+|---|---|---|---|
+| 1 | `access` = `x_u(t−1)` one-hot **in the current candidate ordering** | `step.py:1125-1141` | the incumbent's *slot*, never its identity |
+| 2 | `channel_quality` = per-candidate SINR, *"gamma over every candidate, **previous-step interference**"* | `step.py:1151-1152` | **the per-user per-option nominal gain** |
+| 3 | `beam_offsets` = per-candidate off-axis θ, radians | `step.py:1143-1149` | geometry |
+| 4 | `beam_loads` = *"`N_u(t−1)`: the previous step's **UNGATED** demand"*, looked up by physical beam `(norad, cell)` | `step.py:1163-1174`; semantics `step_types.py:95-107` | congestion, **one step stale** |
+
+**Which of `GAIN_IN_SET`'s three ingredients are computable at decision time:**
+
+| Ingredient | Available? | Evidence |
+|---|---|---|
+| **per-user per-option nominal gain** | **YES.** Block 2 is exactly this, and it is a *nominal* estimate carrying previous-step interference — no realised current-step fading is needed or used. | `step.py:1151` **[V]** |
+| **the active beam set** | **NO — and it is not a decision variable at all.** In MODQN activation is *derived*, not chosen: `beam_active_b = beam_load_b > 0.0` (`step.py:1027`), documented as *"activation is derived, `z = 1{U > 0}` (ruling 2026-08-22 §7.4)"* (`step_types.py:104-106`). No user observes the union of the 100 users' choices; each sees only its own 28 slots' *previous-step* demand. | **[V]** |
+| **the cap** | **NO — it does not exist in this project, by ruling.** `action_contract.py:60-64`: *"there is deliberately **no per-satellite beam-count constant anywhere in this project** (ruling 2026-08-22 §7.2-7.3)."* | **[V]** |
+| another user's committed choice **this** step | **NO.** Block 4 is `t−1`. | `step.py:1163` **[V]** |
+
+### 3. The two physics differ in action space — stated plainly, because it is true
+
+**They are different decision problems, and the difference is exactly the half of `GAIN_IN_SET` that does the work.** **[V]**
+
+| | MODQN baseline | V0.25 `a-r0` successor |
+|---|---|---|
+| Option identity | user-relative slot `(l ∈ 4, j ∈ 7)` | **global** `(norad_id, cell_id)`, e.g. `(57502,25)` — `run_v025_matrix_probe.py:435-439` |
+| Options per user | 28, fixed by construction | 28 legal at the measured panel, from a top-K shortlist |
+| Satellites | 4 slots | **9** |
+| Distinct physical beams | not a modelled global set | **370** |
+| Active beam set | **derived** (`z = 1{U>0}`) | **chosen** — an explicit decision variable |
+| Beam-count cap | **none, by ruling** | swept {8,9,10,15,20,30,50} |
+| Steps | 10 per episode, episodic | 4 physical steps per anchor |
+| Objective | vector `(r1, r2, r3)`, weights `(0.5, 0.3, 0.2)` | scalar pooled EE, with QoS reported beside |
+
+`GAIN_IN_SET` = *choose a global beam set S under a cap*, then *assign each user its max-gain option inside S*, then *polish by single-user local search on boundary-0 EE*. **Only the second clause is expressible over MODQN's action space.** The first clause names an object MODQN has no decision variable for and no cap on; the third is an outcome-selected search, not a policy.
+
+**And the expressible half has a name and a measured value on the V0.25 panel: it is `RSS_MAX`, 41.621560 Mbit/J** (`BEAM-COUNT-CAP-2026-09-10.md:68`) — **below** the crowded min-cover's 46.110374 and 33% below the 62.502712 headline. **[V]** So the portable half of the rule is the *weakest* member of the family there, not the strong one. That is the honest translation.
+
+A second, independent mismatch that would remain even if the set clause were expressible: **`GAIN_IN_SET` hands over almost every user, every step.** `/home/sat/mcrl-v025-specprofile-ws/PROGRESS.md:33-35`, rehearsal anchor `V025_PROBE/world/1|0|nearest-eligible`, full-48 endpoint: `GAIN_IN_SET` 98 handovers / Φ = 59.5 κ; `RSS_MAX` 100 handovers / Φ = 60.0; `BASE` 0 handovers / Φ = 0. **[V]** MODQN does not optimise EE — it optimises `0.5·r1 + 0.3·r2 + 0.2·r3` with `r2` the handover penalty. A near-total-churn demonstrator supervises against 30% of the learner's declared objective by construction.
+
+### 2. What a demonstrator on the MODQN action space actually costs — measured, not argued
+
+Because the max-nominal-gain clause **is** expressible, I ran it. One scripted rollout, no gradient step, no `update()` call, `MODQNTrainer` used only for its env/reward plumbing so the statistic is the trainer's own `EpisodeLog.r1_mean`. Script: session scratchpad `scripted_probe.py` (95 lines). 8 episodes per arm, `train_seed=42, env_seed=1337, mobility_seed=7` — the frozen run's seeds. **[V]**
+
+**Harness verification first.** My `RANDOM_MASKED (ε=1)` arm reproduces the frozen run's own first eight episodes (which ran at ε ≈ 1.0), so the accounting is the same accounting:
+
+| | r1_mean | r2_mean | r3_mean |
+|---|---:|---:|---:|
+| frozen run, episodes 0–7 (`episode-logs.json`) | 5.416029e+06 | −7.779 | −13.514 |
+| my `RANDOM_MASKED` arm, 8 episodes | 5.543606e+06 | −7.762 | −13.350 |
+| delta | +2.4% | +0.2% | +1.2% |
+
+**Results.** `r1` is the raw per-user system-EE contribution in bit/J; "calibrated scalar" is `Σ ωⱼ·rⱼ/cⱼ` with the run's own `(0.5,0.3,0.2)` and `(2029238.4328742754, 1.0, 6.0)` — i.e. **MODQN's actual training objective**:
+
+| Arm | r1_mean (bit/J) | vs trained r1 | r2_mean | r3_mean | active slots | **calibrated scalar** |
+|---|---:|---:|---:|---:|---:|---:|
+| `RANDOM_MASKED` (ε=1) | 5.543606e+06 | −38.0% | −7.762 | −13.350 | 26.76 | −1.4077 |
+| `UNTRAINED_Q_GREEDY` | 4.255708e+06 | −52.4% | −3.413 | −27.585 | 2.70 | −0.8948 |
+| **`MAX_NOMINAL_GAIN`** (the expressible half; RSS_MAX analogue) | **1.107376e+07** | **+23.9%** | −6.761 | −20.968 | 13.14 | **+0.0013** |
+| `LEAST_LOADED` (A3 analogue) | 6.423171e+06 | −28.1% | −5.747 | −46.720 | 4.86 | −1.6988 |
+| `GAIN_PER_LOAD` (snr/(1+load)) | 1.008737e+07 | +12.9% | −8.073 | −23.171 | 15.36 | −0.7088 |
+| **trained MODQN `e6b063ef…`, last 100 episodes** | **8.938629e+06** | — | −2.322 | −18.598 | — | **+0.8859** |
+
+Two readings, and they point opposite ways:
+
+1. **On r1 alone there IS a demonstrator, and it is one line of code.** `MAX_NOMINAL_GAIN` = `argmax over the mask of state block 2` beats the 9000-episode trained checkpoint by **+23.9%** on r1. Controlling for RNG-stream position via the random arm (mine sits at stream position 0–7, the trained tail at 8900–8999): rule/random = **1.998** against learned/random = **1.650**, so ~21% of the gap survives the control. This is the standing memory note *「先跑非學習基線再量天花板」* reproducing itself on a third harness.
+2. **On MODQN's declared objective it is not a demonstrator at all.** Calibrated scalar **+0.0013 vs the learner's +0.8859**. The rule buys r1 by handing over three times as often (r2 −6.761 vs −2.322) and crowding beams (r3 −20.968 vs −18.598). Its EE win is bought with exactly the two terms MODQN is also paid to protect.
+
+**Cost of generating demonstrations, measured.** A scripted rollout with no gradient step: **4.5408 s/episode on this local WSL host** (timed, 3 episodes, 13.622 s). **[V]** So 500 demonstration episodes = **37.8 min locally**. On the host that produced the frozen run, full training — env step *plus* ten gradient steps — ran at 1.5869 s/episode, and a rollout without the gradient steps cannot be slower on the same host, so **500 episodes ≤ 13.2 min there**. **[V for both rates; the server bound is a bound, not a measurement.]** For scale: 500 episodes × 10 steps × 100 users = **500,000 transitions**, ten times the 50,000 buffer capacity — **50 episodes already overfills it**, so demonstration generation is a ~4-minute job, not a budget item.
+
+**Tuple shape to write them into** — unchanged from §6, `replay_buffer.py:29-54` and `:113-152`: the 7-field tuple `(state float32 (112,), action int (bool rejected), reward_3 float32 (3,), next_state float32 (112,), mask bool (28,), next_mask bool (28,), done bool)`, with `reward_3` **post-`apply_reward_calibration`**, `state` from `encode_state`, no-op actions dropped, and `done or next_mask.any()`.
+
+**Line count for a production demonstration generator** — the probe I ran is 95 lines for five arms; a single-arm version that also writes a frozen `.npz` with a sha256 pin and validates the tuple schema on the way out is **~130–150 lines**, one new file. **[E]** That is *inside* the ~470–640 estimate of §10, not additional to it: §10's `demo_pool.py` (~120) is the *loader*; this is the *producer*, and it is the item §10 said did not exist.
+
+### What this changes in §10, and what it does not
+
+**Changed.** My §10 statement *"there is no demonstrator … at any budget"* was about `src/`, and the coordinator is right that it under-answered. Corrected: **a cheap, deployable, better-than-learner-on-r1 demonstrator does exist on the MODQN action space, it is realizable from the observation alone (it is an argmax over one of the four state blocks, so a network of this capacity can represent it — which is what `J_E` needs), and producing 500 episodes of it costs minutes.** The DQfD delta therefore has something to point at that I said it did not.
+
+**Not changed, and now sharper.** The failure reason moves rather than disappears. It is no longer "no demonstrator exists"; it is:
+
+> **The only demonstrator that is both expressible and better than the learner is better on r1 only, and is worse than the learner on the objective MODQN is actually trained on (+0.0013 vs +0.8859 calibrated scalar). DQfD's `J_E` would supervise the argmax of the scalarized `Q_w = Σ ωⱼQⱼ` — the decision surface — toward actions selected by a rule that ignores two of its three terms. The margin loss would pull the policy *away* from its own objective while the TD loss pulls it back, and `λ₂` would be tuning the trade-off between them rather than weighting a supervision signal that agrees with the reward.**
+
+That is a real and testable design problem, not a dead end. Three ways out, none of which I am authorised to pick, all cheap to screen with the harness above:
+
+1. **Build the demonstrator on the scalarized objective, not on r1.** A one-step greedy over a *predicted* `0.5·r̂1 + 0.3·r̂2 + 0.2·r̂3` — `r2` is predictable at decision time from block 1 (the incumbent's slot is in the state, so "does this action change my association" is observable) and `r3` from block 4. That is still a one-line-ish rule and it is the honest analogue of `A2` for *this* objective. Nobody has measured it; my `GAIN_PER_LOAD` arm is a crude two-term version of it and already recovers +12.9% on r1 at −0.7088 scalar, i.e. worse. **A myopic-scalar demonstrator is the single cheapest unmeasured thing in this whole report.**
+2. **Accept the objective mismatch and pre-declare it** — run DQfD with an r1-only demonstrator and score on r1 only, with r2/r3 reported beside it as the price. Legitimate, but it changes the claim from "DQfD improves MODQN" to "DQfD improves MODQN's EE term at a stated handover cost."
+3. **Drop `J_E` and keep the rest** — demonstrations in replay + n-step + pre-training, with no margin term. That is closer to "DQfD without the supervised loss", which the DQfD paper's own ablations report as the component that matters most, so it is the weakest of the three.
+
+**Every prior caveat stands**: the margin-scale hazard of §9 is unchanged and now has a specific number to be measured against (the spread of the calibrated `Q_w`, not r1's raw bit/J); the delta is still (b) at ~470–640 lines; the OFF arm must still be re-run.
+
+### Evidence classification for this section
+
+**Verified by reading primary source (`ssh sat`, read-only):** `BEAM-COUNT-CAP-2026-09-10.md` lines 1, 39-57, 94-115, 156-241, 279-289, 327-345; `BASE-COLLAPSE-DIAGNOSIS-2026-09-10.md:5, 15-17, 25-33`; `/home/sat/mcrl-v025-specprofile-ws/PROGRESS.md:24, 33-36, 47`; `run_v025_matrix_probe.py:422-439`; the 0-hit grep for `GAIN_IN_SET` under `/home/sat/mcrl-v025-beamcount-ws/`.
+
+**Verified by reading local source:** `action_contract.py:14-24, 40-68, 71`; `step.py:1027, 1125-1184`; `step_types.py:95-107`; `state_encoding.py:139, 149-151`; `replay_buffer.py:29-54, 113-152`; `episode-logs.json` (9000 records).
+
+**Verified by running code, this session, read-only, no gradient step:** the five-arm scripted probe (8 episodes each) and the 3-episode rate measurement, both in the session scratchpad, both using the frozen run's seeds; the random-arm agreement with the frozen run's episodes 0–7; the calibrated-scalar arithmetic.
+
+**Estimated:** the ~130–150-line producer.
+
+**Not established:** the myopic-scalarized demonstrator of option 1 — proposed, never measured. Whether the +23.9% r1 gap survives at the frozen run's RNG-stream position (I controlled for it by ratio against a matched random arm; I did not advance the stream 8,900 episodes). Whether `GAIN_IN_SET`'s advantage over `RSS_MAX` on V0.25 would reappear in MODQN physics — untestable, since MODQN has no beam-set decision variable.
