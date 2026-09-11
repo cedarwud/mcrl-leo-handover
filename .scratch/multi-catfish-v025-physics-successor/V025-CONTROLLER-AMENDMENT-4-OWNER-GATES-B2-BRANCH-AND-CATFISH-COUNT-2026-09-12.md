@@ -43,6 +43,17 @@ Mbit/s = 0.27 × the rule's** — throughput-degenerate; the simultaneous best r
 ~4-step oscillation). Its raw EE gain therefore authorises **neither B1 nor B2**; the decision waits for the rate-floor replay
 and the complete B-real cells.
 
+> **Controller correction, 2026-09-12** (raised by the Q9b curation as `OR-17`, then re-derived by me from the 240 raw
+> per-step JSONs in `.scratch/h4-probe/results-oracle/`). The figure "66–99 of 100 users move per step" above is **not the
+> measured range**, and I cannot reproduce its upper bound from any aggregation of the raw data. The measured per-step
+> `n_moved` is **65–100 (mean 82.6)** for the unfloored A-real R1 evaluation cell and **58–100 (mean 79.9)** for the floored
+> cell. The two figures circulating in the project are undeclared interior quantiles of **different cells**: ORACLE-CELLS'
+> "72–96" is the unfloored p10–p90 (71–96); this amendment's "66–99" matches the floored p10–p90's lower bound (66) but not
+> its upper (96). **The herding conclusion is unaffected and in fact understated** — the true maxima are 100 of 100 users
+> moving in a single step in both cells, which strengthens rather than weakens the finding that A-real's advantage is not a
+> per-user deviation gain. Nothing downstream of this amendment changes; the original sentence is left standing above so the
+> correction is auditable rather than silent.
+
 ## 3. How many catfish: three conditions, measured; the numbers are diagnostics
 
 Owner: "三層結構確認，但不要把 Ruling 2 §4 現在的數字門檻原封不動定成最終定義。"
