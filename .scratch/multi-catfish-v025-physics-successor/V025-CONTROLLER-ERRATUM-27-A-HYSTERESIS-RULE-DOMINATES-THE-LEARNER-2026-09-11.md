@@ -65,8 +65,15 @@ C-H, declared before these splits were read: `H_inter <= 0.6016` per user-step.
   handover falls 0.586 → 0.364 (−38%). **Over this range there is almost no EE-vs-handover
   trade-off.** The learner is not trading EE for stability; it sits at a dominated point.
 
-**This is now the bar.** A learner has a demonstrated job only if it beats **112.46M under
-C-H** (or 111.18M under the sensitivity cap). The trained checkpoint is 17% below it.
+~~**This is now the bar.** A learner has a demonstrated job only if it beats **112.46M under
+C-H**.~~ **Withdrawn the same day — it contradicts a standing owner decision.** The success gate
+is **beating baseline MODQN only** (owner: *"能贏過當然是最好，但是沒贏過也沒關係"*; again:
+*"理論上來說就是超過 baseline modqn 就算成功了吧?不需要去跟其他的 baseline 做比較"*). Non-learned
+rules are **diagnostic instruments**: they locate the room, supply the catfish demonstrators, and
+are reported in full — they are **not** a threshold. `A m=2dB` at 112.46M under C-H is reported as
+the strongest feasible non-learned reference, nothing more. The causal comparison is
+**multi-catfish MODQN vs MODQN with catfish off**, same corrected tree, objective, physics and
+budget; the frozen checkpoint is an external historical reference only.
 
 ## Consequences for the C1/C2/C3 plan
 

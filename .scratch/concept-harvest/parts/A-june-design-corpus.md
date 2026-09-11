@@ -233,7 +233,7 @@ Written incrementally; entries appended in reading order.
 - intervention point: representation / objective decomposition (diagnostic)
 - defined in: `route-b-shared-q-isolation-PREREG-2026-06-27.md`
 - run status: **built, run started, CANCELLED before completion** — "⛔ CANCELLED (2026-06-27, USER DECISION = CONCLUDE) — NO RESULT WILL BE PRODUCED" (`route-b-shared-q-isolation-COMPLETION-HANDOFF-2026-06-27.md` L3-8). (Prior progress note mentions "shared_q_isolation (penalties, EXP, ACRM)" configs under `configs/shared_q_isolation/v3/` used in July waves — other cluster.)
-- recorded outcome: none from this prereg. The motivating counterexample: "DQN_scalar = per-user-argmax single-head, de-collapses active 11; B1 = per-user-argmax MODQN-3-head, collapses active 3" (VERDICT-G6 L154-158) — later superseded by the lr finding (the collapsed arms were lr 0.01; field DQN trainer lr not recorded in cluster A `[I: not checked]`).
+- recorded outcome: none from this prereg. The motivating counterexample: "DQN_scalar = per-user-argmax single-head, de-collapses active 11; B1 = per-user-argmax MODQN-3-head, collapses active 3" (VERDICT-G6 L154-158) — later superseded by the lr finding (the collapsed arms were lr 0.01; the field DQN trainer uses `LR = 1e-3` — verified in `field_baselines/dqn_baselines.py:193` — so the motivating single-head-vs-3-head contrast was also an lr contrast; see A-60).
 - recorded cause of design: BLOCKER-3 "raw-normalized would be ~1000× too small → would fake an undertraining 'collapse'" (prereg L19-21) — a per-component reward-scale trap relevant to any multi-head decomposition.
 - premises: collapse is architecture-rooted (withdrawn 2026-07-20 as general premise).
 
@@ -616,3 +616,71 @@ Written incrementally; entries appended in reading order.
 - per-user mean EE with unserved→0 couples EE with coverage ("the metric PENALIZES coverage loss", EE-WIN-FINAL L27-29) whereas pooled EE rewards sacrificing coverage (HANDOFF EE#2).
 - "materiality": collapse was reward-SUBoptimal under the trainer's own calibrated reward (round-robin beat trained ckpt 26–72×; `materiality-verdict.md` L8-17) → a learnability failure, later traced to lr (`COLLAPSE-ROOT-CAUSE-IS-LR-2026-07-20.md`).
 
+### A-59. F1/F2/F3 hazard state-augmentation (F1 occupancy, F2 exogenous contention, F3 cap/saturation hazard) — "B1-hazard"
+- mechanism: append per-user criticality / contention / cap-hazard features to the state to break Q_i≡Q_j aliasing.
+- intervention point: representation
+- defined in: SDD-01 §5.2 (C2); summarized `catfish-last-design-candidates-2026-06-24.md:63-70`; `catfish-development-direction-2026-06-24.md:42`
+- run status: an earlier B1-hazard variant ran (pre-June-19, outside priority list); SDD-01's C2 never built.
+- recorded outcome: "O-NEG on the cap_bump battlefield — they did not separate planner-bumped from served users" (last-design L68-70); "per-user DEGENERATE (std 0.009/0.005, 99.6% zero)" (`symmetry-breaker-design-2026-06-19.md` §1 L38-41); "B1-hazard" counted as the 1st "static/trivial eats it" (`track-b-strategic-rec-2026-06-19.md:91`).
+- premises: the hazard signal varies per user (false on family_b).
+
+### A-60. Single-head scalarized DQN on the exact weighted reward (DQN_scalar field baseline) — the comparator that "de-collapses" and tops J_w
+- mechanism: one 28-way Q head trained on `K_SCALAR·⟨w, r/scales⟩`, per-user argmax.
+- intervention point: objective (scalarization) + representation (single head)
+- defined in: `src/modqn_paper_reproduction/field_baselines/dqn_baselines.py` (verified constants: `LR = 1e-3`, `GAMMA = 0.99`, `HIDDEN = (256,256,128)`, `BATCH_SIZE = 256`); used in `route-b-factorial-VERDICT-G6-2026-06-27.md` STEP 6
+- run status: ran (5 seeds).
+- recorded outcome: "DQN_scalar ... scores 6.10e-4 on the matched harness — above A1 (4.97e-4), A2 (4.82e-4), and even AF (4.44e-4) ... active 11.0"; min_cov 0.110; later 5-seed "mean ≈6.41e-4, all > A1 4.97e-4"; on corrected EE "DQN_scalar 530, min_cov 0.165" (EE-WIN-FINAL L59-60).
+- recorded cause: "per-user-argmax collapse is RULED OUT as universal by counterexample ... 'the MODQN shared-3-head architecture is THE cause' is supported but NOT cleanly isolated (DQN_scalar also differs in reward + training protocol)" (VERDICT-G6 L154-158).
+- inferred cause [I]: ★ DQN_scalar used **lr 1e-3** while the collapsed MODQN arms (B0/B1/B2/A1/A2, stage-1) used **lr 0.01** — the "architecture" counterexample was lr-confounded; consistent with the July lr isolation. It maximizes the scalar by starving a tail user (Jain 0.59/0.74).
+- premises: the scored metric is J_w (or per-user EE); coverage not valued.
+
+### A-61. ACRM competitive reward `r^C = r + η(r^CF − r^M)` (linear, tanh/Q^mix OFF) in family_b
+- mechanism: catfish reward includes its advantage over the main's counterfactual reward.
+- intervention point: reward
+- defined in: `catfish-development-direction-2026-06-24.md:16`; `route-b-factorial-design-note-v3-2026-06-26.md` §6.4
+- run status: **never enabled in any scored cluster-A run** ("ACRM off / PopArt off ... acrm_enabled=false ×12", route-B VERDICT L38); P1 toy test excluded it ("counterfactual_eta is welded to satellite EE-geometry ... no natural single-agent analog", p1 prereg §0 L38-43). Later: "route_b ACRM is a NotImplementedError stub" (chronicle L2043, catfish-v2 era).
+- recorded prior: thesis ablation SMALLEST; "non-potential → Ng-1999-UNSOUND, can shift the optimum"; CA-CPBR (A-4) was designed as its potential-based replacement.
+- premises: a second agent whose counterfactual reward is computable per state.
+
+### A-62. Literature-prior refutations of catfish components (recorded as priors, not experiments)
+- M2 asymmetric discount ≈ "Curse of Diversity (ICLR 2024)"; M3 30% heterogeneous sharing ≈ "SUPER (NeurIPS 2023) shows M3's exact 30%-uncorrected-heterogeneous regime is WORSE than no-sharing"; "M1 reward-keying is itself a documented cause of premature convergence" (`b-pivot-decision-map-2026-06-20.md` Agent 4, L47-51). "catfish is AGENT-LEVEL anti-stagnation; LEO failure is USER-LEVEL coordination → axis mismatch" (Agent 1, L36-37). Later family_b finding: "γ_cf wired-but-inert on family_b" (chronicle L2030, catfish-v2).
+- premises for revival: an env where discount horizon matters (non-myopic) and where the catfish can collect experience the main cannot.
+
+---
+
+## Cross-cutting condition notes for the synthesiser (records + my inferences, marked)
+
+1. **lr**: every June "collapse" measurement on MODQN-family learners (B0 2026-06-12/14 retrain, stage-1, route-B B0/B1/B2/A1/A2,
+   hybrid k_c arms, P1-faithful era) is at `learning_rate = 0.01` (trainer default verified; stage-1 + route-B verified in
+   records); the July isolation says "Flipping ONLY the learning rate (0.01 → 0.001) ... doubles argmax EE and lifts worst-user
+   coverage from 0.312 to 0.698" and "The faithful paper form ... does not collapse at lr = 1e-3". The distillation line
+   (P4, 6-arm, route-C) used Adam 1e-3 but distilled from a teacher and never trained the main by TD. DQN_scalar (the
+   "de-collapsing" comparator) used lr 1e-3 `[I: this lr asymmetry is not called out in the route-B verdict]`.
+2. **Wiring**: 6-arm (A-4/5/6/8/9) and route-C (A-11) = warm-start from a converged distilled net (P), 4 rounds, supervised
+   CE imitation into the main (catfish only selects/filters teacher data) → catfish had no exploration/stagnation to act on
+   (records' own premise A-1). Route-B (A-14..A-16) = from scratch, single agent (no second catfish agent, no conduit,
+   no ACRM) — "catfish" = asym-γ + value-stratified replay recipe. July DQfD waves (A-49) = from scratch with demos.
+3. **Metric**: June = calibrated weighted J_w [0.5,0.3,0.2] (r1 throughput in June-19 era; r1 per-user angle-aware EE in
+   route-B/July, ÷G_T-inflated before 07-03/04); coverage = min over users of per-user served-step fraction; R_starved.
+   **Pooled EE (ΣR/ΣP) was only a diagnostic ("EE#2"), on which random ≈ DQN_scalar within 2% and the planner ranks
+   below random/round_robin** (A-46, A-55). No catfish concept in cluster A was ever scored on pooled EE.
+4. **Physics** (family_b): hard k_cap = 3 cells per window satellite (≤12 lit beams), cap-bumped users get zero rate;
+   shared-beam rate `B/load·log2(1+SINR)`; off-axis Bessel gain present in angle-aware EE r1; handover energy appears only
+   as an r2 reward term (−0.5/−1.0), not in power; candidate beams observed as noise-only SNR (A-54). "94.5% of EE variance
+   = cap_bump" (A-50). Removing the hard cap made spreading HARMFUL on the weighted scalar (A-38) — the value of every
+   spreading/anti-collapse concept here is conditional on the hard cap.
+5. **Trainer defects**: ★ the frozen baseline MODQN itself uses per-head own-argmax bootstrap — "Sealed per-objective
+   TD — `modqn.py:691` (each head j: `r_j + γ·max_{a'} Q_target,j(s',a')`, **independent per head**). G1 forbids editing it"
+   (SDD-01 §4 L150-151; I verified in code: `algorithms/modqn.py` loop `for obj_idx in range(3)` →
+   `q_next_max = q_next_all.max(dim=1).values`, `target = r + discount_factor * q_next_max * (1.0 - dn)`) → every June MODQN-trained arm that inherits the base update (B0 retrain, stage-1 plain/de-sat,
+   C1 plain comparator) carries this defect `[I: sibling trainers that override the update — route-B, SequentialDecodeMODQN
+   — replace it]`. Route-B per-head TD bootstraps on the (scalarized) decode action `a′` from the cell's own decode
+   (not each head's own argmax) per design v3 §6.1; the stage-1 "coordinated_multi_catfish" trainer "still bootstraps with
+   per-head max_{a'}" (SDD-01 §5.1 L188-191 — codex r3 M-3: do NOT inherit) → **per-head own-argmax bootstrap existed in
+   `coordinated_multi_catfish/trainer.py:425-434,562-564`** (quoted). Outage handling: r1 = 0 for cap-bumped/unserved users;
+   records silent on r2/r3 free ride for unserved users in these files (the r3 "pays for collapse" issue is raised in
+   July: `WAVE-E-AMENDMENT` "BLOCKER-3 (r3 pays for collapse)"; `R3-ENV-DEPARTURE-G6-VERDICT-2026-07-15.md` — r3 env
+   scope differs from paper Eq 11, sign not identified). Uncalibrated logged scalar: SDD-01 §4 notes baseline eval/ckpt
+   selection used the RAW `scalarize_objectives`, overridden to calibrated J_w in later harnesses; the June-22 C1 kill-test
+   had "ckpt-selection asymmetry (plain=raw scalar, seq=J_w)" (C1 verdict L20-21). `[I: no record in cluster A of the
+   exact "logged scalar uncalibrated" defect named by the harvest brief beyond these.]`

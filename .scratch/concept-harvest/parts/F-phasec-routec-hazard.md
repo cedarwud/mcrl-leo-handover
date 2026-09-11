@@ -15,9 +15,19 @@ Common old-env facts (apply to every family_b run below unless stated):
   independent argmax** over shared Q (`00-newalgo-overview.md:83`; `pivot-mechanism-feasibility.md:34-41`).
 - disease: B0 3/3 seeds collapse to one beam (modal 0.996–1.000, active 1.00–1.03, M1 ≈1500 Mbps ≈26% of RANDOM)
   (`reconciled-direction-rec-v3-2026-06-19.md:29-31`; `FABLE/p0-ledger.md:121-132`).
-- trainer lr for these B0 runs: not stated in the files I read in this cluster [I: the later root-cause note blaming
-  lr=0.01 is outside this cluster; the env-foundation dir contains separate `…lr001…`, `…lr0003…`, `…lr003…` preregs,
-  i.e. lr was later swept].
+- trainer lr for these B0 runs: **lr = 0.01** — verified in `OLD/docs/research/env-foundation/retrain-prereg-family-b.json:103`
+  (`"learning_rate": 0.01`, the 06-12/06-14 3-seed B0 retrain) and `retrain-prereg-family-b-r1throughput.json` (Arm 0a).
+  3000 episodes. **Later foundation correction (07-20):** "the collapse that this project has treated as a property of
+  MODQN / shared-Q / per-user-argmax is identified as an artifact of `lr = 0.01`. Flipping ONLY the learning rate (0.01 →
+  0.001) … doubles argmax EE and lifts worst-user coverage from 0.312 to 0.698"; "the old era is a SINGLE cell (`hybrid /
+  0.01 / 3000`, 82 runs)" (`OLD/analysis/family-b-collapse-diagnosis/COLLAPSE-ROOT-CAUSE-IS-LR-2026-07-20.md:3-6,24-27`;
+  not in my assigned list but load-bearing for condition #3). **Every family_b collapse-premised verdict in Parts 1–2
+  was produced in that lr=0.01 era.** The 06-15 handoff had claimed the opposite ("flat-Q invariant across all
+  lr/relu/cal/LN/clip knobs", `OLD/fable/handoff-baseline-collapse-diagnosis.md:83-84`) — superseded by the 07-20 isolation.
+- EE metric defect in this era: `family_b_eta_r1` divided power by antenna gain ("角度二次進場、EE 虛胖 ~1e4 至 ~1e12"),
+  fixed 2026-07-04 (Conv-A `211a71a`) (`OLD/docs/research/phase-c-forward/phase-c-gate-prereg-v1.4.1-metric-realignment-2026-07-04.md:10-16`).
+  [I: the 06-17/06-18 η_EE numbers (~4.7e12, "eta~1e12/user-step" flagged in `FABLE/p0-ledger.md:231`) are on the
+  pre-fix η; whether each probe used exactly this function is not verified here.]
 
 ---
 
@@ -32,7 +42,7 @@ Backbone MODQN is "G1-locked", untouched; the catfish wrapper is training-time o
 **What happened to it:** the whole folder is now "ARCHIVED / SUPERSEDED … not the current manuscript, formula,
 experiment, or implementation authority" (`thesis-narrative-restored-2026-07-17/INDEX.md:3-5`). Its framing was
 "READINESS-ONLY … B3f/B3h/esc … gated, prereg R-01..R-08 未跑" (`00-newalgo-overview.md:5`). The B3h heavy pilot was
-never run; pre-flight measurements killed its published keys (see F-3), the pivot-feasibility review judged the
+never run; pre-flight measurements killed its published keys (see F-2), the pivot-feasibility review judged the
 catfish/c_k/B3h lever "same wall, LOW odds" (`pivot-mechanism-feasibility.md:56-76`), and on 2026-06-19 the line was
 superseded by the env-redesign reframe (`env-misdesign-and-redesign-direction-2026-06-19.md:3-6`: "This SUPERSEDES
 the family_b Option-1 / Track-B / symmetry-breaker / v2+v3 reconciliation line").
@@ -396,3 +406,234 @@ Credit, which became DR-MODQN (F-10). One line each:
 
 ### F-24. Catfish shared-policy exploration lesson — SOFT-DISCARD paper (arXiv 2601.05509, "How Exploration Breaks Cooperation in Shared-Policy MARL")
 - see Part 4 (read after the PDF).
+
+### F-24. SOFT-DISCARD paper — Weng & Lee, "How Exploration Breaks Cooperation in Shared-Policy MARL" (arXiv 2601.05509, non-peer-reviewed)
+- idea it contributed (paper SAYS, p.1–4): parameter-shared DQN in a dynamic Prisoner's Dilemma shows "a robust
+  cooperation collapse … as exploration increases"; collapse "coincides with degradation in learned representations …
+  action-value gaps shrink systematically … stable but low-cooperation" attractors; drivers = "partial observability and
+  representational coupling"; remedies tested: **grouped policy learning** (limit parameter sharing to subsets of agents)
+  "consistently alleviates collapse"; **state augmentation with learning-progress and exploration signals** "delays
+  collapse and partially reverses it"; spatial topology supports cooperation, random topology removes it.
+- intervention point (as a concept): representation (grouped/partial parameter sharing; progress/exploration state features)
+- in old repo: `OLD/docs/research/baseline-collapse-diagnosis-5papers-2026-06-17.md:23-25` — "Corroborates the **cause**
+  (one shared representation can't stay state-discriminative across many homogeneous agents → action-value gap → 0 →
+  behavioral homogenization). **But partial match + weak provenance:** its collapse is driven by *high* exploration …
+  whereas ours collapses at *low ε / greedy*"; lever table ranks "State-augment with a training-progress + exploration-level
+  scalar … weak probe (paper: 'delays, not cures')" as #5 (`:38`). LATEST: DROPPED from related work 07-01: "其生成機制 =
+  exploration-noise 經 shared replay buffer 的 non-stationary TD-target 衝突，與我方「多 agent 觀相近高值狀態同時 argmax」
+  **不同**" (`OLD/docs/research/baseline-collapse-original-paper-critique-2026-07-01.md:90-93`).
+- run status: never built (neither grouped sharing nor progress-state augmentation were run in this cluster).
+- premises: collapse driven by shared-representation coupling under exploration (the old repo judged its own collapse
+  greedy-time, not exploration-time; and later attributed it to lr=0.01, see header).
+- [I] grouped/partial parameter sharing is the one idea in this lineage aimed directly at cross-user homogenisation that
+  was never tested; the related DiCo/CDS identity-conditioned diversity refs appear in `deep-research-B2…:285-296`.
+
+### F-25. Review-mandated control arms for any hazard claim (06-12 reviews): placebo-hazard, deterministic hazard-rule (TIMERCHO-style timer), A3f bridge, hazard×interference probe
+- mechanism: controls, not methods — placebo (phase-shuffled) key; a zero-learning timer/hysteresis rule using the same
+  hazard signal ("TIMERCHO 一個 timer 打 ping-pong→0，RL 贏在哪"); bridge arm separating catfish shell from key delta;
+  probe bucketing by time-of-stay for rank flips.
+- defined in: `OLD/fable.md:255-264`; four-arm discriminator in `FABLE/sdd-b3h…DRAFT.md:219-222`.
+- run status: never run (the parent arms never ran). Recorded outcome: none. Also listed as missing "legal white areas":
+  "recurrent/DRQN + preference-conditioned" (`OLD/fable.md:263-264`).
+- premise: a non-trivial hazard signal exists at all (it did not on family_b, see geometry section).
+
+---
+
+## Part 3 — Phase-C forward design (07-02 → 07-04): H1 queue-regime env, gate-before-train, catfish boundary test
+
+Context (records SAY): Phase-C is a sibling track after route-B; goal "(i) 一個設定下 ablation 證明 catfish 元件有可分離價值
+（不重演 A2≈A1）；或 (ii) 誠實 boundary-map" (`OLD/docs/research/phase-c-forward/phase-c-exploration-design-v0-2026-07-02.md:45-46`).
+Its core diagnosis of the 8 prior negatives: "**family_b 是「myopic-sufficient」env** … value-learning 在這個 env 上不是瓶頸 →
+任何「把 Q 學得更好」的訓練增強（catfish 的兩招都是這類）**結構上沒有可分離的加分空間**" (`:65-70`). Final outcome: H1
+frozen with a boundary card, **no arm ever trained** ("無 Build-3、K-catfish 未觸發（**catfish-on-H1 = 未測、非否證**）",
+`H1-BOUNDARY-CARD-2026-07-04.md:30-31`).
+
+H1 env conditions (apply to F-26..F-33): base `env/phase2_demand_step.py` (time-varying per-cell demand + finite queues +
+TTL drop + overflow, demand/queue in state) with physics "原封繼承 family_b" (`exploration-design-v0:131-135`); demand source
+v2 = AR(1) level × persistent 2-state Markov burst gate + Poisson arrivals (`phase-c-gate-prereg-v1-2026-07-02.md:30-38`);
+episode grid {50, 64} (10 = anchor) (`prereg-v1:44`), 1 s slots (`env/phase_c_config.py:75`); k_cap = 3 frozen (`prereg-v1:46`);
+r1 = angle-aware EE with served-bits numerator; r3 = action-local backlog-reduction credit (deviation from Sun Eq.11)
+(`phase-c-design-G6-VERDICT-2026-07-02.md:62-66`); all learning arms use the coordinated auction decode (`exploration-design-v0:167-168`);
+round-1 plan 1000 ep × 50 steps, seeds {42,137,271} (`prereg-v1:40`, `:227-229`); lr: not stated in the prereg text I read
+[I: route_b trainer spec "逐項繼承", i.e. the route-B lr, which the 07-20 census puts at 0.01 for that era]. Serving window
+still selected at reset only (`family_b_step.py:577-582`) [I: so within a 50 s episode the 4-satellite window is frozen].
+
+### F-26. Gate-before-train methodology: C1 mid-load band, C2 allocation + learnable headroom, C3 foresight value Δ_fore, C4 onset-event fraction (EVPI-style kill gates)
+- mechanism (one line): before any training, measure with zero-learning probes whether value learning can be
+  load-bearing: C1 UB serve ∈ [0.75,0.92] (+0.95 and ≈1.0 controls); C2 AF′−max(weak) and UB−AF′; C3 Δ_fore = clairvoyant
+  realized-future-rate planner − max(persistence, model_ce) with shuffled-rate placebo and bit-identical zero-control;
+  C4 congestion-onset step fraction ∈ [5,25]%.
+- intervention point: other (env/instrument methodology)
+- defined in: `exploration-design-v0:185-224`; frozen `phase-c-gate-prereg-v1-2026-07-02.md` (+ v1.3, v1.4, v1.4.1 amendments).
+- run status: ran (eval-only; 24–48 realization bank × 3 seeds per cell; 3 waves: v1.2, v1.3.1, v1.4.1 `-v14r`).
+- run conditions: H1 env as above; metric = calibrated J_w′ (r1 EE served-bits; after 07-04 on the corrected standard η=R/p).
+- recorded outcome: C1 envelope PASS, C4 PASS "4/4 in-band（7.5/10.9/11.2/11.0%）；**選 0.9**", C2 PASS "(a) **+0.388** … (b)
+  +0.050" (`analysis/phase-c/phase-c-gates-results-G6-PACKET-2026-07-02.md:25-35`); C3 went PROBE-INVALID twice (planner
+  defects), then after planner-family replacement: "**C3 gate = 誠實 FAIL** … operating 相對 Δ_fore +0.079%、雙尾 [−0.29%,
+  +0.44%] ≪ 3% … power：3%/5% 效應 ≈16σ/27σ 可見" (`analysis/phase-c/phase-c-v14r-results-G6-VERDICT-2026-07-04.md:39-41`).
+  LATEST (boundary card, USER-ratified measured-null face): "前瞻價值在此 env family + 此 oracle+allocator family + 預算內：儀器
+  有效、實測 ≈ 0" (`H1-BOUNDARY-CARD-2026-07-04.md:15-18`). Positive side-reading: "規劃/黏性/EE-aware 配置有價值
+  （Δ_plan\*），「知道未來」沒有" (`:44-46`; Δ_plan +0.037~+0.085\*).
+- recorded cause: "此 env family 之需求可預測成分已被「當前狀態 + 模型期望」吃盡" (`H1-BOUNDARY-CARD:44-45`, hypothesis).
+  Instrument history causes: v1.2 planner "drop-cost-blind + constant-action/capacity 近似" (`gates-VERDICT-G6:33`); v1.3 residual
+  lesions "bits≠EE r=−0.901、容量直加 22–25×、horizon-hold" (`H1-BOUNDARY-CARD:35-37`).
+- premises: a demand process with learnable-but-not-state-predictable future; the allocator family used by the oracle.
+- [I] this is the old project's most rigorous "is there headroom for value learning at all" instrument; its null is
+  scoped to demand-foresight in a queue env with the auction decode, not to geometry/energy coupling.
+
+### F-27. A2′ — faithful catfish recipe on the coordinated decode (value-stratified high-J_w replay ρ=0.25, λ=0.5, windowed; + per-objective γ_k)
+- mechanism (one line): transitions with calibrated J_w > μ+λσ go to a priority pool; each minibatch draws ρ from it;
+  per-objective discounts γ=[0.99,0.90,0.99]; no IS correction.
+- intervention point: experience (+ objective/discount)
+- defined in: `prereg-v1:238`; route-B implementation `OLD/archive/thesis-mc-modqn-faithful/FRAMEWORK-SPEC.md:92-100`.
+- run status: in Phase-C never trained. **Ran in route-B** as B2 (argmax decode) and A2 (auction decode), 2×2 factorial, k_cap=3 (seeds per FRAMEWORK-SPEC not given in the section I read).
+- run conditions (route-B): family_b, k_cap=3, r1=angle-aware EE (pre-07-04 η), metric calibrated J_w, **lr=0.01 era**
+  (FRAMEWORK-SPEC's own 07-20 banner: "此組數字量自 `lr=0.01` 世代", `:221`), trained from scratch (not distilled), Double-DQN, step-bundle replay, ACRM off, PopArt off (`:102-109`).
+- recorded outcome: "B1 −1.6e-5 … B2 4.5e-5 (**仍崩**, regime-trapped) … A1 4.97e-4 … A2 4.82e-4 (A2≈A1)"; DQN_scalar
+  6.41e-4 > A1 (`FRAMEWORK-SPEC.md:207-217`). "鯰魚訓練在這個設計裡是**具名核心組件(by-association)**,不是 win 的因果主驅動"
+  (`:229-230`). Phase-C prereg prediction: "A2′ null（文獻一致）" (`prereg-v1` §5.2). LATEST: FRAMEWORK-SPEC marked
+  SUPERSEDED/HISTORICAL 08-07; de-collapse numbers "⛔ 待重驗（2026-07-20 FOUNDATION CORRECTION）" (`:3-7,221`).
+- recorded cause: "解崩主要靠「分配規則」,不是鯰魚訓練。證據 = **cross-over**" (`:164`); literature: "on a myopic-sufficient,
+  dense-reward env, replay prioritization is inert-to-harmful" (`deep-research-B1…:329-330`); "catfish 招一 … 高-J 分層選不到
+  [壅塞 onset]" (`exploration-design-v0:240-241`); IS-bias hypothesis: "uncorrected high-return bias distorts relative values
+  the greedy facility-location loop consumes" (`external-dr-convergence-2026-07-02.md:158-162`).
+- premises: value learning load-bearing; the high-J tag selecting learnable (not lucky) transitions; small quota (SUPER: 1–10%).
+
+### F-28. A2h′ — SSET event-tables: congestion-onset-tagged stratified replay (PRIMARY Phase-C arm; +A2hn′ random-tag control, +A2h_is′ IS rescue)
+- mechanism (one line): tag transitions by the C4 congestion-onset predicate (backlog growth turning positive / cap
+  contention), keep separate tables (20/80), sample a fixed 10% tagged fraction; shared β, no γ_k.
+- intervention point: experience
+- defined in: `prereg-v1` §5.1 table (A2h′/A2hn′/A2h_is′); literature basis Kompella et al. TMLR 2023 arXiv:2211.00576 (`deep-research-B2…:218-227`).
+- run status: never trained (Build-3 replay/trainer never built; line frozen at C3 FAIL).
+- recorded outcome: design-level only; "A2h′（壅塞-event 分表）——若假說成立應在 … backlog/覆蓋尾端、τ90 收斂上 CI 分離"
+  (`exploration-design-v0:242-244`); primary endpoint = A2h′−A1′ and A2h′−A2hn′ lower-CI>0, 3/3 seed sign (`prereg-v1` §5.2).
+  LATEST: "catfish-on-H1 = 未測、非否證" (`H1-BOUNDARY-CARD:30-31`).
+- recorded cause (why never run): C3 measured-null → K-env kill.
+- premises: a rare (5–25%) critical-transition class whose value is not captured by instantaneous J; value-learning
+  load-bearing (C3). [I] onset events are an *exogenous-demand* construct; an analogue in a geometry/energy env would
+  be handover or power-reset events.
+
+### F-29. Round-2 attribution menu (never run): n-step return control (mandatory on any positive), A2ρ′ replay-only / A2γ′ discount-only isolation, A2r′ recency pool, quota dose {0.05, 0.1, 0.25}, A2is′
+- defined in: `exploration-design-v0:268-275`; `phase-c-design-G6-VERDICT:39` ("round-2 開啟時 n-step 對照 = MANDATORY").
+- rationale SAYS: "Fedus：replay 類增益常被 n-step 中介"; "ERE：recency 可重現多數增益"; "γ 與 replay 絕不同 run 改" (`exploration-design-v0:269-273`).
+- run status: never run. premises: a round-1 positive signal.
+
+### F-30. Alternative targeted-experience mechanisms (literature-ranked, never built): PLR curation over demand-trace seeds, load-level self-paced curriculum, Go-Explore / reverse-curriculum resets to congestion-onset states, HER relabeling
+- defined in: `deep-research-B2-challenger-boundary-2026-07-02.md:213-266`; convergence: "BOTH insert Go-Explore/restart-resets at #3" and it
+  "becomes the pre-registered next mechanism if A2h′/stratified replay fails" (`external-dr-convergence:120-124,169-175`).
+- intervention point: experience / exploration (start-state distribution)
+- run status: never built.
+- recorded outcome (lit SAYS): "If catfish fails but SSET/PLR-curation succeeds, the honest headline 'targeted-experience
+  mechanisms help; the challenger framing is unnecessary' has a direct published precedent (PLR⊥ ≥ PAIRED)" (`deep-research-B2…:338-340`).
+- premises: rare critical states the learner under-visits; resettable simulator.
+
+### F-31. Per-objective asymmetric discount γ_k (catfish "Strategy 2"; γ=[0.99, 0.90, 0.99] for EE/HO/LB)
+- mechanism: each objective head uses its own discount (handover short-sighted, EE/load long-sighted).
+- intervention point: objective
+- defined in: `FRAMEWORK-SPEC.md:92-95`; CDRL origin `01-core-formulas.md:117-119`; foundation Pitis NeurIPS'23 (`external-dr-convergence:190-199`).
+- run status: ran only bundled inside route-B B2/A2 (never isolated). Phase-C A2γ′ isolation arm designed, never run.
+- recorded outcome: bundled result A2≈A1 (F-27). "(標 `hypothesis`:這是多目標 RL 的常見選擇,**不是** CDRL 的直接繼承)" (`FRAMEWORK-SPEC:95`); lit:
+  "benefit is horizon- and heterogeneity-conditional" (`deep-research-A2…:205-206`); "Short episode 下 γ 分工/佇列動態難有戲" (`exploration-design-v0:146`).
+- premises: objectives with genuinely different temporal horizons inside the episode (on family_b the only cross-step coupler was r2; episodes 10 steps).
+
+### F-32. Congestion-context state augmentation χ_u (per candidate beam: last-step occupancy, current competitor count, user's signal rank among competitors)
+- mechanism: pre-action, no-leak features; the signal-rank channel is the symmetry breaker ("兩個狀態幾乎一樣的人 … 給了各自的排名,
+  網路才**有機會**學到「同一個擠的 cell 上,訊號差的讓開、訊號好的留」").
+- intervention point: representation
+- defined in: `FRAMEWORK-SPEC.md:82-90` (`route_b_factorial/congestion_context.py`); Phase-C adds queue features (`exploration-design-v0:165-166`).
+- run status: ran (route-B B1/B2/A1/A2 all use it; 140→224-d input).
+- run conditions: family_b, k_cap=3, lr=0.01 era.
+- recorded outcome: aug credit B1−B0 — B1 still collapsed (J_w −1.6e-5, active 3) (`FRAMEWORK-SPEC:209`); the 07-20 LR note:
+  "the augmented-state occupancy features → refuted" as the collapse cause (`COLLAPSE-ROOT-CAUSE-IS-LR-2026-07-20.md:18-19`).
+- premises: per-user asymmetric information that a shared net can condition on. [I] this is the concrete realisation of
+  the "generalization-safe symmetry-breaker" F-10 said was undesigned.
+
+### F-33. Demand-dynamic "harder env gives headroom" hypothesis H1 (queue regime) — the env-side counterpart
+- see F-23 (06-19 design direction) and F-26 (07-04 measured-null). Honest scope SAYS: "「前瞻價值不存在於任何 env」= 不得聲稱"
+  (`H1-BOUNDARY-CARD:61-63`). Also the earlier 06-22 demand line: "建成的 demand env 被調成 **capacity-bound**（UB serve ≤0.561 …）→
+  **先見之明無價值**（EVPI≈0）" (`exploration-design-v0:58`).
+
+### F-34. "Myopic-sufficient env" diagnosis + challenger boundary map (why catfish can't separate)
+- mechanism (claim, not a method): catfish-type training enhancers only help where value learning is the bottleneck; on
+  family_b a one-step greedy valuation + coordinated allocation "幾乎拿滿可拿的值" ("連 random net 都 tie AF floor").
+- defined in: `exploration-design-v0:50-70`; boundary table `deep-research-B2…:200-211` ("Myopic-sufficient allocation … **INERT —
+  nothing to amplify**"; "Exploration-hard … HELPS ONLY in the narrow regime: selective + prioritized + small-quota (1–10%)").
+- evidence cited: route-B A2≈A1; route-C 6-arm "catfish DECORATIVE（+ r1=throughput bug 使 EE 結論無效）"; "Phase-B frozen-transfer …
+  「可重用資產 = 協調式 DECODE 本身，不是任何 Q」"; "catfish 配角挖掘 … 唯一真效果（B2>B1）發生在 decode 弱的輸家欄" (`exploration-design-v0:59-63`).
+- premises: all 8 negatives come from family_b (lr=0.01 era, frozen window, K=3 cap, 10-step episodes). [I] if the new
+  project's env is not myopic-sufficient (e.g. per-segment power state, handover energy), this diagnosis's cause is absent.
+
+### F-35. EE-aware, load-shared, one-step-commit planning allocator (Phase-C C3 planner family v1.4; zero-learning) — and the "raw-bits scoring over-opens beams" lesson
+- mechanism (one line): allocator scores candidate beam-open sets by EE-form value per bit `e_u,j = L_j/max(P_j,ε)` (after
+  the 07-04 metric fix), load-shared column capacity (b/L, not summed load-1 caps), candidate caps applied only at h=1 with
+  a deterministic forward pass (F-pass) for h≥2.
+- intervention point: decode/deployment (planner) — used as an oracle instrument, not a learned arm
+- defined in: `phase-c-gate-prereg-v1.4-amendment-2026-07-03.md:37,89-160`; v1.4.1 re-weighting `phase-c-gate-prereg-v1.4.1…:21-24,42`.
+- run status: ran (-v14r wave; 24-realization bank × 3 seeds per cell, H∈{1,3,5,10}).
+- run conditions: H1 queue env; corrected standard EE; metric J_w′.
+- recorded outcome: "(e) zero-control plan parity … Δ_plan(24) = **+0.0854** [+0.0809, +0.0904]"; components "zc pers−react =
+  r1 **+0.0345** + r2 +0.0493 + r3 −0.0005" (`analysis/phase-c/phase-c-v14r-results-G6-PACKET-2026-07-04.md:24,36`);
+  EE-per-bit ratio 0.89→1.05/1.08, open columns ≈ AF′ ("過度開欄治癒") (`H1-BOUNDARY-CARD:40-42`).
+- recorded cause of the earlier failure (v1.3): "score 的 w1 項 = 原始 served bits … 但判定 metric 的 r1 = **angle-aware EE** …
+  planner 比 myopic **多服 +1.0% raw bits 卻 r1-EE −10.1%** … 「多開 cell 數 × EE 赤字」相關 **r = −0.901**. planner 對「多開 beam
+  的 EE 代價」全盲 → 過度開欄" (`v1.4-amendment:54-60`); capacity summed load-blind "高估 **22–25×**" (`:61-64`).
+- premises: beam-opening carries a per-beam power cost in the EE denominator. [I] This is the old project's clearest
+  quantitative record that allocators optimising served bits open too many beams and lose EE — directly relevant to any
+  set-level decoder scored on pooled EE.
+
+---
+
+## Part 4 — Old-env geometry: did beams/satellites move relative to users within an episode?
+
+**Records SAY:**
+1. **Cells are Earth-fixed; beams are steered to fixed ground cells; the 4-satellite serving window is selected once at
+   reset and frozen.** "`select_window()` 只在 `reset()` 被調用一次 … window = reset 時刻按 slant 取最近 4 顆，**整個 episode 凍結**
+   (只有位置隨時間演化，成員不換、不重排)"; "cell 半徑 = 780·tan(1.66°) ≈ **22.6 km**" (`FABLE/review-report/review-fable5-cli.md:58-60`).
+   Verified in current code: `OLD/src/modqn_paper_reproduction/env/family_b_step.py:577-582` (window set inside `reset`).
+   Episode = 10 steps × 1 s (`family_b_step.py:114`, `slot_duration_s = 1.0`; steps≠10 rejected, `phase-c-design-G6-VERDICT:40`).
+2. **Satellites do move (~7.4 km/s, ~74 km / 2.6° elevation per episode) but the geometry seen by users barely changes
+   within an episode:** "the satellite DOES drift **74 km / 2.6° elevation per episode** … BUT cells are **Earth-fixed** … the 74 km
+   drift barely moves the off-axis angle" (`pivot-mechanism-feasibility.md:101-106`); corrected 06-18: serving SNR "drifts
+   **0.173 dB median / 0.294 p95** per episode"; SNR-optimum flip "**0.44%**" (`intra-episode-closing-findings.md:16-19`).
+   Production steered-cell θ: "Per-step |Δθ| p50 `0.0012°`" (min-θ policy), "`0.0087°`" (max-θ policy)
+   (`OLD/docs/research/env-foundation/2026-08-20-moving-footprint-angle-aware-v1-design.md:248-251`).
+3. **Users are effectively static:** "UE moves 83 m in a 10 s episode, ≪ a 22.6 km cell, so it never crosses a cell;
+   `family_b` handover is **already** satellite-motion-driven" (`analysis/env-rebuild-bodyfixed/FINDING-paper-has-no-beam-geometry.md:34,38`);
+   "motion 8.3 m/step = 0.037% cell radius" (`f-on-weighted-findings.md:47-48`).
+4. **Dwell / time-to-exit values recorded (area-centre, 180/9/1, 15° mask):** "Episode 內任一 window 衛星掉出 15°(區域中心) |
+   **0 / 5000** … τ_exit p50(rank 0..3) | 264 / 235 / 182 / 169.5 s | τ_exit p10 | 166 / 129 / 76 / **44 s** | τ_exit ≤ 10 s 比例 |
+   0 / 0 / 0 / 0.04%"; per-user: "「任一 user 發生 flip-loss」的 episode = 3.8%" (`FABLE/p0-ledger.md:27-38`). Rank churn:
+   "凍結 window 的 slant 排序 episode 內改變 | **20.2%**"; window membership stale "+30/60/120/300 s … **41.9% / 73.2% / 97.3%
+   / 100%**" (`:42-47`). Interference-alignment dip: "p50 **0.00** dB; p90 0.79; … **max 1.55 dB** … dip > 3 dB **0**" (`:53-57`).
+   Slant ΔFSPL "p50 **0.23** dB … max 0.33" (`:66-69`). |ė| p50 rank0..3 "0.234 / 0.119 / 0.090 / 0.061 °/s", rising ≈50% (`:73-75`).
+   (sat, cell) link lifetime "是**分鐘級**，不是秒級" (`review-fable5-cli.md:62`). Own-cell boundary-crossing episode rate
+   "0.2100" per baseline prereg (`FABLE/review-report/review-codex.md:61`) [I: definition not read; conflicts in spirit with
+   item 3 — possibly an area-edge/rank-cell reassignment statistic].
+5. **Earlier (wrong) premise that the hazard lever rested on:** "Episode = 10 秒、衛星每步移動 7.4 km … beam footprint 以 7.4
+   km/s 掃過地面，dwell 時間和 10 秒的 episode 是同一個量級" (`FABLE/review-report/c5.md:7`).
+6. **Moving-footprint alternative (08-20) was blocked for the old constellation:** body-fixed narrow spots over the fixed
+   200×90 km area covered all 100 UEs "in zero phases at 1.66°, 3.32°, or even 6.64° off-axis" (`2026-08-20-moving-footprint…:91-93`);
+   a matched 10×10 km patch showed genuine within-episode motion ("65.93 km center-ground shift and a 0.593° beam-1 axis
+   shift over 10 seconds"; θ p50 0.31°→2.91° over 7 slots; "100 handover events, every one re-initialised at exactly
+   2.0 W"), but "**no slot in either scan had two satellites covering the area**" and "Coverage windows are ~5 minutes apart"
+   → `PRODUCTION-GEOMETRY-BLOCKED` (`:74-80,163-171,208-224`). Also: "over a 10-s episode the area's off-nadir to rank0 drifts
+   ~4° (≈ one beamwidth)" (`analysis/env-rebuild-bodyfixed/FINDING-window-geometry.md:30`) — the satellite-frame angle moves,
+   but with Earth-fixed steered cells this does not reach the user as a gain change.
+
+**Which review killed the hazard lever, and why (records SAY):**
+- Primary kill = **review-fable5-cli MAJOR-1 (06-12)**: "因子一的機制論證與 Family-B 實況不符。Cells Earth-fixed、window
+  per-episode 凍結(`select_window` 唯一 call site 在 `reset()`)、cell 半徑 22.6 km … 「beam dwell ~10 s」的掃過故事不存在;真實
+  in-episode 幾何通道是(稀疏的)window-exit、(微弱的)slant 漂移、(未量測的)干擾對齊、(最廣的)遷移目標選擇"
+  (`FABLE/review-report/review-fable5-cli.md:169`); relayed as "獨立掏空 hazard 勝率 … hazard 樂觀勝率(40–55%)雙重失血"
+  (`OLD/fable.md:21-25`).
+- Confirmed by measurement in the P0 ledger ("in-episode 幾何 hazard 事件質量全面偏薄: exit ≈0%(中心)/3.8%(any-user)、dip
+  ≤1.5 dB、slant ≤0.33 dB; 活的是 rank churn(20%)與 F3 方向資訊", `FABLE/p0-ledger.md:79`) and, for the per-user
+  axis, by the codex-blessed B0-policy-gap assay O-NEG-orth (AUC ≤ 0.543 < 0.55, `FABLE/r3fixed/largergeo-regime-prereg.md:127-148`)
+  and the pre-flight degeneracy sweep (κ_HO 99.6% zeros; κ_EE per-user std 0.005, `FABLE/sdd-b3h…DRAFT.md:188-196`).
+- Terminal framing 06-19: "F1/F2/F3 + TLE geometry are DETERMINISTIC → realism/STATE, NOT headroom"
+  (`env-misdesign-and-redesign-direction-2026-06-19.md:113-116`).
+
+**Separation of SAY vs INFER [I]:** the kill was of *this env's* geometry (Earth-fixed steered cells + frozen reset-time
+window + 10 s episodes + static users + area-centre-defined features), plus the fact that under shared-Q per-user
+argmax a per-user-constant feature cannot break symmetry. None of the records tested hazard/criticality features in an
+env where footprints sweep users, where episodes span a satellite pass, or where handover carries an energy/power cost.

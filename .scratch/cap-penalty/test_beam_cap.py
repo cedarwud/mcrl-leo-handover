@@ -73,12 +73,10 @@ def _rollout(env, n_episodes=1, epsilon=0.3):
                 serving_cell=o.resolution.serving_cell.copy(),
                 demand=dict(o.resolution.demand_by_beam),
                 eligible=dict(o.resolution.eligible_load_by_beam),
-                reward=o.reward_matrix().copy(),
+                reward=o.reward_matrix.copy(),
                 bits=float(o.energy.system_throughput_bps),
                 joules=float(o.energy.system_consumed_power_w),
                 power=float(o.system_power_w),
-                state=np.array(result.user_states[0].beam_loads, copy=True)
-                if hasattr(result.user_states[0], "beam_loads") else None,
                 enc=tr._encode_states(result.user_states).copy(),
                 resolution=o.resolution,
             ))

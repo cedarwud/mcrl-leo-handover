@@ -46,5 +46,12 @@ unless a note below says a follow-up is needed.
 - Added 6th extraction agent F (phase-c-forward, analysis/phase-c, thesis-route-c newalgo narrative,
   hazard/criticality "Claim B" lineage, fable salvage map, env-rebuild-bodyfixed geometry) ->
   `parts/F-phasec-routec-hazard.md`. Reason: those dirs were outside A-E.
+- B complete (47 concepts) and D complete (65 concepts) — both read by controller. Key conditions:
+  B: lr 0.01 all MODQN arms, mean-of-ratios EE, coordinated decode dominates (washes out Q), k_cap=3
+  cap-exclusion, P∝√load, best ckpt early (faithful catfish ep 99), per-head bootstrap recorded.
+  D: Aug Phase-I (D-33/D-34) is the CLOSEST-condition old negative: lr 1e-3, ratio-of-sums EE, from
+  scratch, but k_cap=3 ON, per-head bootstrap ON (SDD-01 B1), ADR-003 physics; faithful catfish B/N 0.73,
+  intervention-only active & harmful; local_snr_greedy prefill NO-PROMOTION (H/B 0.88), source only
+  proven vs uniform, never vs learner. Capacity penalty (+89, 6/6) depends on k_cap (absent here).
   Lead to check at synthesis: old "hazard" lever killed because family_b cells Earth-fixed + frozen
   windows (fable.md); here beams drift relative to users (FEASFRONT C1_SAT_LOCK note) => cause may be absent.
