@@ -26,7 +26,7 @@ still unfinished. **CF3PILOT first** — it is the critical path; its dependency
 > `.scratch/cf3-pilot/DECLARATION-ADDENDUM.md`). Do not launch until `READY FOR PILOT:` exists in
 > `.scratch/b0-corrected/PROGRESS.md`. List any sub-agents you spawned in `PROGRESS.md`.
 
-**3. CFSCREEN `af73f19801f7967c8`** — `.scratch/catfish-screens/PROGRESS.md`
+**3. CFSCREEN `af73f19801f7967c8` — COMPLETED, do not resume.** — `.scratch/catfish-screens/PROGRESS.md`
 > Resume CFSCREEN after a usage limit. Read your `PROGRESS.md`, continue from the last completed
 > screen, do not redo completed screens. Results are diagnostics, not gates. Report to
 > `.scratch/catfish-screens/CATFISH-SCREENS-2026-09-11.md`. List any sub-agents you spawned.
@@ -78,7 +78,6 @@ is not comparable to pinned-archive numbers.
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | items 1-4 **DONE** (`READY FOR PILOT: 363845e8`, TLE pinned `427e6a91…`); finalising report, reruns skipped |
 | **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep) on `363845e8` + pinned archive; early-stop check at ep 500 declared |
 | **CURATE** | `a989dbbca3b5748b8` | local `.scratch/curation` | `.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md` | read-mostly: provenance registry of every citable number, cross-condition comparisons in in-force docs, in-force reading list. Creates new files only |
-| **CFSCREEN** | `af73f19801f7967c8` | local `.scratch/catfish-screens` | `CATFISH-SCREENS-2026-09-11.md` | zero-training: representability (BC probe), action/state distinctness of C1/C2/C3 sources, margin scale |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
 terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
@@ -87,7 +86,7 @@ terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
 
 Completed today and not to be resumed: LFDSCREEN, ENDPOINTREV-astra, C1VSGAIN,
 SPECPROFILE, CATFISHSURFACE, ZCLOSE, ZWHY, R23HISTORY, DQFDGROUND, CATFISHFACT,
-**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`), **EEGAP** `a774b381a016fc9c4` (`.scratch/ee-magnitude/EE-MAGNITUDE-RECONCILIATION-2026-09-11.md`), **HARVEST** `ad98bdcb7c81b29a0` (`.scratch/concept-harvest/CONCEPT-HARVEST-2026-09-11.md`), **CAPPENALTY** `aec999753c170e5f3` (`.scratch/cap-penalty/CAP-PENALTY-2026-09-11.md`).
+**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`), **EEGAP** `a774b381a016fc9c4` (`.scratch/ee-magnitude/EE-MAGNITUDE-RECONCILIATION-2026-09-11.md`), **HARVEST** `ad98bdcb7c81b29a0` (`.scratch/concept-harvest/CONCEPT-HARVEST-2026-09-11.md`), **CAPPENALTY** `aec999753c170e5f3` (`.scratch/cap-penalty/CAP-PENALTY-2026-09-11.md`), **CFSCREEN** `af73f19801f7967c8` (`.scratch/catfish-screens/CATFISH-SCREENS-2026-09-11.md`).
 
 **Usage-limit interruption 2026-09-11 ~04:20Z.** All five running agents were terminated
 mid-task by an HTTP 429 session limit; four were resumed by `SendMessage` after the reset

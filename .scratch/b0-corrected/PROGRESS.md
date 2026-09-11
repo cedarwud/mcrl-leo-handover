@@ -1,3 +1,26 @@
+READY FOR PILOT: 363845e8 ; TLE archive /home/sat/mcrl-v025-b0-ws/tle-pinned-427e6a91 sha256 427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9
+
+**PINNED TLE ARCHIVE (ruling item 4) — use this on every host, set `MCRL_TLE_ROOT` to it:**
+- content hash = `file_set_sha256` **`427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9`**
+  (`mcrl.env.ephemeris.file_set_hash` over (file, sha256) rows; == the frozen R2 prereg's
+  `ephemeris.file_set_sha256`; `training_pipeline.assert_tle_archive_pinned()` enforces it).
+  Secondary: `sha256sum starlink_*.tle | sha256sum` = `c0f02cc784683d2fc08ae3d4542fb43c5129b74b254a17b458ddef31d8c78317`.
+- 373 files, `starlink_20250727.tle` .. `starlink_20260820.tle`.
+- sat pinned copy: `/home/sat/mcrl-v025-b0-ws/tle-pinned-427e6a91` (source: `/home/sat/mcrl-runtime/tle-frozen-20260820`, which sat's `~/demo/tle_data/starlink/tle` symlinks to).
+- local pinned copy: `/home/u24/mcrl-runtime/tle-pinned-427e6a91`.
+- NOT pinned (do not use): local `~/demo/tle_data/starlink/tle` = the 373 + 19 later days, file_set `e07f3e1e879dafd28863e2b0178acc3186e3eea70e319e1046b56b4329a093e4` (the catfish-surface harness ran on this one).
+- Placebo: RANDOM_MASKED N_EP=24 bit-for-bit identical on both hosts (pooled EE 52,420,510.0956937 bit/J).
+- Eval harness `scripts/b0_pooled_ee_eval.py`: builds a FRESH environment per arm (the inherited driver
+  shared one env, so arms after the first ran on a later `_age_rng` warm-start stream — not matched).
+
+Items 1-4 of the 2026-09-11 ruling, all on `wip/multi-catfish-v023-20260907`, all ancestors of `363845e8`:
+PENALTYARM port `f531ff99` (own commit); B0 D-2 v1 `ee0ffa60`, D-3 `698f20d8`, fixup `6939fc78`, pilot scripts
+`ff01f84d` (cherry-picked); D-1 flag `57fb40b4` (default eq. (16), W-08 restored, bitwise placebo);
+D-2 per-step floor `c00aca3e`; TLE pin `b924c8a0`; driver/eval `363845e8`.
+`TrainerConfig.td_bootstrap_mode`: `"eq16-per-head-max"` (default, baseline MODQN) | `"shared-continuation-argmax"`.
+
+---
+
 # B0CORRECT progress
 
 Started 2026-09-11. Every step checks for existing output first; an interruption
@@ -195,7 +218,22 @@ Work happens in the SHARED tree `/home/u24/papers/mcrl-leo-handover` on `wip/mul
 | R3 | D-1 behind a flag, W-08 restored | DONE `57fb40b4`; bitwise placebo: flag-OFF == pre-5219995a, flag-ON == 5219995a, ON != pre (teeth) | git log grep `D-1 flag` |
 | R4 | D-2 per-step worst-served floor + outage counter | DONE `c00aca3e`; 4 sub-tests red vs v1, 9/9 green | git log grep `per-step` |
 | R5 | Confirm checkpoint-selection path feeds no claim | DONE: no caller in src/scripts/tests passes `evaluation_seed_set` to train(), so best-eval selection is unreachable; primary = final-episode-policy (prereg_draft.py:497) | note here |
-| R6 | Pin TLE archive by content hash; placebo RANDOM bit-for-bit on both hosts | PENDING | hashes + placebo lines in this file |
+| R6 | Pin TLE archive; placebo | DONE: RANDOM_MASKED N_EP=24 BIT-FOR-BIT identical on local and sat (EE 52,420,510.0956937; all 24 per-episode EEs; outages 1540; phi1 4472, phi2 16395; head means) — pin `b924c8a0`, driver/eval `363845e8` | scratchpad `placebo-local.log`, `sat:…/placebo-sat.log` |
 | R7 | Remove throwaway worktree | DONE: HEAD e3f3503e, no tracked changes, no untracked files beyond caches, no stash; removed | `git worktree list` |
-| R8 | Pilots BASELINE_EQ16 + SHARED_BOOTSTRAP, 500 ep, pinned archive, on sat | PENDING | sat status.json complete |
-| R9 | Greedy eval + report update | PENDING | report section "Round 2" |
+| R8 | Pilots BASELINE_EQ16 + SHARED_BOOTSTRAP | DONE: both `status: complete` ~09:01 UTC, wall 784/783 s | `sat:/home/sat/mcrl-v025-b0-ws/r2-pilot-{BASELINE_EQ16,SHARED_BOOTSTRAP}-500/` |
+| R9 | Greedy eval + report update | RUNNING: eval launched ~09:03 UTC, output `sat:/home/sat/mcrl-v025-b0-ws/r2-eval-ep500.log` (5 arms, fresh env each) | eval log |
+
+## R6 note: harness driver defect found — shared env across arms advances `_age_rng`; fixed in `363845e8` (fresh env per run). Round-1 B0/UNFIXED ep500 numbers were NOT at matched conditions; re-evaluate them in R9.
+
+## R8 — ROUND-2 PILOTS LAUNCHED 2026-09-11 08:48:04 UTC (sat)
+
+| arm | PID | mode | cwd | out | log |
+|-----|-----|------|-----|-----|-----|
+| BASELINE_EQ16 | 3394566 | eq16-per-head-max | `/home/sat/mcrl-v025-b0-ws/r2` (commit `363845e8`) | `/home/sat/mcrl-v025-b0-ws/r2-pilot-BASELINE_EQ16-500` | `<out>.log` |
+| SHARED_BOOTSTRAP | 3394568 | shared-continuation-argmax | same | `/home/sat/mcrl-v025-b0-ws/r2-pilot-SHARED_BOOTSTRAP-500` | `<out>.log` |
+
+Both: 500 ep, seeds 42/1337/7, lr 0.001, D-2 per-step floor, D-3, MCRL_TLE_ROOT = pinned copy,
+nice 16, threads 1, MemoryMax=5G, checkpoints every 100. Expected finish ~09:03 UTC (allow 09:20).
+Resume: re-run `/home/sat/mcrl-v025-b0-ws/launch_r2.sh` (idempotent).
+After both complete, R9 eval (one process): RANDOM + both r2 ep500 + round-1 B0/UNFIXED ep500
+re-evaluated with the fresh-env driver.
