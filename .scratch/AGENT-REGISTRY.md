@@ -21,6 +21,7 @@ instruction to read `PROGRESS.md` first — the checkpoint file is what makes th
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
 | **B0CORRECT** | `a1f2ae507b9ec7674` | local `.scratch/b0-corrected` + `/home/sat/mcrl-v025-b0-ws` | `B0-CORRECTED-BASELINE-2026-09-11.md` | **resumed** — D-1 behind a flag (default eq.16, B1 stands), D-2 per-step floor, pin TLE archive across hosts, commit PENALTYARM port separately, merge b0 branch, rerun BASELINE_EQ16 + SHARED_BOOTSTRAP pilots |
+| **CURATE** | `a989dbbca3b5748b8` | local `.scratch/curation` | `.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md` | read-mostly: provenance registry of every citable number, cross-condition comparisons in in-force docs, in-force reading list. Creates new files only |
 | **CFSCREEN** | `af73f19801f7967c8` | local `.scratch/catfish-screens` | `CATFISH-SCREENS-2026-09-11.md` | zero-training: representability (BC probe), action/state distinctness of C1/C2/C3 sources, margin scale |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
