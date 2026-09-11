@@ -117,13 +117,19 @@ def e0_cf_settings(calib: dict, credit_mode: str) -> CFRatioSettings:
     )
 
 
-def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL):
+def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
+                    tau: float | None = None):
+    """``tau`` overrides the frozen teacher temperature (E0b's declared tau sweep;
+    Amendment 6 section 7 allows the soft-distillation temperature to move on DEV /
+    DEVVAL evidence).  Every other value stays frozen, and a different tau is a
+    DIFFERENT VERSION: it changes the configuration hash."""
     if mechanism not in cft.MECHANISMS:
         raise SystemExit(f"unknown mechanism {mechanism!r}")
     return cfd.DevSettings(
         mechanism=mechanism,
         teacher="none" if mechanism == "D0" else "T0",
-        alpha=ALPHA0, tau=TAU0, tau_s=TAU_S0, margin=MARGIN0, lambda_e=LAMBDA_E0,
+        alpha=ALPHA0, tau=(TAU0 if tau is None else float(tau)),
+        tau_s=TAU_S0, margin=MARGIN0, lambda_e=LAMBDA_E0,
         null_key=((DEV_NULL_D2_BASE, int(k)) if mechanism == "D2-null" else None),
         devval_env_base=DEVVAL_ENV_BASE, devval_mobility_base=DEVVAL_MOB_BASE,
         devval_episodes=int(devval_episodes),
@@ -131,7 +137,8 @@ def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL):
 
 
 def arm_config_payload(record, calib: dict, arm: int, k: int, *, episodes: int,
-                       devval_episodes: int, calibration_sha256: str) -> dict:
+                       devval_episodes: int, calibration_sha256: str,
+                       tau: float | None = None) -> dict:
     """Everything that defines one arm's run, for its configuration hash."""
     mech, credit = ARMS[int(arm)]
     train_seed, env_seed, mob_seed = dev_triple(k)
@@ -143,7 +150,7 @@ def arm_config_payload(record, calib: dict, arm: int, k: int, *, episodes: int,
         "trainer_config": dataclasses.asdict(e0_config(record, episodes)),
         "cf_settings": dataclasses.asdict(e0_cf_settings(calib, credit)),
         "dev_settings": dataclasses.asdict(
-            e0_dev_settings(mech, k, devval_episodes=devval_episodes)
+            e0_dev_settings(mech, k, devval_episodes=devval_episodes, tau=tau)
         ),
         "episodes": int(episodes),
         "devval_at": list(devval_at(episodes, smoke=(int(episodes) <= 3))),

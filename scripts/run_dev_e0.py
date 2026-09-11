@@ -61,6 +61,9 @@ def main() -> int:
     ap.add_argument("--episodes", type=int, default=D.EPISODES)
     ap.add_argument("--devval-episodes", type=int, default=D.N_DEVVAL)
     ap.add_argument("--stop-after", type=int, default=None)
+    ap.add_argument("--tau", type=float, default=None,
+                    help="teacher temperature override (E0b tau sweep); a different "
+                         "tau is a different version and a different config hash")
     ap.add_argument("--smoke", action="store_true",
                     help="SMOKE ONLY: 3 episodes, 2 DEVVAL episodes, read at episode 1")
     ap.add_argument("--rss-cap-gb", type=float, default=4.5)
@@ -89,7 +92,7 @@ def main() -> int:
     record = tp.read_prereg(tp.CANONICAL_PREREG)
     cfg_payload = D.arm_config_payload(record, calib, arm, k, episodes=episodes,
                                        devval_episodes=n_devval,
-                                       calibration_sha256=calib_sha)
+                                       calibration_sha256=calib_sha, tau=a.tau)
     cfg_hash = D.config_hash(cfg_payload)
 
     run_manifest_path = a.root / "RUN-MANIFEST.json"
@@ -105,7 +108,7 @@ def main() -> int:
 
     config = D.e0_config(record, episodes)
     settings = D.e0_cf_settings(calib, credit)
-    dev = D.e0_dev_settings(mech, k, devval_episodes=n_devval)
+    dev = D.e0_dev_settings(mech, k, devval_episodes=n_devval, tau=a.tau)
     if abs(settings.eta0 - D.ETA0_EXPECTED) > 1e-6:
         raise SystemExit(f"eta_0 {settings.eta0} is not the declared {D.ETA0_EXPECTED}")
     train_seed, env_seed, mob_seed = D.dev_triple(k)

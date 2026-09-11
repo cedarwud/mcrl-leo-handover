@@ -71,6 +71,9 @@ def main() -> int:
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--episodes", type=int, default=D.EPISODES)
     ap.add_argument("--devval-episodes", type=int, default=D.N_DEVVAL)
+    ap.add_argument("--tau", type=float, default=None,
+                    help="teacher temperature override (E0b tau sweep); a different "
+                         "tau is a different version and a different config hash")
     ap.add_argument("--stop-after", type=int, default=None)
     ap.add_argument("--expect", type=int, default=None)
     ap.add_argument("--memory-max", default="5G")
@@ -110,7 +113,7 @@ def main() -> int:
     for arm, k in parsed:
         payload = D.arm_config_payload(record, calib, arm, k, episodes=episodes,
                                        devval_episodes=n_devval,
-                                       calibration_sha256=calib_sha)
+                                       calibration_sha256=calib_sha, tau=a.tau)
         arm_payloads[f"{arm}:{k}"] = payload
         arm_configs[f"{arm}:{k}"] = D.config_hash(payload)
 
@@ -180,6 +183,8 @@ def main() -> int:
                "--calibration", str(a.calibration.resolve()),
                "--episodes", str(episodes), "--devval-episodes", str(n_devval),
                "--rss-cap-gb", str(a.rss_cap_gb)]
+        if a.tau is not None:
+            cmd += ["--tau", repr(float(a.tau))]
         if a.smoke:
             cmd.append("--smoke")
         if a.stop_after is not None:
