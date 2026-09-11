@@ -32,13 +32,12 @@ s_E / s_B`` is ``eta`` (bit/J) expressed in the heads' units; ``lambda``
 multiplies ``Q_H`` in the same normalised score (one unit = ``s_B`` bits per
 inter-satellite handover).
 
-Catfish: each source runs its scripted rule in its OWN environment copy
-(same seed values as the main), pushes unshaped raw ``(B, E, H)``
-transitions into its OWN buffer, and head k's minibatch is
-``batch - n_cf`` rows of main replay (one draw, shared by the three heads)
-plus ``n_cf = round(rho * batch)`` rows from the buffer of the source routed
-to head k.  Sources never touch the trainer's generators, so with
-``rho = 0`` the trainer is bit-identical to OFF.
+Sources (Amendments 1 and 3): each fixed source policy's transitions are
+PRE-GENERATED before training (``generate_pool``; unshaped raw ``(B, E, H)``)
+and loaded once into an immutable ``PoolBuffer``.  One common minibatch
+trains all three heads: 113 main-replay rows + 5 rows from each of the three
+pools (drawn with a separate generator), so with ``rho = 0`` the trainer is
+bit-identical to OFF.
 """
 
 from __future__ import annotations
@@ -70,8 +69,6 @@ from .cf_sources import (
     HEAD_E,
     HEAD_H,
     SourcePolicy,
-    cf3_policies,
-    random_legal,
 )
 from .modqn import MODQNTrainer
 
@@ -168,131 +165,145 @@ class CFRatioSettings:
 
 
 # ------------------------------------------------------------------ sources
-class ExperienceSource:
-    """One scripted source in its own environment copy with its own buffer."""
+# Amendment 3: the scripted sources (and NULL3's random sources) are FIXED
+# policies, so their transitions are pre-generated before training, per
+# training seed, on a pool seed range disjoint from training / calibration /
+# evaluation, and loaded once into an immutable pool.  Nothing streams during
+# training; no source environment exists in the training process.
 
-    def __init__(
-        self,
-        name: str,
-        head: int,
-        policy: SourcePolicy,
-        env,
-        *,
-        env_seed: int,
-        mobility_seed: int,
-        capacity: int,
-        encode: Callable,
-        policy_rng: np.random.Generator | None = None,
-    ) -> None:
-        self.name = name
-        self.head = int(head)
-        self.policy = policy
-        self.env = env
-        self.env_rng = np.random.default_rng(env_seed)
-        self.mobility_rng = np.random.default_rng(mobility_seed)
-        self.policy_rng = policy_rng
-        self.buffer = ReplayBuffer(int(capacity))
-        self._encode = encode           # encode(states, t)
-        self._t = 0
-        self._states = self._masks = self._enc = None
-        self.episode_totals = np.zeros(3, dtype=np.float64)
-        self.episode_user_steps = 0
-
-    def reset(self) -> None:
-        states, masks, _ = self.env.reset(self.env_rng, self.mobility_rng)
-        self._states, self._masks = states, masks
-        self._t = 0
-        self._enc = self._encode(states, 0)
-        self.episode_totals = np.zeros(3, dtype=np.float64)
-        self.episode_user_steps = 0
-
-    def step(self) -> bool:
-        actions = self.policy(self._states, self._masks)
-        result = self.env.step(actions, self.env_rng)
-        raw = cf_reward_matrix(result, self.env.last_outcome)
-        self._t += 1
-        next_enc = self._encode(result.user_states, self._t)
-        self.episode_totals += raw.sum(axis=0)
-        self.episode_user_steps += len(raw)
-        for uid in range(len(raw)):
-            if is_no_op(int(actions[uid])):
-                continue
-            next_mask = result.action_masks[uid].mask
-            if not bool(result.done) and not bool(next_mask.any()):
-                continue
-            self.buffer.push(
-                self._enc[uid],
-                int(actions[uid]),
-                raw[uid].copy(),
-                next_enc[uid],
-                self._masks[uid].mask.copy(),
-                next_mask.copy(),
-                bool(result.done),
-            )
-        self._states = result.user_states
-        self._masks = result.action_masks
-        self._enc = next_enc
-        return bool(result.done)
-
-    def state_dict(self) -> dict[str, Any]:
-        env_state = getattr(self.env, "training_state_dict", None)
-        return {
-            "name": self.name,
-            "head": self.head,
-            "env_rng": copy.deepcopy(self.env_rng.bit_generator.state),
-            "mobility_rng": copy.deepcopy(self.mobility_rng.bit_generator.state),
-            "policy_rng": (
-                None if self.policy_rng is None
-                else copy.deepcopy(self.policy_rng.bit_generator.state)
-            ),
-            "env_state": copy.deepcopy(env_state()) if callable(env_state) else None,
-            "buffer": self.buffer.state_dict(),
-        }
-
-    def load_state_dict(self, state: dict[str, Any]) -> None:
-        if state["name"] != self.name or int(state["head"]) != self.head:
-            raise MCRLContractError("source state does not match this source")
-        self.env_rng.bit_generator.state = copy.deepcopy(state["env_rng"])
-        self.mobility_rng.bit_generator.state = copy.deepcopy(state["mobility_rng"])
-        if self.policy_rng is not None:
-            self.policy_rng.bit_generator.state = copy.deepcopy(state["policy_rng"])
-        if state["env_state"] is not None:
-            self.env.load_training_state_dict(copy.deepcopy(state["env_state"]))
-        self.buffer.load_state_dict(state["buffer"])
+POOL_FIELDS = ("states", "actions", "rewards_raw", "next_states", "masks",
+               "next_masks", "dones")
 
 
-def build_sources(
-    kind: str,
+def source_names(kind: str) -> list[tuple[str, int]]:
+    """``(name, head)`` in the declared order C1->Q_B, C2->Q_H, C3->Q_E."""
+    if kind == "cf3":
+        return [(name, head) for name, head in CF3_SPECS]
+    if kind == "null3":
+        return [(f"NULL{k + 1}_for_{name}", head) for k, (name, head) in enumerate(CF3_SPECS)]
+    return []
+
+
+def encode_with_time(states, t: int, num_users: int, config: TrainerConfig,
+                     steps: int) -> np.ndarray:
+    """112-dim MODQN encoding + ``(T - t) / T`` -- the A1-A3 observation."""
+    from ..runtime.state_encoding import encode_state
+    base = np.array([encode_state(s, num_users, config) for s in states], dtype=np.float32)
+    rem = np.full((len(base), 1), (steps - int(t)) / steps, dtype=np.float32)
+    return np.concatenate([base, rem], axis=1)
+
+
+def generate_pool(
+    policy_for_episode: Callable[[int], SourcePolicy],
     *,
     env_factory: Callable[[], Any],
-    env_seed: int,
-    mobility_seed: int,
-    train_seed: int,
-    capacity: int,
-    encode: Callable,
-) -> list[ExperienceSource]:
-    """Declared routing ``C1 -> Q_B, C2 -> Q_H, C3 -> Q_E``; NULL3 identical
-    except each policy is random-legal on its own generator."""
-    if kind == "none":
-        return []
-    rules = cf3_policies()
-    sources = []
-    for k, (name, head) in enumerate(CF3_SPECS):
-        if kind == "cf3":
-            policy, prng, label = rules[name], None, name
-        elif kind == "null3":
-            prng = np.random.default_rng(train_seed + NULL_RNG_OFFSET + k)
-            policy, label = random_legal(prng), f"NULL{k + 1}_for_{name}"
-        else:
-            raise MCRLContractError(f"unknown source kind {kind!r}")
-        sources.append(
-            ExperienceSource(
-                label, head, policy, env_factory(),
-                env_seed=env_seed, mobility_seed=mobility_seed,
-                capacity=capacity, encode=encode, policy_rng=prng,
-            )
-        )
-    return sources
+    seeds: Sequence[tuple[int, int]],
+    config: TrainerConfig,
+) -> dict[str, np.ndarray]:
+    """Roll a fixed source for ``len(seeds)`` episodes (fresh env, per-episode
+    reseeded) and return its transitions with RAW ``(B, E, H)``, filtered
+    exactly as the main replay (P-03)."""
+    cols: dict[str, list] = {f: [] for f in POOL_FIELDS}
+    t0_hashes = []
+    import hashlib
+    for i, (env_seed, mob_seed) in enumerate(seeds):
+        env = env_factory()
+        users, steps = env.config.num_users, env.config.steps_per_episode
+        env_rng = np.random.default_rng(env_seed)
+        mob_rng = np.random.default_rng(mob_seed)
+        policy = policy_for_episode(i)
+        states, masks, _ = env.reset(env_rng, mob_rng)
+        enc = encode_with_time(states, 0, users, config, steps)
+        t0_hashes.append(hashlib.sha256(np.ascontiguousarray(enc).tobytes()).hexdigest())
+        for t in range(steps):
+            actions = policy(states, masks)
+            res = env.step(actions, env_rng)
+            raw = cf_reward_matrix(res, env.last_outcome)
+            nxt = encode_with_time(res.user_states, t + 1, users, config, steps)
+            for u in range(users):
+                if is_no_op(int(actions[u])):
+                    continue
+                nm = res.action_masks[u].mask
+                if not bool(res.done) and not bool(nm.any()):
+                    continue
+                cols["states"].append(enc[u])
+                cols["actions"].append(int(actions[u]))
+                cols["rewards_raw"].append(raw[u])
+                cols["next_states"].append(nxt[u])
+                cols["masks"].append(np.asarray(masks[u].mask, dtype=bool))
+                cols["next_masks"].append(np.asarray(nm, dtype=bool))
+                cols["dones"].append(bool(res.done))
+            states, masks, enc = res.user_states, res.action_masks, nxt
+            if res.done:
+                break
+    out = {
+        "states": np.asarray(cols["states"], dtype=np.float32),
+        "actions": np.asarray(cols["actions"], dtype=np.int64),
+        "rewards_raw": np.asarray(cols["rewards_raw"], dtype=np.float64),
+        "next_states": np.asarray(cols["next_states"], dtype=np.float32),
+        "masks": np.asarray(cols["masks"], dtype=bool),
+        "next_masks": np.asarray(cols["next_masks"], dtype=bool),
+        "dones": np.asarray(cols["dones"], dtype=bool),
+        "t0_obs_sha256": np.asarray(t0_hashes),
+    }
+    return out
+
+
+class PoolBuffer:
+    """Immutable pre-generated source pool; ``sample`` mirrors ReplayBuffer's
+    (uniform without replacement, same dtypes)."""
+
+    def __init__(self, arrays: dict[str, np.ndarray], *, sha256: str | None = None) -> None:
+        n = len(arrays["actions"])
+        for f in POOL_FIELDS:
+            if len(arrays[f]) != n:
+                raise MCRLContractError(f"pool field {f} has the wrong length")
+        self._a = {f: np.asarray(arrays[f]) for f in POOL_FIELDS}
+        for arr in self._a.values():
+            arr.setflags(write=False)
+        self.sha256 = sha256
+
+    @classmethod
+    def load(cls, path: str | Path) -> "PoolBuffer":
+        import hashlib
+        path = Path(path)
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        with np.load(path, allow_pickle=False) as z:
+            arrays = {f: z[f] for f in POOL_FIELDS}
+        return cls(arrays, sha256=digest)
+
+    def __len__(self) -> int:
+        return len(self._a["actions"])
+
+    @property
+    def capacity(self) -> int:
+        return len(self)
+
+    def sample(self, batch_size: int, rng: np.random.Generator):
+        idx = rng.choice(len(self), size=batch_size, replace=False)
+        a = self._a
+        return (a["states"][idx].astype(np.float32), a["actions"][idx].astype(np.int64),
+                a["rewards_raw"][idx].astype(np.float32), a["next_states"][idx].astype(np.float32),
+                a["masks"][idx], a["next_masks"][idx], a["dones"][idx].astype(np.float32))
+
+    def raw_rewards(self) -> np.ndarray:
+        return self._a["rewards_raw"]
+
+
+class PoolSource:
+    """One source = a name, the head whose objective it specialises in, a pool."""
+
+    def __init__(self, name: str, head: int, buffer: PoolBuffer) -> None:
+        self.name, self.head, self.buffer = name, int(head), buffer
+
+    def state_dict(self) -> dict[str, Any]:
+        return {"name": self.name, "head": self.head, "pool_sha256": self.buffer.sha256,
+                "pool_len": len(self.buffer)}
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        if (state["name"], int(state["head"]), state.get("pool_sha256"),
+                state.get("pool_len")) != (self.name, self.head, self.buffer.sha256, len(self.buffer)):
+            raise MCRLContractError("resume state's source pool is not this pool")
 
 
 # ------------------------------------------------------------------ rollouts
@@ -439,6 +450,7 @@ class CFRatioTrainer(MODQNTrainer):
         settings: CFRatioSettings,
         *,
         env_factory: Callable[[], Any] | None = None,
+        pools: Sequence[tuple[str, int, PoolBuffer]] | None = None,
         train_seed: int = 42,
         env_seed: int = 1337,
         mobility_seed: int = 7,
@@ -482,17 +494,14 @@ class CFRatioTrainer(MODQNTrainer):
         self._catfish_rng = np.random.default_rng(
             train_seed + CATFISH_SAMPLING_RNG_OFFSET
         )
-        if settings.source_kind != "none" and env_factory is None:
-            raise MCRLContractError("catfish arms need an env_factory")
-        self.sources = build_sources(
-            settings.source_kind,
-            env_factory=env_factory,
-            env_seed=env_seed,
-            mobility_seed=mobility_seed,
-            train_seed=train_seed,
-            capacity=settings.catfish_buffer_capacity,
-            encode=self.encode_at,
-        ) if settings.source_kind != "none" else []
+        expected = source_names(settings.source_kind)
+        pools = list(pools or [])
+        if [(n, h) for n, h, _b in pools] != expected:
+            raise MCRLContractError(
+                f"source_kind {settings.source_kind!r} needs pools {expected}, got "
+                f"{[(n, h) for n, h, _b in pools]}"
+            )
+        self.sources = [PoolSource(n, h, b) for n, h, b in pools]
         # Amendment 1 item 2: 1/27 of the batch from EACH source, rounded to
         # nearest (128/27 = 4.74 -> 5), the main replay takes the rest (113).
         self.n_per_source = (
@@ -511,10 +520,8 @@ class CFRatioTrainer(MODQNTrainer):
     # -- observation -------------------------------------------------------
     def encode_at(self, states, t: int) -> np.ndarray:
         """112-dim MODQN encoding + ``(T - t) / T`` (t = decision index)."""
-        base = self._encode_states(states)
-        steps = self.env.config.steps_per_episode
-        rem = np.full((len(base), 1), (steps - int(t)) / steps, dtype=np.float32)
-        return np.concatenate([base, rem], axis=1)
+        return encode_with_time(states, t, self.num_users, self.config,
+                                self.env.config.steps_per_episode)
 
     # -- objective -------------------------------------------------------
     @property
@@ -713,8 +720,6 @@ class CFRatioTrainer(MODQNTrainer):
             states, masks, _ = self.env.reset(self._env_rng, self._mobility_rng)
             t = 0
             encoded = self.encode_at(states, t)
-            for src in self.sources:
-                src.reset()
             tot = np.zeros(3)
             served = h_intra = outages = 0
             beams = 0.0
@@ -751,8 +756,6 @@ class CFRatioTrainer(MODQNTrainer):
                         next_encoded[uid], masks[uid].mask.copy(),
                         next_mask.copy(), bool(result.done),
                     )
-                for src in self.sources:
-                    src.step()
                 step_losses = self.update()
                 if self._last_batch is not None:
                     ep_losses += step_losses
@@ -793,14 +796,6 @@ class CFRatioTrainer(MODQNTrainer):
                 "batch_rows_by_source": [int(x) for x in src_rows],
                 "replay_size": len(self.replay),
                 "catfish_buffer_sizes": [len(x.buffer) for x in self.sources],
-                "catfish_episode": [
-                    {
-                        "name": x.name,
-                        "ee": float(x.episode_totals[HEAD_B] / x.episode_totals[HEAD_E]),
-                        "h_inter": float(x.episode_totals[HEAD_H] / max(x.episode_user_steps, 1)),
-                    }
-                    for x in self.sources
-                ],
                 "quarter": None,
             }
             episode_done = ep + 1

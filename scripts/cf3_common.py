@@ -29,6 +29,10 @@ A0_SEEDS = (0, 1, 2)
 CAL_ENV_BASE, CAL_MOB_BASE = 9_121_000, 9_122_000
 EVAL_ENV_BASE, EVAL_MOB_BASE = 9_111_000, 9_112_000
 RANDOM_ACTION_BASE = 9_131_000
+# Amendment 3 source pools: seed index k, episode i -> env 9_141_000+1000k+i,
+# mobility 9_142_000+1000k+i; NULL source j's action draws default_rng((9_151_000, k, j, i)).
+POOL_ENV_BASE, POOL_MOB_BASE, POOL_NULL_BASE = 9_141_000, 9_142_000, 9_151_000
+POOL_EPISODES = 100
 N_CAL = 24
 N_EVAL = 24
 EPISODES = 1000
@@ -64,6 +68,27 @@ def shared_archive():
         from mcrl.runtime.training_pipeline import resolve_tle_root
         _SHARED_ARCHIVE = TleArchive(resolve_tle_root())
     return _SHARED_ARCHIVE
+
+
+def pool_seeds(k: int, n: int = POOL_EPISODES):
+    return episode_seeds(POOL_ENV_BASE + 1000 * k, POOL_MOB_BASE + 1000 * k, n)
+
+
+def pool_path(pools_root: Path, k: int, name: str) -> Path:
+    return Path(pools_root) / f"s{k}" / f"{name}.npz"
+
+
+def pilot_config(record, arm: str, episodes: int):
+    """The trainer config every run of this pilot uses (driver and pools)."""
+    import dataclasses
+    from mcrl.runtime import training_pipeline as tp
+    from mcrl.runtime.trainer_config_validation import TD_BOOTSTRAP_EQ16, TD_BOOTSTRAP_SHARED
+    frozen = tp._trainer_config(record, learning_rate=0.001)
+    cf_arm = arm != "A0"
+    return dataclasses.replace(
+        frozen, episodes=episodes, epsilon_decay_episodes=EPSILON_DECAY_COMPRESSED,
+        td_bootstrap_mode=TD_BOOTSTRAP_SHARED if cf_arm else TD_BOOTSTRAP_EQ16,
+        discount_factor=1.0 if cf_arm else frozen.discount_factor)
 
 
 def env_factory(users: int = 100):
