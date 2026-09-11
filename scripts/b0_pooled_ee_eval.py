@@ -47,6 +47,11 @@ DT = float(DECISION_STEP_S)
 N_EP = int(__import__("os").environ.get("B0_EVAL_N_EP_SMOKE_ONLY", "24"))  # 24 = the harness value
 CKPT = None  # set per arm by the driver below
 
+from mcrl.runtime.training_pipeline import assert_tle_archive_pinned, resolve_tle_root
+# Host pin (ruling 2026-09-11): refuse to evaluate on any archive but the
+# frozen one, so numbers from different hosts are comparable.
+TLE_FILE_SET_SHA256 = assert_tle_archive_pinned()
+
 cfg = TrainerConfig(learning_rate=0.001, episodes=1)
 env = make_training_environment(users=100)
 U, T = env.config.num_users, env.config.steps_per_episode
@@ -147,6 +152,82 @@ def run(fn, load_ckpt=False):
 # ---- HARNESS-CORE END ----
 
 
+def run_extended(fn, load_ckpt=False):
+    """``run`` plus the counters round 2 asks for; the estimand is unchanged.
+
+    Adds: phi1 / phi2 handover counts (from the environment's own
+    ``last_outcome.handovers`` classes), outage user-steps, and the greedy
+    per-user-episode head means, raw and calibrated (reward vectors from the
+    trainer, i.e. with the D-2 floor).  The driver re-runs the verbatim
+    ``run`` on every arm and requires every shared field to agree exactly.
+    """
+    from mcrl.env.action_contract import HandoverClass
+
+    tr = MODQNTrainer(env, cfg, train_seed=42, env_seed=1337, mobility_seed=7)
+    if load_ckpt:
+        tr.load_checkpoint(CKPT, load_optimizers=False)
+    bits = 0.0; joules = 0.0
+    served = 0; usersteps = 0; ho = 0; phi1 = 0; phi2 = 0
+    head_sum = np.zeros(3)
+    per_ep_scalar = []
+    per_ep_ee = []
+    for _ in range(N_EP):
+        states, masks, _ = env.reset(tr._env_rng, tr._mobility_rng)
+        enc = tr._encode_states(states)
+        r = np.zeros(3); eb = 0.0; ej = 0.0
+        for _t in range(T):
+            a = fn(tr, enc, masks, states)
+            res = env.step(a, tr._env_rng)
+            e = env.last_outcome.energy
+            eb += float(e.system_throughput_bps) * DT
+            ej += float(e.system_consumed_power_w) * DT
+            served += int(e.served)
+            for cls in env.last_outcome.handovers:
+                phi1 += int(cls is HandoverClass.INTRA_SATELLITE)
+                phi2 += int(cls is HandoverClass.INTER_SATELLITE)
+            for uid in range(U):
+                r += tr.reward_vector_from_step_result(res, uid)
+                usersteps += 1
+                if res.rewards[uid].r2_handover < 0:
+                    ho += 1
+            states = res.user_states
+            enc = tr._encode_states(states)
+            masks = res.action_masks
+            if res.done:
+                break
+        bits += eb; joules += ej
+        avg = r / U
+        head_sum += avg
+        per_ep_scalar.append(sum(W[i] * avg[i] / SC[i] for i in range(3)))
+        per_ep_ee.append(eb / ej if ej > 0 else float("nan"))
+    heads = head_sum / N_EP
+    return dict(bits=bits, joules=joules, ee=bits / joules,
+                served_rate=served / usersteps, ho_rate=ho / usersteps,
+                scalar=st.mean(per_ep_scalar),
+                scalar_sem=st.pstdev(per_ep_scalar) / len(per_ep_scalar) ** 0.5,
+                ee_ep=per_ep_ee,
+                outage_user_steps=usersteps - served, user_steps=usersteps,
+                phi1_handovers=phi1, phi2_handovers=phi2,
+                phi1_rate=phi1 / usersteps, phi2_rate=phi2 / usersteps,
+                head_means_raw=[float(x) for x in heads],
+                head_means_calibrated=[float(heads[i] / SC[i]) for i in range(3)])
+
+
+def _fresh_env():
+    """A NEW environment for every run (round-2 driver fix, 2026-09-11).
+
+    The verbatim driver built ONE module-level ``env`` and ran every arm on
+    it.  ``StepEnvironment`` owns a persistent cross-episode stream
+    (``_age_rng``, the segment warm-start ages, spawned once per environment
+    object and never reset by ``reset``), so every arm after the first ran at
+    a later position of that stream: arms were not at matched conditions.
+    ``run`` reads the module global, so rebinding it here gives each arm
+    identical conditions without touching the harness core.
+    """
+    global env
+    env = make_training_environment(users=100)
+
+
 def _driver(argv):
     global CKPT
     arms = []
@@ -163,7 +244,20 @@ def _driver(argv):
     for label, fn, path in arms:
         CKPT = path
         t_arm = time.time()
-        o = run(fn, load_ckpt=path is not None)
+        _fresh_env()
+        o = run_extended(fn, load_ckpt=path is not None)
+        _fresh_env()
+        v = run(fn, load_ckpt=path is not None)
+        shared = ("bits", "joules", "ee", "served_rate", "ho_rate",
+                  "scalar", "scalar_sem", "ee_ep")
+        mismatch = [k for k in shared if o[k] != v[k]]
+        if mismatch or o["phi1_handovers"] + o["phi2_handovers"] != round(
+            o["ho_rate"] * o["user_steps"]
+        ):
+            raise SystemExit(f"extension disagrees with verbatim run on {mismatch}")
+        o["verbatim_run_agrees"] = True
+        o["tle_file_set_sha256"] = TLE_FILE_SET_SHA256
+        o["tle_root"] = str(resolve_tle_root())
         ee_ep = o.pop("ee_ep")
         o.update(
             label=label,
@@ -171,6 +265,7 @@ def _driver(argv):
             ee_ep_mean=st.mean(ee_ep),
             ee_ep_sd=st.pstdev(ee_ep),
             ee_ep_sem=st.pstdev(ee_ep) / len(ee_ep) ** 0.5,
+            ee_ep_list=ee_ep,
             n_episodes=len(ee_ep),
             wall_s=time.time() - t_arm,
         )

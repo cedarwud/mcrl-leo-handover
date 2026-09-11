@@ -105,6 +105,14 @@ def main() -> int:
         help="smoke runs only; the pilot uses the default of 100",
     )
     parser.add_argument(
+        "--td-bootstrap-mode",
+        default="eq16-per-head-max",
+        help=(
+            "eq16-per-head-max (DEFAULT, B1 baseline MODQN) or "
+            "shared-continuation-argmax (successor target)"
+        ),
+    )
+    parser.add_argument(
         "--local-smoke",
         action="store_true",
         help=(
@@ -137,12 +145,19 @@ def main() -> int:
     frozen_config = tp._trainer_config(
         record, learning_rate=FROZEN_MAIN_LEARNING_RATE
     )
-    # The ONE declared departure from the frozen main run: a short horizon.
-    config = dataclasses.replace(frozen_config, episodes=int(args.episodes))
+    # Declared departures from the frozen main run: a short horizon, and the
+    # TD-bootstrap mode (whose default IS the frozen eq. (16) behaviour).
+    config = dataclasses.replace(
+        frozen_config,
+        episodes=int(args.episodes),
+        td_bootstrap_mode=str(args.td_bootstrap_mode),
+    )
+    # Host pin (ruling 2026-09-11): refuse any archive but the frozen one.
+    tle_file_set_sha256 = tp.assert_tle_archive_pinned()
 
     fingerprint = tp.build_run_fingerprint(
         record,
-        role=f"b0-pilot-{args.label}-{args.episodes}ep",
+        role=f"b0-pilot-{args.label}-{args.episodes}ep-{args.td_bootstrap_mode}",
         learning_rate=FROZEN_MAIN_LEARNING_RATE,
         train_seed=tp.MAIN_TRAIN_SEED,
         env_seed=tp.MAIN_ENV_SEED,
@@ -179,7 +194,12 @@ def main() -> int:
         "episodes_target": config.episodes,
         "frozen_config_departure": {
             "episodes": [frozen_config.episodes, config.episodes],
+            "td_bootstrap_mode": [
+                frozen_config.td_bootstrap_mode, config.td_bootstrap_mode
+            ],
         },
+        "tle_root": str(tp.resolve_tle_root()),
+        "tle_file_set_sha256": tle_file_set_sha256,
         "learning_rate": FROZEN_MAIN_LEARNING_RATE,
         "seeds": {
             "train": tp.MAIN_TRAIN_SEED,
@@ -241,6 +261,9 @@ def main() -> int:
                 "resume_checkpoint_sha256": sha,
                 "episode_logs_sha256": tp._file_sha256(logs_path),
                 "rss_gb": rss,
+                "outage_user_steps_so_far": int(
+                    sum(getattr(item, "outage_user_steps", 0) for item in observed)
+                ),
                 "wall_s": time.time() - started,
                 "updated_utc": _utc(),
             })
@@ -276,6 +299,9 @@ def main() -> int:
         "status": "complete",
         "episodes_completed": len(observed),
         "masking_diagnostics": trainer.get_masking_diagnostics(),
+        "outage_user_steps_total": int(
+            sum(getattr(item, "outage_user_steps", 0) for item in observed)
+        ),
         "finished_utc": _utc(),
         "wall_s": time.time() - started,
         "episode_logs_sha256": tp._file_sha256(logs_path),
