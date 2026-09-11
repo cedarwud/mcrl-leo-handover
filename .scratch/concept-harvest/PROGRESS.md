@@ -71,6 +71,8 @@ unless a note below says a follow-up is needed.
   margin (penalty, ADAPT); 3 CA-CPBR adapted (reward, ADAPT); 4 satellite-exit hazard (state+key, RETRY);
   5 M2 / W-step gated on persistence probe (reward, RETRY); 6 endpoint-gap thermostat (experience, ADAPT).
   Multi-catfish by information set: gain / gain+incumbent / loads / ephemeris / joint-fork / endpoint learner.
-- NEXT: write report (in progress if file exists; append remaining sections).
+- Report written through §3 (panel, differences, defect map, full concept table incl. instruments/OUT).
+- COMPLETE 2026-09-11: report has §0-§8 (365 lines). First line = bolded top-three sentence.
+  Nothing to resume. No processes launched.
   Lead to check at synthesis: old "hazard" lever killed because family_b cells Earth-fixed + frozen
   windows (fable.md); here beams drift relative to users (FEASFRONT C1_SAT_LOCK note) => cause may be absent.

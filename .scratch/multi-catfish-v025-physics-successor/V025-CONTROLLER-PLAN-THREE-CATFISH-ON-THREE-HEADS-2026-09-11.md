@@ -28,6 +28,28 @@ Neither "return to the old project's design" nor "continue C1/C2/C3 as developed
 **Dead and not revived**: the stage-C C1/C2/C3 that decompose `F` into
 unilateral/continuation/interaction and serve as supervised labels (C1VSGAIN, row 3).
 
+## Amendment after FEASFRONT and HARVEST (same day)
+
+The three catfish now have **measured sources, distinguished by information set** (HARVEST's
+framing, independently matching this plan):
+
+| catfish | source | information set | measured |
+|---|---|---|---|
+| **C1** C-gain | `MAX_NOMINAL_GAIN` / `A m=2dB` | gain only (block 2) | frontier, highest EE |
+| **C2** C-hold | `A m=9dB` / `A m=12dB` | gain + incumbent memory (blocks 1-2) | frontier; dominates the learner on EE, handover and its own objective |
+| **C3** C-consolidate | `B1_NO_NEW_BEAM` / `B2` | previous-step loads (block 4) | dominated on the frontier, but the **only** source reaching few-beam, low-joule states (37.9 beams, 0.57x joules) — its case is coverage (Yang, Asilomar 2023), not expertise |
+
+C1 and C2 are claimed mutually non-dominated and differing by information set; CFSCREEN measures
+whether that holds on actions and states, and representability of each from the learner's own
+observation. **Diagnostics, not gates.**
+
+Also from HARVEST: several old catfish negatives are contaminated in ways absent here — lr = 0.01;
+the per-satellite hard cap; a mean-of-ratios estimand; **"best checkpoint" selected on the
+uncalibrated `0.5 * r1` scalar, often very early (the faithful catfish was scored at episode 99 in
+all three seeds)**. The penalty with a large recorded sibling effect was the **capacity penalty**
+(+89 to +135, 6/6 seeds), which acts on users bumped by the hard cap; decorrelation/srank never ran
+there. ACRM for C-learner arms computes `r^CF − r^M` on `B − eta E`, not on `r1`.
+
 ## Stages
 
 | stage | what | gate to pass | status |

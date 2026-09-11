@@ -193,9 +193,9 @@ Work happens in the SHARED tree `/home/u24/papers/mcrl-leo-handover` on `wip/mul
 | R1 | Commit PENALTYARM's uncommitted port as its own commit | DONE `f531ff99` (8/8 of its tests pass) | git log grep `PENALTYARM` |
 | R2 | Cherry-pick B0 commits onto shared branch | DONE, no conflicts: D-2 `ee0ffa60`, D-3 `698f20d8`, fixup `6939fc78`, pilot scripts `ff01f84d` (cherry-pick -x); combined tree 121 tests green incl. PENALTYARM 8 | git log grep `B0 D-2` |
 | R3 | D-1 behind a flag, W-08 restored | DONE `57fb40b4`; bitwise placebo: flag-OFF == pre-5219995a, flag-ON == 5219995a, ON != pre (teeth) | git log grep `D-1 flag` |
-| R4 | D-2 per-step worst-served floor + outage counter, new commit | PENDING | git log grep `per-step` |
-| R5 | Confirm checkpoint-selection path feeds no claim | PENDING | note in this file |
+| R4 | D-2 per-step worst-served floor + outage counter | DONE `c00aca3e`; 4 sub-tests red vs v1, 9/9 green | git log grep `per-step` |
+| R5 | Confirm checkpoint-selection path feeds no claim | DONE: no caller in src/scripts/tests passes `evaluation_seed_set` to train(), so best-eval selection is unreachable; primary = final-episode-policy (prereg_draft.py:497) | note here |
 | R6 | Pin TLE archive by content hash; placebo RANDOM bit-for-bit on both hosts | PENDING | hashes + placebo lines in this file |
-| R7 | Remove throwaway worktree /home/u24/papers/mcrl-b0-baseline | PENDING | `git worktree list` |
+| R7 | Remove throwaway worktree | DONE: HEAD e3f3503e, no tracked changes, no untracked files beyond caches, no stash; removed | `git worktree list` |
 | R8 | Pilots BASELINE_EQ16 + SHARED_BOOTSTRAP, 500 ep, pinned archive, on sat | PENDING | sat status.json complete |
 | R9 | Greedy eval + report update | PENDING | report section "Round 2" |
