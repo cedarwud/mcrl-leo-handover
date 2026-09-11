@@ -599,3 +599,113 @@ The demonstration-line closure of the previous section is unaffected: on the obj
 **Limit, stated rather than papered over:** I compared mean-of-ratios against ratio-of-sums only at the **episode** level, where they agree to ≤0.06%. I did not instrument both at the per-user-per-step level in the same pass, so the size of the estimand defect at that level is **not established here**, and the earlier sections' `r1_mean` figures should continue to be read as what they are — a mean over steps of a per-step system EE, not the declared pooled estimand.
 
 **Not established:** anything about arms I did not run, or about this checkpoint under any evaluation harness other than the 24 episodes at stream positions 0–23 used here.
+
+---
+
+## Segment-anchor ablation
+
+**Anchored ratio 1.1975, ablated ratio 1.2222 — the gap does not collapse, it widens by 11.3%: under diag2's `ablate_anchor` physics, where a positive control confirms every served user transmits at exactly p⁰ = 0.825 W in 100% of cases and the segment-anchor mechanism is therefore wholly absent, `MAX_NOMINAL_GAIN` still scores 112,606,306.11 bit/J (3.262056e+14 bits / 2.896868e+06 J) against the trained checkpoint's 92,130,894.38 bit/J (2.845606e+14 bits / 3.088655e+06 J), so by the pre-declared reading this is the second branch — the renewal premium is not the explanation, and the disagreement is real with its size restated at +22.2%.**
+
+Added 2026-09-11 on the coordinator's instruction, with the reading fixed before the run. Read-only: no `update()` call, no gradient step, `src/` never edited or import-time patched; the trained arm loads the frozen checkpoint read-only. Script: session scratchpad `anchor_ablation.py`, `anchor_check.py`. Wall 944.3 s + 60 s. **[V unless marked.]**
+
+**This is not the outcome the review expected, and I am reporting it as measured. The review's *mechanism* is real and I confirm it below — it is simply not what produces the gap.**
+
+### The ablation is diag2's, reused, not reinvented
+
+I did not design an ablation. I found the one diag2 used and ran that.
+
+- **Declaration**, verbatim, `.scratch/multi-catfish-v023-controller-handoff-20260907/prompts/codex-sol-c3s-churn-null.md:16`: *"`ablate_anchor`: refresh the segment anchor every step (equivalently make `recurrence_power_w` return p⁰ = 0.825 W at every step and let the wanted signal use the CURRENT transmit gain `transmit_gain[uid]` instead of the segment-start value)."* **[V]**
+- **Result it produced**, `dr9-prompts/9d/DIAG-RESULT-SUMMARY-2026-09-08.md:16`: *"The renewal premium exists and is entirely the segment-anchor artefact: forced renewal gains +0.49 % under the anchored physics and exactly nothing once the p⁰ reset is removed."* **[V]**
+- **Implementation**, fetched read-only from `sat` at `/home/sat/mcrl-v023-codex-ws-c3s-baselines/.scratch/multi-catfish-v023-c3s-screen/c3s_physics_override.py`, sha256 `a534244755f1df55ebc12b96a67fce93fe34e91c9b7d886aef4ae6276378f03a`, 137 lines. **[V]**
+
+**It ports without adaptation because it is written against this repo's own environment**: it imports `mcrl.env.step.StepEnvironment`, `mcrl.env.action_contract.decode_action`, `mcrl.env.antenna.transmit_gain_linear`, and reaches `environment._segments` / `_pending_segment_age` — all present and verified importable in the local tree. Its mechanism (`resolve_physics`, `:36-93`) refreshes every *continuing* segment's `start_transmit_gain` to the action's current transmit gain before delegating to the canonical `StepEnvironment._resolve_physics`, so `recurrence_power_w(start, now, p0) = p0·now/now = p0` (`env/link_budget.py:408`) for continuing segments, while new segments already anchor at the current gain. It does **not** reset segment ages ("Segment ages remain association ages; they are not reset by this physics-only ablation"). I applied it through its own declared factory `DiagnosticStepEnvironment.construct`, which subclasses `StepEnvironment` and overrides only `_resolve_physics` — no edit to `src/`, no import-time patching. **[V]**
+
+There was no ambiguity to resolve and so no choice to declare: the spec names one ablation and the implementation matches it.
+
+### Positive control — the ablation demonstrably takes effect
+
+Per-served-user transmit power `link_power_w`, first three steps of episode 0, `SEGMENT_START_POWER_W = 0.825 W` (`env/link_budget.py:213`):
+
+| physics | arm | t0 | t1 | t2 |
+|---|---|---|---|---|
+| `none` | `MAX_NOMINAL_GAIN` | n=99, p ∈ [0.8176, 1.5801], 10.1% at p⁰ | n=99, [0.8250, 1.4825], 75.8% at p⁰ | n=100, [0.5876, 1.2880], 70.0% at p⁰ |
+| `none` | `TRAINED` | n=99, [0.7179, 1.6099], 10.1% at p⁰ | n=98, [0.6189, 1.6332], **5.1%** at p⁰ | n=99, [0.4815, 1.4517], **4.0%** at p⁰ |
+| `ablate_anchor` | `MAX_NOMINAL_GAIN` | n=100, **[0.8250, 0.8250], 100.0% at p⁰** | idem | idem |
+| `ablate_anchor` | `TRAINED` | n=100, **[0.8250, 0.8250], 100.0% at p⁰** | idem | idem |
+
+**[V]** Under the ablation every served user transmits at exactly p⁰ in every step, for both arms. The anchor mechanism is not attenuated, it is gone.
+
+**This same table confirms the review's mechanism is real.** Under anchored physics `MAX_NOMINAL_GAIN` sits at p⁰ for 70–76% of served users (it re-anchors constantly) while the trained policy sits at p⁰ for only 4–5% and pays up to 1.63 W (it holds segments and its power inflates as gain decays). The review correctly identified a live asymmetry. What the ablation shows is that removing it does not remove the EE gap.
+
+### Placebo — the wrapper is transparent
+
+`none` run through the same `DiagnosticStepEnvironment` wrapper against the standalone anchored run of the previous section:
+
+| Arm | previous run | `none` through wrapper | delta |
+|---|---:|---:|---:|
+| `RANDOM_MASKED` | 53,060,175.561473 | 53,060,175.561473 | **bit-identical** |
+| `MAX_NOMINAL_GAIN` | 111,553,182.845841 | 111,504,571.388934 | −0.044% |
+| `TRAINED e6b063ef…` | 93,137,893.020321 | 93,110,907.973748 | −0.029% |
+
+**[V]** The first arm reproduces exactly. The residual on the later arms is a confound I found while building this test and am disclosing: `StepEnvironment` spawns `_age_rng` from the env RNG on first reset (`env/step.py:534-536`) and carries it across episodes, so in the previous section's **shared** environment whichever arm ran second got different step-0 segment-age draws. Every cell in this test builds a **fresh** environment, so `_age_rng` is spawned from the same state for every arm and the arms are exactly matched. The confound was worth fixing and worth stating; at ≤0.044% it changes nothing.
+
+### Result — 24 episodes per cell, frozen seeds (42 / 1337 / 7)
+
+| physics | Arm | pooled bits | pooled joules | **pooled EE (bit/J)** | sem | served | handover rate |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `none` | `RANDOM_MASKED` | 1.842866e+14 | 3.473162e+06 | 53,060,175.56 | 394,443.7 | 0.9360 | 0.8680 |
+| `none` | `GREEDY_R1R2` | 2.617496e+14 | 3.454818e+06 | 75,763,635.84 | 633,758.9 | 0.9955 | 0.1418 |
+| `none` | **`TRAINED e6b063ef…`** | 2.848622e+14 | 3.059385e+06 | **93,110,907.97** | 902,313.3 | 0.9988 | 0.2799 |
+| `none` | **`MAX_NOMINAL_GAIN`** | 3.266731e+14 | 2.929683e+06 | **111,504,571.39** | 1,095,687.3 | 0.9981 | 0.7120 |
+| `ablate_anchor` | `RANDOM_MASKED` | 1.904807e+14 | 3.691411e+06 | 51,601,064.62 | 411,727.9 | 1.0000 | 0.8655 |
+| `ablate_anchor` | `GREEDY_R1R2` | 2.549917e+14 | 3.408890e+06 | 74,801,972.37 | 641,485.8 | 1.0000 | 0.1389 |
+| `ablate_anchor` | **`TRAINED e6b063ef…`** | 2.845606e+14 | 3.088655e+06 | **92,130,894.38** | 941,007.3 | 1.0000 | 0.2825 |
+| `ablate_anchor` | **`MAX_NOMINAL_GAIN`** | 3.262056e+14 | 2.896868e+06 | **112,606,306.11** | 1,079,024.6 | 1.0000 | 0.7105 |
+
+**The number asked for:**
+
+| | `MAX_NOMINAL_GAIN` / `TRAINED` | gap (bit/J) | resolvability |
+|---|---:|---:|---:|
+| anchored (`none`) | **1.1975** | +1.839366e+07 | 13.0 sem |
+| **ablated (`ablate_anchor`)** | **1.2222** | +2.047541e+07 | 14.3 sem |
+
+The gap **grows by 11.3%** under the ablation. The anchor accounts for **none** of it; if anything the anchored physics slightly *understated* the disagreement.
+
+### Why removing a real mechanism did not move the result
+
+Per-arm effect of the ablation: `MAX_NOMINAL_GAIN` **+0.99%**, `TRAINED` −1.05%, `GREEDY_R1R2` −1.27%, `RANDOM_MASKED` −2.75%. Every arm moves by less than 3%, and the sign is the **opposite** of the prediction: removing the anchor *helps* the high-churn arm and *hurts* the three lower-churn arms, including the two with handover rates of 0.14 and 0.28.
+
+The decomposition says why:
+
+| | bits ratio MAX/TRAINED | joules ratio MAX/TRAINED | EE ratio |
+|---|---:|---:|---:|
+| anchored | 1.1468 | 0.9576 | 1.1975 |
+| ablated | **1.1463** | 0.9379 | 1.2222 |
+
+**The bits advantage is 1.146× in both physics — the ablation does not touch it at all.** `MAX_NOMINAL_GAIN` delivers ~14.6% more bits than the trained policy because it points at the highest-gain legal beam, which is a property of the decision rule, not of the power recurrence. The anchor lives entirely in the denominator, and the denominator is the smaller half of the effect. Removing the anchor equalises transmit power at p⁰ for everyone, which happens to widen the joules ratio (0.9576 → 0.9379) rather than close it.
+
+**One consequence of the ablation I must flag rather than bury:** it raises served from {0.9360, 0.9955, 0.9981, 0.9988} to **1.0000 for every arm**, because pinning p at p⁰ removes the power-infeasibility that had left some links unserved (`env/step.py:812-819`, `classify_link_power_feasibility` against `beam_power_max_w`). So the ablated column is not a pure re-pricing of the anchored column — it is a different, uniformly-full-service operating point, and the ±1% per-arm moves in bits and joules mix the power change with that service change. This does not threaten the reading: the ablated comparison is between two arms at *identical* full service and *identical* uniform transmit power, which is if anything the cleaner test of the question asked, and the gap is larger there.
+
+### Reading, as pre-declared
+
+The measured branch is the second one, applied as written:
+
+> **The gap substantially survives → the renewal premium is not the explanation and the disagreement is real, with its size restated at the ablated value.**
+
+**Corrected figure: 1.2222, i.e. +22.2%** (`MAX_NOMINAL_GAIN` 112,606,306.11 bit/J vs trained 92,130,894.38 bit/J, +2.047541e+07 bit/J, 14.3 sem). The +19.8% of the previous section stands as the anchored-physics figure and is not withdrawn; the ablated figure is larger.
+
+The adversarial review named the right mechanism — the segment anchor does give a churning policy a transmit-power advantage, and this test measures that advantage directly (70–76% of `MAX_NOMINAL_GAIN`'s links at p⁰ against the learner's 4–5%). Its inference from that mechanism to *this* finding does not hold, because the finding is carried by bits, not joules, and the bits ratio is invariant to the ablation to within 0.05%. The prior diag2 result it cites remains correct on its own terms: forced renewal at fixed association gains +0.49% anchored and exactly zero ablated. `MAX_NOMINAL_GAIN` is not a forced-renewal arm — it changes *which* beam, not merely *when* the anchor resets — and that is the difference the extrapolation missed.
+
+No search widened, no arms added, nothing swept, no re-selection. The design decision is the coordinator's.
+
+### Evidence classification for this section
+
+**Verified by running code, this session, read-only, no gradient step:** the eight-cell anchored/ablated panel (24 episodes each, frozen seeds); the per-user transmit-power positive control; the `none` placebo against the previous section's standalone run; the local importability of every symbol the override needs.
+
+**Verified by reading primary source:** the `ablate_anchor` declaration at `codex-sol-c3s-churn-null.md:16`; diag2's result at `DIAG-RESULT-SUMMARY-2026-09-08.md:6-16`; the override implementation (137 lines, sha256 `a5342447…78f03a`) fetched read-only from `sat`; `env/step.py:770-819` (the recurrence and the feasibility classification), `:534-536` (`_age_rng`); `env/link_budget.py:379-408, 213`.
+
+**Derived:** the ratios, the per-arm percentage moves, the bits/joules decomposition, the sem figures.
+
+**Limit:** the ablation changes the served set (all arms → 1.0000), so the anchored and ablated columns are two operating points rather than a decomposition; the ±1–3% per-arm moves should not be read as pure power effects.
+
+**Not established:** anything about arms or physics settings not run here. In particular I did not run a forced-renewal-at-fixed-association arm in this harness, so diag2's +0.49%→0 result is cited, not reproduced here.

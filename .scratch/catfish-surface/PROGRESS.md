@@ -104,6 +104,55 @@ The two GREEDY_* arms that won the trained objective are the WORST non-random ar
 
 Not widened, no arms added, nothing swept. Design decision is the coordinator's.
 
+## Segment-anchor ablation round (coordinator) — COMPLETE 2026-09-11
+
+Appended `## Segment-anchor ablation`. Read-only; `src/` never edited or import-time patched.
+
+**HEADLINE: anchored ratio 1.1975 -> ablated ratio 1.2222. The gap DOES NOT COLLAPSE; it WIDENS 11.3%.
+=> PRE-DECLARED BRANCH 2: the renewal premium is NOT the explanation; the disagreement is real,
+size restated at +22.2%. The +19.8% anchored figure stands and is NOT withdrawn.**
+
+Ablation reused, not invented: diag2's `ablate_anchor`, declared verbatim at
+`.scratch/multi-catfish-v023-controller-handoff-20260907/prompts/codex-sol-c3s-churn-null.md:16`
+("make recurrence_power_w return p0 = 0.825 W at every step and let the wanted signal use the
+CURRENT transmit gain"). Implementation fetched read-only from sat:
+`/home/sat/mcrl-v023-codex-ws-c3s-baselines/.scratch/multi-catfish-v023-c3s-screen/c3s_physics_override.py`
+sha256 a534244755f1df55ebc12b96a67fce93fe34e91c9b7d886aef4ae6276378f03a (137 lines).
+**It is written against THIS repo's `mcrl.env.step.StepEnvironment`, so it ports unchanged**; applied
+via its own `DiagnosticStepEnvironment.construct` subclass factory. Only one ablation is specified,
+so there was no choice to declare.
+
+| physics | arm | pooled bits | pooled joules | pooled EE | served | ho |
+|---|---|---:|---:|---:|---:|---:|
+| none | MAX_NOMINAL_GAIN | 3.266731e+14 | 2.929683e+06 | 111,504,571.39 | 0.9981 | 0.7120 |
+| none | TRAINED e6b063ef | 2.848622e+14 | 3.059385e+06 | 93,110,907.97 | 0.9988 | 0.2799 |
+| none | GREEDY_R1R2 | 2.617496e+14 | 3.454818e+06 | 75,763,635.84 | 0.9955 | 0.1418 |
+| none | RANDOM_MASKED | 1.842866e+14 | 3.473162e+06 | 53,060,175.56 | 0.9360 | 0.8680 |
+| **ablate_anchor** | **MAX_NOMINAL_GAIN** | 3.262056e+14 | 2.896868e+06 | **112,606,306.11** | 1.0000 | 0.7105 |
+| **ablate_anchor** | **TRAINED e6b063ef** | 2.845606e+14 | 3.088655e+06 | **92,130,894.38** | 1.0000 | 0.2825 |
+| ablate_anchor | GREEDY_R1R2 | 2.549917e+14 | 3.408890e+06 | 74,801,972.37 | 1.0000 | 0.1389 |
+| ablate_anchor | RANDOM_MASKED | 1.904807e+14 | 3.691411e+06 | 51,601,064.62 | 1.0000 | 0.8655 |
+
+**Positive control (ablation took effect):** under ablate_anchor 100.0% of served users transmit at
+exactly p0 = 0.825 W every step, both arms. Under `none`, MAX_NOMINAL_GAIN 70-76% at p0 vs TRAINED
+only 4-5% (range up to 1.63 W) — **so the review's mechanism IS real**; removing it just doesn't
+move the result.
+**Placebo (wrapper transparent):** `none` reproduces RANDOM_MASKED bit-identically; MAX -0.044%,
+TRAINED -0.029% (cause found and disclosed: `_age_rng` spawns once and carries across arms,
+`step.py:534-536`, so the previous shared-env run gave later arms different segment-age draws;
+this test builds a fresh env per cell so arms are exactly matched).
+
+**Why it didn't move:** bits ratio MAX/TRAINED = 1.1468 anchored, **1.1463 ablated — invariant**.
+The anchor lives entirely in the denominator (joules ratio 0.9576 -> 0.9379, which WIDENS).
+The advantage is ~14.6% more delivered bits from pointing at the highest-gain legal beam, a property
+of the decision rule. Per-arm ablation effect: MAX +0.99%, TRAINED -1.05%, R1R2 -1.27%, RANDOM -2.75%
+— sign is OPPOSITE to the prediction. diag2's cited result stays correct on its own terms: forced
+renewal at FIXED association is +0.49% -> exactly 0. MAX_NOMINAL_GAIN changes WHICH beam, not merely
+when the anchor resets — that is what the extrapolation missed.
+
+**Disclosed limit:** the ablation raises served to 1.0000 for every arm (p0 pinning removes power
+infeasibility), so anchored vs ablated are two operating points, not a decomposition.
+
 ## Report written
 `/home/u24/papers/mcrl-leo-handover/.scratch/catfish-surface/CATFISH-ATTACHMENT-SURFACE-2026-09-11.md`
 Classification: **(b) bounded code, but at ~430-620 lines it is 1.5-2x the brief's ~300-line bar.**
