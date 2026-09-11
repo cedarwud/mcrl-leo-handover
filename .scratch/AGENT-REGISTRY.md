@@ -9,6 +9,29 @@ the agents, never the detached `sat` jobs. Resume = `SendMessage(to=<agentId>, m
 (`ssh sat 'for p in $(pgrep -u sat python); do echo $p $(readlink /proc/$p/cwd) $(tr "\0" " " </proc/$p/cmdline|cut -c1-120); done'`);
 never let an agent relaunch a live or finished item.
 
+### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
+
+The failure notifications say the limit resets **05:10 Asia/Taipei**; the owner says the Claude sub-agent quota is back at
+**04:00 Asia/Taipei (20:00 UTC)**. A one-shot session cron is set for **04:07 Taipei** to resume all four in this order:
+LP-ORACLE → DEVHARNESS → B1-CREDIT → T0REPR (if this session is gone, resume by hand with the blocks below). The main session
+(`claude-opus-5[1m]`) is a different model id and still works, so controller-side work continues meanwhile.
+
+**Verified state at 18:18–18:22 UTC (read-only):**
+- `sat` detached jobs survived: four v6 `oracle_cells.py` shards (PIDs 3552072, 3554551, 3554776, 3555066) running the
+  **B-real-floor R1 calibration** items (5/24 done; each shard exits after its 6 items). Load 4.0.
+- **Rate-floored R1 evaluation is COMPLETE (A 24/24, B 24/24 at 18:10:37).** The controller mirrored the 48 JSONs locally and
+  aggregated them independently: `.scratch/h4-probe/BRANCH-NUMBERS-FLOOR-R1-EVAL.md` (A-floor +6.10 % but p10 0.282 × the rule
+  → throughput-degenerate; B-floor +25.35 %, p10 1.632 ×, bits 1.321; B − A = +19.25 pp; parity 0). The oracle agent must
+  re-derive these on resume.
+- **B1 engineering core is committed: `63b02dc030180b83889387b031bd1c7dff4754f5`** on `b1/difference-reward-20260912`
+  (worktree `/home/u24/papers/mcrl-leo-handover-b1` is at it). Its lighting-price screen lanes are still running **locally**
+  (PIDs 660091/660093, 661404, 661406, 662999 — `b1_lp_credit_rule.py` / `run_lp_credit.sh`).
+- **DEVHARNESS did nothing yet** beyond creating `.scratch/dev-training/PROGRESS.md` (it was polling for the engineering-core
+  line, which now exists). On resume it starts at step 1 with base commit `63b02dc0`.
+- **T0REPR**: the declared verdict is recorded (admitted); its 400-epoch sensitivity closed-loop runs were launched at ~18:13
+  on sat with `nice 19` and are no longer in the process list; `results/CLOSED-*-e400-*.json` were not present at 18:22 — check
+  the logs on resume and re-run only what is missing.
+
 ### Amendment 6 re-triage (18:12 UTC) — supersedes the state column below where they differ
 - **LP-ORACLE** KEEP, shortened: finish B-floor R1 eval → write BRANCH NUMBERS (`.scratch/h4-probe/BRANCH-NUMBERS-FLOOR-R1-EVAL.md`) and end its turn → on resume: B-floor R1 calibration only; A-floor cal, R2, reverse, unfloored cal = HELD.
 - **T0REPR** KEEP: first `R_repr` verdict line, end turn; entropy / 400-epoch / polish after resume.

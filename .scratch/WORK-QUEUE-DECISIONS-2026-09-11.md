@@ -167,6 +167,23 @@ by episode; placebo bit-for-bit on both sets): **evaluation 0.930 (one-hot BC) /
 (300,000 / 300,000 decisions), so its conditional entropy is 0. The 400-epoch sensitivity is being finished. Consequence: condition (a)'s
 T0 part of Amendment 5 Part II is met; T0 is an admissible anchor teacher for E0 / S1.
 
+## Floored oracle cells read (18:22 UTC, controller-computed, provisional): B2 indicated, not entered
+
+`.scratch/h4-probe/BRANCH-NUMBERS-FLOOR-R1-EVAL.md`. Rate-floored R1 evaluation, 24 episodes, parity 0: **A-real-floor +6.10 %**
+over `A m=2dB` but **p10 0.282 ×** the rule's (throughput-degenerate — the per-move floor cannot stop simultaneous herding, so its
+gain does not count); **B-real-floor +25.35 %**, served 0.99887, bits ratio 1.321, **p10 1.632 ×** (not degenerate);
+**B − A = +19.25 pp**. Declared rules: rule 2 (credit alone) does not hold; **rule 3 holds** (the learner needs current-step
+lighting information → the B2 path); **rule 5 currently fails for B2** — every deployable sequential nominal cell is
+throughput-degenerate (LP-seq(1,0) bits 0.712; LP-seq(2,0) served 0.988, p10 0.41 ×; the ceiling's nominal search bits −51.7 %),
+so the declared next step is an **observation-redesign screen**, not training. Amendment 4 §2: condition 1 met, condition 2 only
+for B-floor, condition 3 (T_SEQ representability on the augmented observation) pending the floored **calibration** cells (5/24,
+running). **B2 is indicated but not entered** — it remains the owner's decision, B1 stays as comparator, no threshold moved, no
+learner training authorised. The development lane (Amendment 6, T0 anchor teacher) is unaffected.
+
+Also at 18:16 UTC: all four opus sub-agents were killed by an opus session limit (resume scheduled for 04:07 Taipei);
+**B1's engineering-core commit `63b02dc0` exists**, so DEVHARNESS can start at step 1 on resume; the `sat` oracle shards and the
+local B1 lighting-price lanes kept running.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
