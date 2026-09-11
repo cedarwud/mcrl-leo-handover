@@ -151,6 +151,56 @@ policy, not just to an auxiliary one.**
 if the main agent never trains on `r^C`, a non-potential term can only change what the
 catfish explores, which is exactly its intended role. The three are separable arms.
 
+## Addendum — Competitive Experience Replay is the closest ARCHITECTURAL precedent (owner pointer)
+
+**CER — Liu, Trott, Socher & Xiong, ICLR 2019, arXiv:1902.00528.** Controller-verified in the
+sibling's own records: `round1-deepresearch-synthesis-2026-06-20.md:28` names it *"Closest prior
+art … the sharpest threat"*; `artifacts/_codex-logs/round3-adjudication-G6-20260622T100400.md:1697`
+calls it *"the closest 'competition stimulates a main agent' RL precedent"* and records a
+corrected author list.
+
+**ACRMSOURCE did find CER** (`ACRM-PROVENANCE-2026-09-11.md:623`, "different form, adjacent
+purpose") **but ranked it by functional form and left it out of its summary; the controller
+relayed the summary and dropped it.** At the level the thesis actually makes its claim — the
+catfish *architecture* — CER is closer than any functional-form match:
+
+| | catfish | CER |
+|---|---|---|
+| two learners, same task | yes | yes |
+| asymmetric competitive reward | yes (`r^CF − r^M` margin) | yes (visitation-based relabelling) |
+| acts through replay | yes (70/30 injection) | yes (relabels minibatches) |
+| only one agent evaluated / deployed | yes (main) | yes (agent A) |
+
+**Lineage of the reward-shaping leg, by level:**
+- **architecture** (two learners, competition, replay, deploy one): **CER, ICLR 2019**;
+- **functional form** (linear unclipped learner-vs-learner margin): **CuSP, ICLR 2022**; clipped
+  origin Sukhbaatar ICLR 2018; Hughes NeurIPS 2018 `alpha = −beta`;
+- **same containment purpose**: Minimax Exploiter;
+- **the original authors' own stated analogue**: SASR (Ma et al., ICLR 2025) — structurally
+  loose (Beta-posterior success-rate shaping, not two-agent);
+- **theory it fails, and the repairs**: PBRS (Ng 1999); Harutyunyan 2015; Devlin 2014.
+- Difference rewards / COMA remain **not** the lineage (they subtract a counterfactual
+  default or system-without-i, not a second learner).
+
+**Two design consequences:**
+1. **CER relabels the evaluated agent A's own rewards.** So competition-shaped reward reaching
+   the deployed agent is a **published, working design** — containment (above) is an option,
+   not a requirement. Both "contained" and "uncontained" arms are now defensible by citation.
+2. **CER's competition is over state coverage**, which lines up with Yang et al. (Asilomar 2023,
+   coverage-not-expertise) and with the JSRL coverage sweep in flight. It suggests a
+   distinct, citable catfish identity — **a coverage catfish rewarded for reaching states the
+   main does not visit** — alongside the return-margin catfish. **Premise check:** CER was built
+   for **sparse-reward** goal tasks (DDPG + HER); this project's reward is dense, and no
+   discrete masked-DQN instance exists. Whether a coverage deficit exists here is exactly what
+   the coverage sweep measures; until it returns this stays a candidate.
+
+**Name origin, also in the sibling records** (`round3-adjudication…:1713`): "catfish effect" is a
+named mechanism only in metaheuristics — Chuang, Tsai & Yang, *Catfish Particle Swarm
+Optimization*, IEEE SIS 2008 — where catfish particles re-initialise the search from extreme
+points **when the global best stagnates**. That is a stagnation-triggered intervention — the
+same control-loop shape as CA-CPBR's collapse-adaptive coefficient and the EE-gap-adaptive
+variant proposed today.
+
 ## Prior art in the sibling repo — it already built a PBRS replacement for ACRM (owner pointer)
 
 Controller-read: `modqn-paper-reproduction/analysis/family-b-collapse-diagnosis/catfish-ca-cpbr-design-note-2026-06-24.md`,
