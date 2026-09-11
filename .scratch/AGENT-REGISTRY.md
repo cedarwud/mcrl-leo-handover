@@ -9,9 +9,9 @@ jobs keep running.
 
 | name | agentId | model | workspace / PROGRESS | deliverable | dispatched → resumed |
 |---|---|---|---|---|---|
-| **VALIDITY-FABLE** | `ab15c86158b2b327e` | fable | `.scratch/validity-audit/PROGRESS.md` (brief `PROMPT-BLIND.md`) | `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md` | 12:20 → 12:36 UTC |
-| **CEILING2** | `aeff029c95c8d0633` | opus | `.scratch/ee-ceiling/PROGRESS.md` (brief `PROMPT.md`); sat ws `/home/sat/mcrl-v025-ceiling-ws/` | `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md` + `results/*.json` | 12:20 → 12:36 UTC |
-| **REPORTWRITER** | `af80cc36ea6c8b4ae` | sonnet | `.scratch/cf3-pilot/PROGRESS.md` (heading `REPORTWRITER`; brief `REPORT-WRITER-PROMPT.md`) | `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` + commit of named paths | 12:27 → 12:36 UTC |
+| **VALIDITY-FABLE** | `ab15c86158b2b327e` | fable | `.scratch/validity-audit/PROGRESS.md` (brief `PROMPT-BLIND.md`) | `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md` | 12:20 → 12:36 UTC → **died again 12:45 UTC with HTTP 429 "session limit · resets 10:30pm Asia/Taipei" (= 14:30 UTC)**; owner reported the limit lifted at 12:47 UTC → **resumed again 12:48 UTC** by SendMessage (the 22:33 Taipei cron was cancelled) |
+| **CEILING2** | `aeff029c95c8d0633` | opus | `.scratch/ee-ceiling/PROGRESS.md` (brief `PROMPT.md`); sat ws `/home/sat/mcrl-v025-ceiling-ws/` | `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md` + `results/*.json` | 12:20 → 12:36 UTC; **still running at 12:46** |
+| **REPORTWRITER** | `af80cc36ea6c8b4ae` | sonnet | `.scratch/cf3-pilot/PROGRESS.md` (heading `REPORTWRITER`; brief `REPORT-WRITER-PROMPT.md`) | `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` + commit of named paths | 12:27 → 12:36 UTC → **COMPLETED 12:45 UTC, commit `24cb8615`**; all provenance checks passed, 32/32 sha256 matched; controller has NOT read the report |
 | AGY-VALIDITY | — (agy, not resumable) | Gemini 3.8 Flash (High) | `.scratch/reviews/validity-agy/` | **DONE 12:33** (`VALIDITY-AUDIT-AGY-BLIND-…md`; see `CONTROLLER-CHECK-…md`) | — |
 
 **Resume messages (send verbatim, then append "It is now <time UTC>. Delta: <what PROGRESS.md shows as done; what is live on sat>."):**
