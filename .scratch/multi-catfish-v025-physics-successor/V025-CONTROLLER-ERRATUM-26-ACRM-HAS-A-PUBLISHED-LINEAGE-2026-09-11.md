@@ -151,6 +151,53 @@ policy, not just to an auxiliary one.**
 if the main agent never trains on `r^C`, a non-potential term can only change what the
 catfish explores, which is exactly its intended role. The three are separable arms.
 
+## Prior art in the sibling repo — it already built a PBRS replacement for ACRM (owner pointer)
+
+Controller-read: `modqn-paper-reproduction/analysis/family-b-collapse-diagnosis/catfish-ca-cpbr-design-note-2026-06-24.md`,
+`catfish-ca-cpbr-litcheck-findings-2026-06-24.md`, `catfish-6arm-VERDICT-G6-2026-06-25.md`;
+code `archive/src-eras/demo_guided_catfish/ca_cpbr.py` (400 lines; tests archived).
+
+**CA-CPBR = Collapse-Adaptive Competitive Potential-Based Reward**, explicitly written as
+"the minimal fix" for ACRM being non-potential (§4: *"a non-potential persistent term …
+= the exact ACRM flaw we are fixing"*):
+
+- `Phi_k(s,t) = eta_k(t) * Psi_k(s)`, `Psi_k` **strictly state-only** and bounded
+  (assignment entropy / occupancy spread / tail coverage);
+- `F_k = gamma_CF * Phi_k(s',t') - Phi_k(s,t)`, terminal `Phi = 0`; `eta_k(t)` an exogenous
+  per-round schedule so Devlin-Kudenko 2012 dynamic-potential invariance holds;
+- shaping added to the **catfish's reward only**, and **§5: injected experiences carry only
+  the original env reward — the shaping is STRIPPED** — i.e. the **containment** repair
+  identified above, reached independently in June;
+- 3-model G6 review (FIX-FIRST, folded); shaping core built with 11 unit tests, B1
+  invariance validated on tabular VI **with a non-vacuous negative control**.
+- Its lit-check already listed Harutyunyan 2015, Devlin 2014, Minimax Exploiter, and SASR as
+  arXiv:2408.03029 — further confirming erratum 26.
+
+**It ran once** (route-C 6-arm, 2026-06-25, family_b J_w/coverage, not clean EE): catfish
+**DECORATIVE**; CA-CPBR **STRUCTURALLY INERT** — `realized_eta` identical `0.123839` across
+arms 4/5/6 because the main's collapse level was constant over 4 distill rounds, so the
+adaptive coupling never moved. Recorded verdict: *"grounded no-benefit; mechanism NOT
+refuted (never exercised)."*
+
+### What transfers and what does not
+
+| part | transfers? | why |
+|---|---|---|
+| PBRS skeleton, exogenous schedule, invariance argument, tested code | **yes** | domain-independent, already reviewed and tested |
+| **containment** (strip shaping before injection) | **yes** | exactly what the implementation audit above says is missing |
+| `Psi^A` assignment entropy as the potential | **NO — wrong sign here** | rewards spreading; this physics measures `d(EE)/d(active) = -425,009.885 bit/J`, and erratum 25 found spreading EE-negative. Imported diagnostic, flipped direction. |
+| collapse-adaptive `eta_k(t)` | **no, for now** | keyed on collapse, which is UNDETERMINED here (erratum 24), and it was inert when it last ran |
+
+**Honest limit, stated in its own §4**: PBRS preserves the catfish's optimum, so the benefit
+is **transient steering of what the catfish explores**, not a moved optimum. It is a weaker
+lever than raw ACRM, by construction. That is the price of soundness and must be stated.
+
+### Consequence for the reward-shaping leg
+
+Four separable arms: **ACRM as published** / **ACRM-tanh** (authors' conference bound) /
+**ACRM-contained** (unshaped `r` to main) / **PBRS** (CA-CPBR skeleton, containment kept,
+`Psi` replaced by an **EE-relevant state-only potential**, no collapse coupling).
+
 ## Open, flagged unverified in the source report
 
 AlphaStar's exploiter reward definition; Rosin & Belew's fitness-sharing formula (three
