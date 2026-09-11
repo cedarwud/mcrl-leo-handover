@@ -48,6 +48,12 @@ lane was dispatched. Verified by the controller at 20:07 UTC against the filesys
   `.scratch/catfish2-discovery/STAGE0-2026-09-12.md`; Stage-1 canaries need controller confirmation. Resume: *"Read
   `.scratch/catfish2-discovery/PROGRESS.md` and the brief; check your sat processes by cwd + cmdline; continue from the first
   incomplete step; Stage 0 only, no training."*
+- **E1 declared 23:35 UTC** (`…-AMENDMENT-10-E1-FRESH-SEED-STABILITY-2026-09-12.md`) and DEVHARNESS resumed to run it: nine runs,
+  three arms (D0, D3-T0, D2-T0 τ = 0.3) × **fresh DEV seeds k = 3, 4, 5** (verified unused: only k = 0/1/2 appear in any result),
+  300 episodes, fresh starts, DEVVAL at 100/200/300 with **only ep 300 deciding**; no D3-null re-run, no new null family, backbone
+  frozen, ≤ 9 processes beside the Catfish-2 lane's 3. Reading: D3-T0 beats D0 on ≥ 2 of 3 seeds with the seed mean in the same
+  direction, QoS floors served −0.5 pp / p10 ≥ 0.5 × / bits ratio ≥ 0.95, development only. Design reopens only on a D3 failure of
+  that rule or a consistent substantive D2 advantage on all three seeds, and then by controller review.
 
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 
