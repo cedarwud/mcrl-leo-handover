@@ -1,7 +1,7 @@
 # Agent registry — resume after any interruption
 
 > **New session? Read `.scratch/HANDOFF-2026-09-11.md` first.** At handoff (~11:20 UTC) the only live agent is
-> CEILING (`a6bc6cea99e44c3fc`). **CF3PILOT has COMPLETED** (commit `01739a74`); the pilot report is produced by the
+> **no agent**. CEILING (`a6bc6cea99e44c3fc`) was stopped ~12:10 UTC before writing anything (re-dispatch per HANDOFF §6b Q1 if still wanted). **CF3PILOT has COMPLETED** (commit `01739a74`); the pilot report is produced by the
 > detached post-job on `sat` (PID 3438182) into `ws/report/`; the final `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` must be
 > written by a fresh agent per `.scratch/cf3-pilot/TAKEOVER.md` §4 — **after** the blind part of the validity audit (HANDOFF §2b).
 
@@ -23,7 +23,7 @@ still unfinished. **CF3PILOT first** — it is the critical path; its dependency
 > SKIPPED by controller** — just finalise the report (incl. which figures used the unpinned archive) and stop.
 
 **2. CF3PILOT `a6a39605fae28be63` — COMPLETED, do not resume.** — `.scratch/cf3-pilot/PROGRESS.md`, server `/home/sat/mcrl-v025-cf3-pilot-ws`
-> Resume CF3PILOT after a usage limit. **Amendment 1 (`V025-CONTROLLER-AMENDMENT-1-THREE-CATFISH-PILOT-2026-09-11.md`)
+> (historical) Resume CF3PILOT after a usage limit. **Amendment 1 (`V025-CONTROLLER-AMENDMENT-1-THREE-CATFISH-PILOT-2026-09-11.md`)
 > supersedes conflicting parts of the declaration: gamma=1, common vector replay 8/9 + 1/27 x3, eta fixed to ep 500,
 > pinned-archive source rollout before launch, C2 activation logging, isolated worktree `cf3/pilot-20260911`.**
 > Read your `PROGRESS.md` and continue from the last completed
@@ -83,7 +83,6 @@ is not comparable to pinned-archive numbers.
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-| **CEILING** | `a6bc6cea99e44c3fc` (sonnet) | local `.scratch/ee-ceiling` | `EE-CEILING-2026-09-11.md` | centralised Dinkelbach search vs rules on pinned archive; blind to pilot; resume: "Resume CEILING; read your PROGRESS.md; do not read the pilot report." |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
 terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
