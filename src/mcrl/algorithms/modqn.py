@@ -63,6 +63,16 @@ from ..runtime.objective_math import (
     scalarize_objectives,
 )
 from ..runtime.collapse_metrics import compute_collapse_metrics
+from ..runtime.collapse_penalty import (
+    PenaltyConfig,
+    gradient_norm,
+    inject_matched_random_gradient,
+    mean_offdiag_row_pearson_torch,
+    penultimate_features,
+    q_row_decorrelation_penalty,
+    srank_diagnostic,
+    srank_penalty,
+)
 from ..runtime.q_network import DQNNetwork
 from ..runtime.replay_buffer import ReplayBuffer
 from ..runtime.state_encoding import encode_state, state_dim_for
@@ -100,6 +110,7 @@ class MODQNTrainer:
         mobility_seed: int = 7,
         device: str = "cpu",
         runtime_real_emission_collector: Any | None = None,
+        penalty_config: PenaltyConfig | None = None,
     ) -> None:
         self.env = env
         self.config = config
@@ -159,6 +170,89 @@ class MODQNTrainer:
         self._decision_steps_seen: int = 0
         self._runtime_real_emission_collector = runtime_real_emission_collector
         self._runtime_real_emission_hook_enabled()
+
+        # -- PENALTYARM state (OFF by default) -----------------------------
+        self._penalty: PenaltyConfig = penalty_config or PenaltyConfig()
+        self._penalty_diagnostics: bool = self._penalty.diagnostics
+        # A SEPARATE torch generator, never the global one: the control arm's
+        # noise must not shift the parameter-init or any other torch RNG
+        # stream, so an OFF run and a NULL_PENALTY run start from identical
+        # weights.  Offset is arbitrary but declared and fixed.
+        self._penalty_rng = torch.Generator(device="cpu")
+        self._penalty_rng.manual_seed(int(train_seed) + 90_211)
+        self._penalty_raw_sum = [0.0, 0.0, 0.0]
+        self._penalty_term_sum = [0.0, 0.0, 0.0]
+        self._penalty_grad_sum = [0.0, 0.0, 0.0]
+        self._penalty_count = [0, 0, 0]
+        self._srank_sum = [0.0, 0.0, 0.0]
+        self._rowcorr_sum = [0.0, 0.0, 0.0]
+        self._diag_count = [0, 0, 0]
+
+    # -- PENALTYARM helpers ------------------------------------------------
+
+    def _collapse_penalty_term(
+        self, obj_idx: int, st: torch.Tensor
+    ) -> torch.Tensor | None:
+        """alpha * (the ported penalty) for one head, or None if undefined.
+
+        DECLARED CHOICE: per head, on that head's own tensors, same
+        coefficient.  The sibling's penalty assumes a single shared Q-network;
+        this project has three.  See runtime/collapse_penalty.py.
+        """
+        kind = self._penalty.kind
+        alpha = self._penalty.coefficient
+        if kind == "srank":
+            phi = penultimate_features(self.q_nets[obj_idx], st)
+            return alpha * srank_penalty(phi)
+        if kind == "decorr":
+            q_batch = self.q_nets[obj_idx](st)
+            raw = q_row_decorrelation_penalty(q_batch)
+            if not torch.isfinite(raw):
+                # The sibling's contract: the caller MUST guard a NaN penalty
+                # rather than poison the backward pass.
+                return None
+            return alpha * raw
+        return None
+
+    def _record_collapse_diagnostics(self, obj_idx: int, st: torch.Tensor) -> None:
+        """READ-ONLY collapse readouts. Consumes no RNG, changes no tensor."""
+        with torch.no_grad():
+            phi = penultimate_features(self.q_nets[obj_idx], st)
+            self._srank_sum[obj_idx] += float(srank_diagnostic(phi))
+            q_batch = self.q_nets[obj_idx](st)
+            corr = mean_offdiag_row_pearson_torch(q_batch, absolute=True)
+            if torch.isfinite(corr):
+                self._rowcorr_sum[obj_idx] += float(corr)
+            self._diag_count[obj_idx] += 1
+
+    def drain_penalty_stats(self) -> dict[str, Any]:
+        """Per-head means since the last drain, then reset the accumulators."""
+        def mean(sums: list[float], counts: list[int]) -> list[float]:
+            return [
+                (sums[i] / counts[i]) if counts[i] else 0.0 for i in range(3)
+            ]
+
+        out = {
+            "penalty_kind": self._penalty.kind,
+            "penalty_coefficient": float(self._penalty.coefficient),
+            "penalty_raw_mean": mean(self._penalty_raw_sum, self._penalty_count),
+            "penalty_term_mean": mean(self._penalty_term_sum, self._penalty_count),
+            "penalty_grad_norm_mean": mean(
+                self._penalty_grad_sum, self._penalty_count
+            ),
+            "penalty_updates": list(self._penalty_count),
+            "srank_diagnostic_mean": mean(self._srank_sum, self._diag_count),
+            "q_row_abs_pearson_mean": mean(self._rowcorr_sum, self._diag_count),
+            "diagnostic_updates": list(self._diag_count),
+        }
+        self._penalty_raw_sum = [0.0, 0.0, 0.0]
+        self._penalty_term_sum = [0.0, 0.0, 0.0]
+        self._penalty_grad_sum = [0.0, 0.0, 0.0]
+        self._penalty_count = [0, 0, 0]
+        self._srank_sum = [0.0, 0.0, 0.0]
+        self._rowcorr_sum = [0.0, 0.0, 0.0]
+        self._diag_count = [0, 0, 0]
+        return out
 
     def get_masking_diagnostics(self) -> dict[str, int]:
         """Replay-exclusion counts owned by PATCH P-03 (SDD §4A.5a(4)).
@@ -593,18 +687,55 @@ class MODQNTrainer:
 
             loss = self._loss_fn(q_current, target)
 
+            # -- PENALTYARM: representation-collapse penalty ----------------
+            # OFF BY DEFAULT.  ``self._penalty.active`` is False unless a
+            # ``PenaltyConfig`` was handed to the constructor, so on the
+            # unpenalised path this is one boolean test and ``total_loss`` IS
+            # ``loss`` (the same object) -- the path is bit-identical to the
+            # pre-port trainer, consuming no RNG and touching no tensor.
+            # See runtime/collapse_penalty.py for the port provenance and for
+            # the declared per-head choice.
+            total_loss = loss
+            if self._penalty.is_loss_term:
+                term = self._collapse_penalty_term(obj_idx, st)
+                if term is not None:
+                    self._penalty_raw_sum[obj_idx] += float(
+                        term.detach()
+                    ) / max(self._penalty.coefficient, 1e-300)
+                    self._penalty_term_sum[obj_idx] += float(term.detach())
+                    self._penalty_grad_sum[obj_idx] += gradient_norm(
+                        term, list(self.q_nets[obj_idx].parameters())
+                    )
+                    self._penalty_count[obj_idx] += 1
+                    total_loss = loss + term
+
             # PATCH P-04 (P-3 / G-11): fail loud, never skip-and-continue.
-            assert_finite_loss(loss, objective=obj_idx)
+            assert_finite_loss(total_loss, objective=obj_idx)
 
             self.optimizers[obj_idx].zero_grad()
-            loss.backward()
+            total_loss.backward()
+            if self._penalty.kind == "null_grad":
+                # CONTROL arm: matched-magnitude, structureless perturbation.
+                injected = inject_matched_random_gradient(
+                    list(self.q_nets[obj_idx].parameters()),
+                    self._penalty.null_grad_norms[obj_idx],
+                    self._penalty_rng,
+                )
+                self._penalty_grad_sum[obj_idx] += injected
+                self._penalty_count[obj_idx] += 1
             assert_finite_gradients(
                 self.q_nets[obj_idx].parameters(),
                 objective=obj_idx,
             )
             self.optimizers[obj_idx].step()
 
+            # Reported loss stays the TD loss, never the penalised total:
+            # a logged scalar that silently changes meaning between arms is
+            # the exact defect class this project keeps finding.
             losses.append(loss.item())
+
+            if self._penalty_diagnostics:
+                self._record_collapse_diagnostics(obj_idx, st)
 
         # PATCH P-04 (P-3 / G-11): parameters must stay finite after the step.
         assert_finite_parameters(self.q_nets)
