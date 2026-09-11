@@ -347,8 +347,16 @@ def pooled_rollout(
             if res.done:
                 break
         rows.append(row)
-    bits = sum(r["bits"] for r in rows)
-    joules = sum(r["joules"] for r in rows)
+    # Plain left-to-right accumulation, exactly as the B0 harness does
+    # (``bits += eb``).  NOT ``sum()``: since Python 3.12 ``sum`` of floats is
+    # compensated (Neumaier) and differs from the harness in the last ulp.
+    bits = 0.0
+    joules = 0.0
+    beams_total = 0.0
+    for r in rows:
+        bits += r["bits"]
+        joules += r["joules"]
+        beams_total += r["beams"]
     us = sum(r["user_steps"] for r in rows)
     return {
         "bits": bits,
@@ -357,7 +365,7 @@ def pooled_rollout(
         "h_inter": sum(r["h_inter"] for r in rows) / us,
         "h_intra": sum(r["h_intra"] for r in rows) / us,
         "served": sum(r["served"] for r in rows) / us,
-        "beams": sum(r["beams"] for r in rows) / sum(r["steps"] for r in rows),
+        "beams": beams_total / sum(r["steps"] for r in rows),
         "user_steps": us,
         "bits_per_user_step": bits / us,
         "joules_per_user_step": joules / us,
