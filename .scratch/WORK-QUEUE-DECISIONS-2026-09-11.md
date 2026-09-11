@@ -184,6 +184,21 @@ Also at 18:16 UTC: all four opus sub-agents were killed by an opus session limit
 **B1's engineering-core commit `63b02dc0` exists**, so DEVHARNESS can start at step 1 on resume; the `sat` oracle shards and the
 local B1 lighting-price lanes kept running.
 
+## B1 engineering core committed; credit diagnostics and cost (18:38 UTC, agent-reported, its report pending)
+
+`63b02dc030180b83889387b031bd1c7dff4754f5` on `b1/difference-reward-20260912`: `cf_credit.py`, the `credit_mode` wiring,
+`tests/test_cf_credit.py` — **9 tests green, 13 named mutants red, lighting-price path tests green**; an engineering checkpoint,
+not scientific validation. Harness placebo exact on both episode sets. Diagnostics on 2,000 decisions: the **one-step argmax
+flips** under equal share in 3/2000 (0.15 %, reproducing the CF3 review's 0-of-240), under the **lighting price in 89.4 %**, under
+the **exact difference reward in 43.3 %**; the difference credit agrees with the unilateral system best response in 1,982/2,000,
+the 18 exceptions being decisions whose system best response is an outage alternative that the declared outage charge refuses.
+**Cost of the exact difference credit: +17.0 s/episode rule-like, +43.7 s/episode under random exploration, ≈ 6.2 h per
+1000-episode run locally (~11× CF3 A1)** — a planning constraint for any formal exact-DR arm. **Early lighting-price screen signal
+(2 evaluation episodes, evaluator variant, provisional): +26.7 % EE at served 1.000 but bits ratio 0.865 and 41 lit beams vs 61 —
+the bits-ratio gate (≥ 0.95) is the one at risk; the nominal-bits variant runs ~8 % below the rule.** If the screen fails, the
+lighting-price credit cannot carry Amendment 5 Part II's early runs; under Amendment 6 §6 its E0 arms 5–6 remain permissible as
+labelled development diagnostics only.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).

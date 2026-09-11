@@ -24,6 +24,12 @@ working through a sub-agent limit, so controller-side work continues meanwhile. 
   aggregated them independently: `.scratch/h4-probe/BRANCH-NUMBERS-FLOOR-R1-EVAL.md` (A-floor +6.10 % but p10 0.282 × the rule
   → throughput-degenerate; B-floor +25.35 %, p10 1.632 ×, bits 1.321; B − A = +19.25 pp; parity 0). The oracle agent must
   re-derive these on resume.
+- **B1 status 18:38 UTC**: engineering core committed (9 tests green, 13 mutants red, lighting-price path green); the agent
+  **ended its turn** because both local slots are busy with its screen lanes (lane A ~13 min, lane B ~36 min left). Remaining
+  work is strictly downstream: aggregate the LP-credit cells, fill the report and its PASS/FAIL first line, re-run the 13
+  mutants against the committed tree, commit the screen scripts and report. **A session cron at 03:12 Taipei resumes it** once
+  the lanes are done (it reschedules itself if they are not). Interim: exact-DR credit costs ≈ 6.2 h per 1000-episode run
+  locally; the lighting-price screen's bits-ratio gate is at risk (2-episode signal, provisional).
 - **B1 engineering core is committed: `63b02dc030180b83889387b031bd1c7dff4754f5`** on `b1/difference-reward-20260912`
   (worktree `/home/u24/papers/mcrl-leo-handover-b1` is at it). Its lighting-price screen lanes are still running **locally**
   (PIDs 660091/660093, 661404, 661406, 662999 — `b1_lp_credit_rule.py` / `run_lp_credit.sh`).
