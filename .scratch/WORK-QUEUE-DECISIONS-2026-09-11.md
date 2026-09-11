@@ -199,6 +199,19 @@ the bits-ratio gate (≥ 0.95) is the one at risk; the nominal-bits variant runs
 lighting-price credit cannot carry Amendment 5 Part II's early runs; under Amendment 6 §6 its E0 arms 5–6 remain permissible as
 labelled development diagnostics only.
 
+## T0 representability lane CLOSED (18:47 UTC, commit `a4c8ce12`)
+
+Report `.scratch/t0-repr/T0-REPRESENTABILITY-2026-09-12.md`. Verdict unchanged (T0 admitted). Two results worth carrying:
+- **Longer training raises open-loop accuracy but not closed-loop EE.** The 400-epoch clones improve held-out top-1 (0.8929 →
+  0.9063 BC, 0.9448 → 0.9697 soft) yet their closed-loop `R_repr` is *lower* (evaluation 0.890 / 0.946; calibration 0.947 /
+  0.984) than the declared 100-epoch clones (0.930 / 0.976; 0.952 / 1.052). This is why the screen's metric is closed-loop
+  headroom recovery, not action accuracy — it must stay that way for the privileged teachers' screens (T_DR / T_SEQ).
+- **T0's conditional entropy given the learner's observation is exactly 0**: its action is recomputed from the observation
+  (`obs_snr/ln2 − 1·[obs_load == 0]`, masked argmax) on 300,000/300,000 decisions and on 24,000/24,000 in both closed-loop sets.
+  Scale for comparison: marginal H(a_T0) = 3.3168 bits, uniform over the legal set 4.7090 bits, BC held-out cross-entropy
+  0.4122 bits. So a non-privileged anchor teacher costs the student no information gap; any gap measured later for T_DR / T_SEQ
+  is attributable to their privilege.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).

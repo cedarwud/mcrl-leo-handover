@@ -35,7 +35,12 @@ working through a sub-agent limit, so controller-side work continues meanwhile. 
   (PIDs 660091/660093, 661404, 661406, 662999 — `b1_lp_credit_rule.py` / `run_lp_credit.sh`).
 - **DEVHARNESS did nothing yet** beyond creating `.scratch/dev-training/PROGRESS.md` (it was polling for the engineering-core
   line, which now exists). On resume it starts at step 1 with base commit `63b02dc0`.
-- **T0REPR**: the declared verdict is recorded (admitted); its 400-epoch sensitivity closed-loop runs were launched at ~18:13
+- **T0REPR: COMPLETE 18:47 UTC, commit `a4c8ce12d5d33874bafac696735274f6fa686419`** (65 files under `.scratch/t0-repr/`; 55 files
+  sha256-identical both ends; three 70 MB decision dumps left on sat with their hashes). Verdict unchanged: T0 admitted,
+  `R_repr` evaluation 0.930 BC / 0.976 soft, calibration 0.952 / 1.052; the 400-epoch sensitivity gives 0.890 / 0.946 and
+  0.947 / 0.984, all far above 0.5, so it does not change the verdict; conditional entropy is exactly 0 (T0 recomputable from the
+  observation on 300,000/300,000 decisions). Nothing of its own runs any more. *(historical: its 400-epoch closed-loop runs were
+  launched at ~18:13*
   on sat with `nice 19` and are no longer in the process list; `results/CLOSED-*-e400-*.json` were not present at 18:22 — check
   the logs on resume and re-run only what is missing.
 
