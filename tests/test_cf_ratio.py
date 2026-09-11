@@ -81,19 +81,14 @@ def mutant(monkeypatch):
                 self.n_per_source = max(1, self.n_per_source)
                 self.n_main = self.config.batch_size - 3 * self.n_per_source
             else:
-                for src in self.sources:
-                    src.env_rng = self._env_rng
+                self._env_rng.random()      # a pool load that touches the main env RNG
 
         monkeypatch.setattr(T, "__init__", init)
-    elif MUTANT == "null_smaller_buffer":
-        real_build = cfr.build_sources
-
-        def build(kind, **kw):
-            if kind == "null3":
-                kw = dict(kw, capacity=kw["capacity"] // 2)
-            return real_build(kind, **kw)
-
-        monkeypatch.setattr(cfr, "build_sources", build)
+    elif MUTANT == "pool_seeds_overlap_calibration":
+        import sys as _sys
+        _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+        import cf3_common as C
+        monkeypatch.setattr(C, "POOL_ENV_BASE", C.CAL_ENV_BASE)
     elif MUTANT == "null_biased_to_first_legal":
         def biased(rng):
             def fn(states, masks):
@@ -241,12 +236,39 @@ def _real_env_factory(users):
     return lambda: make_training_environment(users=users)
 
 
+_POOL_CACHE: dict = {}
+
+
+def _pool_policy(kind, j):
+    name = cfs.CF3_SPECS[j][0]
+    if kind == "cf3":
+        rule = cfs.cf3_policies()[name]
+        return lambda i: rule
+    return lambda i: cfs.random_legal(np.random.default_rng((9_151_000, 0, j, i)))
+
+
+def _small_pools(kind, users=6, episodes=2):
+    """Real generated pools (2 episodes, 6 users), cached per session."""
+    key = (kind, users, episodes)
+    if key not in _POOL_CACHE:
+        factory = _real_env_factory(users)
+        seeds = [(9_141_000 + i, 9_142_000 + i) for i in range(episodes)]
+        out = []
+        for j, (name, head) in enumerate(cfr.source_names(kind)):
+            arr = cfr.generate_pool(_pool_policy(kind, j), env_factory=factory,
+                                    seeds=seeds, config=_config())
+            out.append((name, head, cfr.PoolBuffer(arr, sha256=f"{kind}-{j}")))
+        _POOL_CACHE[key] = out
+    return _POOL_CACHE[key]
+
+
 def _trainer_real(kind, *, rho=1 / 9, cfg_kw=None, st_kw=None, users=6):
     factory = _real_env_factory(users)
     cfg = _config(**(cfg_kw or {}))
     return cfr.CFRatioTrainer(
         factory(), cfg, _settings(kind, rho=rho, **(st_kw or {})),
-        env_factory=factory, train_seed=5, env_seed=6, mobility_seed=7,
+        env_factory=factory, pools=_small_pools(kind, users) if kind != "none" else None,
+        train_seed=5, env_seed=6, mobility_seed=7,
     )
 
 
@@ -338,13 +360,21 @@ def test_target_recomputed_when_eta_changes_and_stored_rewards_do_not():
     assert all(np.array_equal(x, [100.0, 8.0, 0.0]) for x in after)  # raw, unshaped
 
 
+def _synthetic_pool(n, action, marker, rng, dim=113):
+    st = rng.normal(size=(n, dim)).astype(np.float32)
+    st[:, 0] = marker
+    m = np.ones((n, 28), dtype=bool)
+    return {"states": st, "actions": np.full(n, action, np.int64),
+            "rewards_raw": np.tile([100.0, 8.0, 0.0], (n, 1)), "next_states": st.copy(),
+            "masks": m, "next_masks": m.copy(), "dones": np.zeros(n, bool)}
+
+
 def _filled(kind, seed=1):
-    tr = cfr.CFRatioTrainer(_StubEnv(), _config(batch_size=128),
-                            _settings(kind), env_factory=_StubEnv)
     rng = np.random.default_rng(seed)
+    pools = [(name, head, cfr.PoolBuffer(_synthetic_pool(200, 10 + i, float(i + 1), rng)))
+             for i, (name, head) in enumerate(cfr.source_names(kind))]
+    tr = cfr.CFRatioTrainer(_StubEnv(), _config(batch_size=128), _settings(kind), pools=pools)
     _push(tr.replay, 400, action=0, marker=-1.0, rng=rng)
-    for i, src in enumerate(tr.sources):
-        _push(src.buffer, 200, action=10 + i, marker=float(i + 1), rng=rng)
     return tr
 
 
@@ -375,7 +405,7 @@ def test_rho_zero_cf3_is_bit_identical_to_off():
     cf0 = _trainer_real("cf3", rho=0.0)
     logs_cf0 = cf0.train_cf(progress_every=0)
     assert cf0.n_per_source == 0
-    assert all(len(s.buffer) > 0 for s in cf0.sources)   # sources did run
+    assert all(len(s.buffer) > 0 for s in cf0.sources)   # pools are loaded
     for a, b in zip(_weights(off), _weights(cf0)):
         assert torch.equal(a, b)
     for x, y in zip(logs_off, logs_cf0):
@@ -383,7 +413,7 @@ def test_rho_zero_cf3_is_bit_identical_to_off():
 
 
 def test_a1_a2_main_rollouts_identical_before_first_source_sample():
-    """Source envs do not perturb the main env's RNG or state."""
+    """Loading pools does not touch the main env's RNG or state (Amendment 3)."""
     big = {"batch_size": 5000, "episodes": 2}          # no update ever runs
     a1 = _trainer_real("none", cfg_kw=big)
     a2 = _trainer_real("cf3", cfg_kw=big)
@@ -399,24 +429,49 @@ def test_a1_a2_main_rollouts_identical_before_first_source_sample():
 
 
 def test_null3_differs_from_cf3_only_in_the_source_policy():
-    a = cfr.CFRatioTrainer(_StubEnv(), _config(), _settings("cf3"), env_factory=_StubEnv)
-    b = cfr.CFRatioTrainer(_StubEnv(), _config(), _settings("null3"), env_factory=_StubEnv)
+    a = cfr.CFRatioTrainer(_StubEnv(), _config(), _settings("cf3"),
+                           pools=_filled("cf3").sources and [(s.name, s.head, s.buffer) for s in _filled("cf3").sources])
+    b = cfr.CFRatioTrainer(_StubEnv(), _config(), _settings("null3"),
+                           pools=[(s.name, s.head, s.buffer) for s in _filled("null3").sources])
     sa, sb = dataclasses.asdict(a.settings), dataclasses.asdict(b.settings)
     assert {k for k in sa if sa[k] != sb[k]} == {"source_kind"}
     assert (a.n_per_source, a.n_main) == (b.n_per_source, b.n_main)
     assert [s.head for s in a.sources] == [s.head for s in b.sources]
-    assert [s.buffer.capacity for s in a.sources] == [s.buffer.capacity for s in b.sources]
-    cf3 = _trainer_real("cf3")
-    cf3.train_cf(progress_every=0)
-    nul = _trainer_real("null3")
-    for src, (name, _h) in zip(nul.sources, cfs.CF3_SPECS):
-        src.policy = cfs.cf3_policies()[name]
-    nul.train_cf(progress_every=0)
-    for x, y in zip(_weights(cf3), _weights(nul)):
-        assert torch.equal(x, y)
-    raw_null = _trainer_real("null3")
-    raw_null.train_cf(progress_every=0)
-    assert any(not torch.equal(x, y) for x, y in zip(_weights(cf3), _weights(raw_null)))
+    # Pools: same seeds -> same epochs / t=0 observations; swapping the NULL
+    # policy for the CF3 rule reproduces the CF3 pool exactly; the real NULL
+    # pool differs.
+    factory = _real_env_factory(6)
+    seeds = [(9_141_000 + i, 9_142_000 + i) for i in range(2)]
+    p_cf = cfr.generate_pool(_pool_policy("cf3", 0), env_factory=factory, seeds=seeds, config=_config())
+    p_nl = cfr.generate_pool(_pool_policy("null3", 0), env_factory=factory, seeds=seeds, config=_config())
+    p_sw = cfr.generate_pool(_pool_policy("cf3", 0), env_factory=factory, seeds=seeds, config=_config())
+    assert list(p_cf["t0_obs_sha256"]) == list(p_nl["t0_obs_sha256"])
+    for f in cfr.POOL_FIELDS:
+        np.testing.assert_array_equal(p_cf[f], p_sw[f])
+    assert not np.array_equal(p_cf["actions"][:50], p_nl["actions"][:50])
+
+
+def test_pool_seed_range_is_disjoint_and_pools_are_immutable():
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import cf3_common as C
+    pool = {x for k in range(3) for p in C.pool_seeds(k) for x in p}
+    pool_env = {p[0] for k in range(3) for p in C.pool_seeds(k)}
+    pool_mob = {p[1] for k in range(3) for p in C.pool_seeds(k)}
+    assert not pool_env & pool_mob
+    train = {x for t in C.TRAIN_SEEDS for x in t}
+    cal = {x for p in C.cal_seeds() for x in p}
+    ev = {x for p in C.eval_seeds() for x in p}
+    rnd = {C.RANDOM_ACTION_BASE + i for i in range(C.N_CAL)}
+    assert len(pool) == 3 * 2 * C.POOL_EPISODES
+    assert not pool & (train | cal | ev | rnd)
+    tr = _trainer_real("cf3")
+    before = [(len(s.buffer), s.buffer.raw_rewards().copy()) for s in tr.sources]
+    tr.train_cf(progress_every=0)
+    for (n, r), s in zip(before, tr.sources):
+        assert len(s.buffer) == n and np.array_equal(s.buffer.raw_rewards(), r)
+    with pytest.raises(ValueError):
+        tr.sources[0].buffer._a["actions"][0] = 3        # read-only arrays
 
 
 def test_null3_is_uniform_over_legal_actions():

@@ -75,6 +75,7 @@ def main() -> int:
     ap.add_argument("--memory-max", default="5G")
     ap.add_argument("--memory-max-cf", default=None,
                     help="MemoryMax for A2/A3 (default = --memory-max)")
+    ap.add_argument("--pools", type=Path, default=None, help="pools root (default <root>/../pools)")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("specs", nargs="*")
@@ -94,14 +95,27 @@ def main() -> int:
     code = C.code_manifest()
     calib_sha = C.sha256_file(a.calibration)
     root.mkdir(parents=True, exist_ok=True)
+    from mcrl.algorithms.cf_ratio import source_names
+    pools_root = (a.pools or root.parent / "pools").resolve()
+    pool_hashes = {}
+    for s_ in specs:
+        arm_, k_ = s_.split(":")
+        kind_ = {"A2": "cf3", "A3": "null3"}.get(arm_)
+        for name_, _h in (source_names(kind_) if kind_ else []):
+            pth = C.pool_path(pools_root, int(k_), name_)
+            if not pth.is_file():
+                raise SystemExit(f"missing pool {pth}")
+            pool_hashes[str(pth.relative_to(pools_root))] = C.sha256_file(pth)
     mpath = root / "RUN-MANIFEST.json"
     wanted = {"code": code, "code_digest": C.manifest_digest(code),
               "calibration": str(a.calibration.resolve()), "calibration_sha256": calib_sha,
               "smoke": bool(a.smoke), "tle_root": os.environ.get("MCRL_TLE_ROOT"),
-              "train_seeds": [list(t) for t in C.TRAIN_SEEDS], "specs": sorted(specs)}
+              "train_seeds": [list(t) for t in C.TRAIN_SEEDS], "specs": sorted(specs),
+              "pools_root": str(pools_root), "pools": pool_hashes}
     if mpath.is_file():
         have = json.loads(mpath.read_text())
-        diff = [k2 for k2 in ("code", "calibration_sha256", "smoke") if have.get(k2) != wanted[k2]]
+        diff = [k2 for k2 in ("code", "calibration_sha256", "smoke", "pools")
+                if have.get(k2) != wanted[k2]]
         if diff:
             raise SystemExit(f"RUN-MANIFEST.json mismatch in {diff}; refusing (fail closed)")
     elif a.init_manifest:
@@ -146,7 +160,10 @@ def main() -> int:
         mm = a.memory_max_cf if (a.memory_max_cf and arm in ("A2", "A3")) else a.memory_max
         cmd = ["systemd-run", "--user", "--scope", "-p", f"MemoryMax={mm}", "--quiet",
                "nice", "-n", "10", sys.executable, DRIVER, "--arm", arm, "--seed-index", str(k),
-               "--root", str(root), "--calibration", str(a.calibration.resolve())]
+               "--root", str(root), "--calibration", str(a.calibration.resolve()),
+               "--pools", str(pools_root)]
+        if arm in ("A2", "A3"):
+            cmd += ["--rss-cap-gb", "6.5"]
         if a.smoke:
             cmd.append("--smoke")
         if a.stop_after is not None:

@@ -30,8 +30,9 @@ CAL_ENV_BASE, CAL_MOB_BASE = 9_121_000, 9_122_000
 EVAL_ENV_BASE, EVAL_MOB_BASE = 9_111_000, 9_112_000
 RANDOM_ACTION_BASE = 9_131_000
 # Amendment 3 source pools: seed index k, episode i -> env 9_141_000+1000k+i,
-# mobility 9_142_000+1000k+i; NULL source j's action draws default_rng((9_151_000, k, j, i)).
-POOL_ENV_BASE, POOL_MOB_BASE, POOL_NULL_BASE = 9_141_000, 9_142_000, 9_151_000
+# mobility 9_161_000+1000k+i (bases 20,000 apart so no env seed equals a mobility seed);
+# NULL source j's action draws default_rng((9_151_000, k, j, i)).
+POOL_ENV_BASE, POOL_MOB_BASE, POOL_NULL_BASE = 9_141_000, 9_161_000, 9_151_000
 POOL_EPISODES = 100
 N_CAL = 24
 N_EVAL = 24

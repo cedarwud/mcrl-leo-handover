@@ -76,6 +76,8 @@ def main() -> int:
                     help="stop cleanly at this episode boundary (diagnostic stage)")
     ap.add_argument("--smoke", action="store_true",
                     help="SMOKE ONLY: 3 episodes, quarter=1, eta from ep 2, 2 cal episodes")
+    ap.add_argument("--pools", type=Path, default=None,
+                    help="Amendment 3 pools root (A2/A3); default <root>/../pools")
     ap.add_argument("--rss-cap-gb", type=float, default=5.0)
     ap.add_argument("--gate-timeout-s", type=float, default=4 * 3600)
     a = ap.parse_args()
@@ -92,7 +94,10 @@ def main() -> int:
     gate_dir = a.root / "learning-check"
     if status_path.is_file():
         prev = json.loads(status_path.read_text())
-        if prev.get("status") in ("complete", "stopped-learning-check"):
+        dfile0 = gate_dir / "DECISION.json"
+        real_fail = dfile0.is_file() and json.loads(dfile0.read_text()).get("pass") is False
+        if prev.get("status") == "complete" or (
+                prev.get("status") == "stopped-learning-check" and real_fail):
             print(f"[{arm}s{k}] already {prev['status']}; nothing to do")
             return 0
 
@@ -111,16 +116,9 @@ def main() -> int:
     tle_sha = tp.assert_tle_archive_pinned()
     record = tp.validate_server_setup(tp.CANONICAL_PREREG,
                                       probe_summary_path=tp.CORRECTED_PROBE_SUMMARY)
-    frozen = tp._trainer_config(record, learning_rate=0.001)
     episodes = 3 if a.smoke else a.episodes
     cf_arm = arm != "A0"
-    config = dataclasses.replace(
-        frozen,
-        episodes=episodes,
-        epsilon_decay_episodes=C.EPSILON_DECAY_COMPRESSED,
-        td_bootstrap_mode=TD_BOOTSTRAP_SHARED if cf_arm else TD_BOOTSTRAP_EQ16,
-        discount_factor=1.0 if cf_arm else frozen.discount_factor,
-    )
+    config = C.pilot_config(record, arm, episodes)
     n_cal = 2 if a.smoke else C.N_CAL
     quarter = 1 if a.smoke else 250
     eta_first = 2 if a.smoke else 500
@@ -128,12 +126,30 @@ def main() -> int:
     env = factory()
     env.assert_ready_to_train()
 
+    pools, pool_shas = [], {}
+    if arm in ("A2", "A3"):
+        pools_root = a.pools or (a.root.parent / "pools")
+        kind = KIND[arm]
+        for name, head in cfr.source_names(kind):
+            pth = C.pool_path(pools_root, k, name)
+            meta = json.loads(pth.with_suffix(".json").read_text())
+            buf = cfr.PoolBuffer.load(pth)
+            want_seeds = [list(x) for x in C.pool_seeds(k)]
+            if (meta["name"] != name or meta["seed_index"] != k or meta["seeds"] != want_seeds
+                    or meta["episodes"] != C.POOL_EPISODES or meta["tle_file_set_sha256"] != tle_sha
+                    or meta["pool_sha256"] != buf.sha256 or meta["state_dim"] != 113):
+                raise SystemExit(f"pool {pth} metadata does not match this run; fail closed")
+            if run_manifest.get("pools", {}).get(str(pth.relative_to(pools_root))) != buf.sha256:
+                raise SystemExit(f"pool {pth} not in RUN-MANIFEST.json with this hash; fail closed")
+            pools.append((name, head, buf))
+            pool_shas[name] = buf.sha256
+
     settings = None
     if cf_arm:
         settings = cfr.CFRatioSettings(
             source_kind=KIND[arm], rho=1.0 / 9.0, alpha=1.0, h_cap_inter=0.6016,
             quarter_episodes=quarter, eta_first_update_episode=eta_first,
-            catfish_buffer_capacity=config.replay_capacity,
+            catfish_buffer_capacity=C.POOL_EPISODES * 1000,
             eta0=float(calib["eta0_bit_per_J"]),
             bits_scale=float(calib["bits_scale"]),
             joules_scale=float(calib["joules_scale"]),
@@ -141,7 +157,7 @@ def main() -> int:
             calibration_mobility_seed_base=C.CAL_MOB_BASE,
             calibration_episodes=n_cal,
         )
-        trainer = cfr.CFRatioTrainer(env, config, settings, env_factory=factory,
+        trainer = cfr.CFRatioTrainer(env, config, settings, env_factory=factory, pools=pools,
                                      train_seed=train_seed, env_seed=env_seed,
                                      mobility_seed=mob_seed)
     else:
@@ -153,7 +169,7 @@ def main() -> int:
         "config": asdict(config), "settings": None if settings is None else asdict(settings),
         "calibration_sha256": calib_sha, "tle_file_set_sha256": tle_sha,
         "prereg_digest": record.digest, "smoke": bool(a.smoke),
-        "code": code, "code_digest": code_digest,
+        "code": code, "code_digest": code_digest, "pool_sha256": pool_shas,
     }
     status = {
         "status": "running", "arm": arm, "name": ARMS[arm], "seed_index": k,
