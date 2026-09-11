@@ -1,4 +1,4 @@
-# Document status — which controller documents are in force (as of 2026-09-11 ~09:10 UTC)
+# Document status — which controller documents are in force (as of 2026-09-11 ~11:45 UTC)
 
 Curated by CURATE, read-only. Companion files: `.scratch/RESULTS-REGISTRY.md` (every citable number
 with the conditions that produced it) and `.scratch/curation/PROVENANCE-HEADER.md` (the header every
@@ -14,10 +14,11 @@ All paths are in `.scratch/multi-catfish-v025-physics-successor/` unless stated.
 
 | # | read | why |
 |---:|---|---|
-| 1 | `V025-CONTROLLER-DECLARATION-THREE-CATFISH-PILOT-2026-09-11.md` | **What is being run now.** New learner (three heads `Q_B`/`Q_E`/`Q_H`, Dinkelbach `eta`, dual `lambda` for C-H, shared bootstrap), three catfish (C1 `A m=2dB`→`Q_B`, C2 `A m=12dB`→`Q_H`, C3 `B1_NO_NEW_BEAM`→`Q_E`), arms A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep, pinned archive, eval seeds disjoint from training. Agent CF3PILOT, `.scratch/cf3-pilot/`. |
+| 1 | `V025-CONTROLLER-DECLARATION-THREE-CATFISH-PILOT-2026-09-11.md` **+ `V025-CONTROLLER-AMENDMENT-1-THREE-CATFISH-PILOT-2026-09-11.md`** | **What is being run now.** Amendment 1 (pre-result): γ = 1.0 for A1–A3; common vector replay (8/9 main + 1/27 from each catfish, every transition trains all three heads); η held to ep 500; pinned-archive re-measurement of the sources before launch; C2 INACTIVE classification rule; isolated worktree `cf3/pilot-20260911`; the pilot is named a *three-source catfish-inspired off-policy replay pilot*, not faithful RIS catfish / DQfD / ACRM. Original declaration: New learner (three heads `Q_B`/`Q_E`/`Q_H`, Dinkelbach `eta`, dual `lambda` for C-H, shared bootstrap), three catfish (C1 `A m=2dB`→`Q_B`, C2 `A m=12dB`→`Q_H`, C3 `B1_NO_NEW_BEAM`→`Q_E`), arms A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep, pinned archive, eval seeds disjoint from training. Agent CF3PILOT, `.scratch/cf3-pilot/`. |
+| 1b | `V025-CONTROLLER-RECORD-CATFISH-SCREENS-2026-09-11.md` (+ `.scratch/catfish-screens/CATFISH-SCREENS-2026-09-11.md`) | All three sources representable from the learner's observation; C1 and C2 are one hysteresis rule at two thresholds (distinct by the objective they serve, not by coverage); `A m=2dB` reads the incumbent (only `MAX_NOMINAL_GAIN` is memoryless); C3 the most independent source; **harness fact: only episode 0 is paired across cells — every cross-cell comparison is unpaired**. |
 | 2 | `V025-CONTROLLER-DECLARATION-CONSTRAINED-ENDPOINT-2026-09-11.md` | **The endpoint** (owner decision): pooled EE s.t. C-H `H_inter ≤ 0.6016`/user-step and C-S service non-inferior (−0.5 pp). The unconstrained 19.8 % result is a *negative control*, never re-labelled. |
-| 3 | `V025-CONTROLLER-PLAN-THREE-CATFISH-ON-THREE-HEADS-2026-09-11.md` | Why three catfish on three heads; physics-corrected meaning of C1/C2/C3. Read with §2's caveats (stage 1 folded into the pilot; kill-criterion 1 overtaken by erratum 27). |
-| 4 | `V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md` + `.scratch/b0-corrected/PROGRESS.md` (ROUND 2) | Baseline-MODQN arm = eq. (16) per-head max (B1 intact); D-1 behind a flag; D-2 per-step worst-served floor; final checkpoint, no selection; **local and sat numbers never compared**; TLE archive pinned `b924c8a0` (RANDOM_MASKED 52,420,510.0956937 on both hosts). |
+| 3 | `V025-CONTROLLER-PLAN-THREE-CATFISH-ON-THREE-HEADS-2026-09-11.md` | Why three catfish on three heads; physics-corrected meaning of C1/C2/C3. Read with §1's caveats (stage 1 folded into the pilot; kill-criterion 1 overtaken by erratum 27). |
+| 4 | `V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md` + `.scratch/b0-corrected/PROGRESS.md` (ROUND 2) | Baseline-MODQN arm = eq. (16) per-head max (B1 intact); D-1 behind a flag; D-2 per-step worst-served floor; final checkpoint, no selection; **local and sat numbers never compared**; TLE archive pinned `b924c8a0` = file_set `427e6a91…` (RANDOM_MASKED 52,420,510.0956937 on both hosts); everything on the catfish-surface harness ran on the unpinned `e07f3e1e…`. Read also `.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md` round 2 (R.5 arm-order defect; R.6 smoke; its **paired t statistics are invalid as paired** per the CFSCREEN harness fact). |
 | 5 | `V025-CONTROLLER-DECLARATION-EVALUATION-CONTRACT-AND-NULL-GUIDE-2026-09-11.md` rules 1–2 | Only the learned policy acts at evaluation; every mechanism arm carries a matched null control (now A3 NULL3). Rule 3 is withdrawn by its own amendment. |
 | 6 | `V025-CONTROLLER-ERRATUM-27-A-HYSTERESIS-RULE-DOMINATES-THE-LEARNER-2026-09-11.md` + `.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md` | The rule frontier on the MODQN harness; the frozen checkpoint is dominated; **success gate = beat baseline MODQN** (non-learned rules are diagnostic, not a bar); the three specialists. |
 | 7 | `V025-CONTROLLER-RULING-THE-GAP-SURVIVES-THE-ANCHOR-ABLATION-2026-09-11.md`, `...-THE-GAP-SURVIVES-BEAM-POWER-ACCOUNTING-2026-09-11.md`, measurement table of `...-THE-TRAINED-OBJECTIVE-DISAGREES-WITH-THE-DECLARED-ONE-2026-09-11.md` | The negative-control headline and the two attacks it survived (+22.2 % ablated; 1.1916 under TDM_AIRTIME). |
@@ -43,10 +44,12 @@ now" = needed to understand or run the current MODQN-harness pilot.
 
 | document (`V025-CONTROLLER-…-2026-09-11.md` unless noted) | status | what supersedes what | needed now |
 |---|---|---|---|
-| `DECLARATION-THREE-CATFISH-PILOT` | **IN FORCE** | — (frozen before any pilot result; supersedes the arm structure of the plan and of the two-arm demo declaration, and the "backbone JSRL" decision of the evaluation contract — the pilot uses per-head replay mixing, `rho = 1/9`, no JSRL; inferred from content) | yes |
+| `AMENDMENT-1-THREE-CATFISH-PILOT` | **IN FORCE** | Amends the pilot declaration before any result (γ, replay routing, η schedule, pinned re-measurement, C2 activation rule, `Q_E` credit caveat, naming). | yes |
+| `RECORD-CATFISH-SCREENS` | **IN FORCE** | Records CFSCREEN; corrects the information-set label of `A m=2dB` in the plan amendment and in the pilot declaration's catfish table (it reads the incumbent); establishes that cross-cell comparisons on the MODQN harness are unpaired. | yes |
+| `DECLARATION-THREE-CATFISH-PILOT` | **PARTLY SUPERSEDED** | Amended in place-by-reference by AMENDMENT-1: "`gamma` as in the baseline trainer" → γ = 1.0 for A1–A3; "Head k's minibatch is (1 − ρ) main + ρ from catfish k" → common vector replay 8/9 + 1/27 × 3; η update at every quarter → held until ep 500. Catfish table's C1 information column "gain" is inaccurate (`A m=2dB` reads the incumbent; RECORD-CATFISH-SCREENS). Everything else stands (frozen before any pilot result; supersedes the arm structure of the plan and of the two-arm demo declaration, and the "backbone JSRL" decision of the evaluation contract — the pilot uses per-head replay mixing, `rho = 1/9`, no JSRL; inferred from content) | yes |
 | `DECLARATION-CONSTRAINED-ENDPOINT` | **IN FORCE** | — (answers owner decision 1 of the plan and the "decision this forces" of the anchor-ablation ruling; also executes the kill of all current-design trainings incl. PID 3131678) | yes |
-| `PLAN-THREE-CATFISH-ON-THREE-HEADS` | **PARTLY SUPERSEDED** | Owner decisions 1–3 taken by CONSTRAINED-ENDPOINT (names C1/C2/C3 kept for now). Stage table: stage 1 folded into the pilot as arm A1 (THREE-CATFISH-PILOT). Sources fixed by the pilot (C1 = `A m=2dB`, C2 = `A m=12dB`, C3 = `B1_NO_NEW_BEAM`). "What can still kill it" bullet 1 (a rule with memory dominates the learner ⇒ no job) is overtaken by erratum 27's in-place withdrawal: success gate is beating baseline MODQN, rules are diagnostic. | yes |
-| `RULING-B0-THREE-QUESTIONS` | **IN FORCE** | Its own correction supersedes FINDING-PER-HEAD-BOOTSTRAP's "defect" label. Its §"B0's pilot" numbers are smoke **and** were not at matched conditions (shared-env `_age_rng`, b0 PROGRESS R6 note). | yes |
+| `PLAN-THREE-CATFISH-ON-THREE-HEADS` | **PARTLY SUPERSEDED** | Owner decisions 1–3 taken by CONSTRAINED-ENDPOINT (names C1/C2/C3 kept for now). Stage table: stage 1 folded into the pilot as arm A1 (THREE-CATFISH-PILOT). Sources fixed by the pilot (C1 = `A m=2dB`, C2 = `A m=12dB`, C3 = `B1_NO_NEW_BEAM`). Amendment table's C1 information set "gain only (block 2)" is inaccurate for `A m=2dB` (RECORD-CATFISH-SCREENS). "What can still kill it" bullet 1 (a rule with memory dominates the learner ⇒ no job) is overtaken by erratum 27's in-place withdrawal: success gate is beating baseline MODQN, rules are diagnostic. | yes |
+| `RULING-B0-THREE-QUESTIONS` | **IN FORCE** | Its own correction supersedes FINDING-PER-HEAD-BOOTSTRAP's "defect" label. Its §"B0's pilot" numbers are smoke **and** were not at matched conditions (shared-env `_age_rng`); re-scored in the B0 report's R.5 (−4.02 %, whose "paired t" is itself invalid as paired). | yes |
 | `DECLARATION-EVALUATION-CONTRACT-AND-NULL-GUIDE` | **PARTLY SUPERSEDED** | Rule 3 withdrawn by its own amendment. Rule 2 re-framed (which-knob diagnostic) by its amendment; instantiated as A3 NULL3. "Decided: B0" bullet superseded by RULING-B0 (D-1 is a flag, default eq. 16 for the baseline arm). "Decided: backbone JSRL, DQfD + RIS catfish as comparators" superseded by THREE-CATFISH-PILOT (inferred). "Not decided: constrained EE" superseded by CONSTRAINED-ENDPOINT. Gates FEASFRONT and JSRL-coverage answered by erratum 27. Rules 1 and 2 stand. | yes (rules 1–2) |
 | `ERRATUM-27-A-HYSTERESIS-RULE-DOMINATES-THE-LEARNER` | **IN FORCE** | Withdraws RULING-NO-DEMONSTRATOR's closure and ASK-3's "specification success, endpoint failure" framing. Its own "112.46M under C-H is the bar" is struck through in place (owner: success gate = beat baseline MODQN). | yes |
 | `RULING-THE-GAP-SURVIVES-THE-ANCHOR-ABLATION` | **IN FORCE** | Its "decision this forces" answered by CONSTRAINED-ENDPOINT. Refutes erratum 25 objection 3 empirically. | yes |
@@ -177,17 +180,17 @@ pilot; the last column says what survives if the V0.25 line is reopened.
 
 | directory | what it answered | status | in registry |
 |---|---|---|---|
-| `feasible-frontier/` | Is the frozen checkpoint on the rule frontier? No — `A m=12dB` dominates it; JSRL coverage gate passes (step shape) | IN FORCE (local unpinned archive) | yes (FF-) |
+| `feasible-frontier/` | Is the frozen checkpoint on the rule frontier? No — `A m=12dB` dominates it; JSRL coverage gate passes (step shape) | IN FORCE (unpinned archive `e07f3e1e…`; comparisons unpaired after episode 0; calibrated scalars from the pre-D-2 tree) | yes (FF-) |
 | `beam-power-accounting/` | Does the 19.8 % gap depend on the `max` beam-power operator? No (1.1916 TDM_AIRTIME, 1.1629 ADDITIVE) | IN FORCE (local unpinned archive) | yes (BP-) |
-| `b0-corrected/` | B0 fixes D-1/D-2/D-3 with fail-first tests; 500-ep smoke; round 2: D-1 flag, per-step floor, TLE pin `b924c8a0`; R8/R9 pilots pending | IN FORCE; round-1 eval numbers not at matched conditions | yes (B0-) |
+| `b0-corrected/` | B0 fixes D-1/D-2/D-3 with fail-first tests; round 2: D-1 flag (default eq. 16), per-step floor `c00aca3e`, TLE pin `b924c8a0` = `427e6a91…`, `READY FOR PILOT: 363845e8`; R.5 arm-order defect in the inherited driver; R.6 item-6 reruns recorded as smoke | IN FORCE (smoke numbers only); round-1 eval superseded by R.5; paired t statistics invalid as paired | yes (B0-) |
 | `penalty-arm/` | Does the ported Kumar srank penalty help? Null at 500 ep, 1 seed (D-1 tree, sat) | IN FORCE (pilot); fabricated placeholder in history → see `NOTICE-FABRICATED-PLACEHOLDER-IN-HISTORY.md` | yes (PA-, incl. WITHDRAWN placeholder) |
 | `cap-penalty/` | Owner's remembered penalty = sibling L_cap; a k=3 cap causes no collapse here; cap raises pooled EE 1.162× by darkening beams (58 % served) | IN FORCE (pilot, capped MDP) | yes (CP-) |
 | `ee-magnitude/` | Why sibling EE reads 146–620 vs 93 here: radiated-only denominator ×7.60, per-user estimand ×0.98, lr; bridge 693.87 | IN FORCE | yes (EM-, sibling section) |
-| `catfish-surface/` | Where catfish can attach in the MODQN trainer (bounded code, ~430–620 lines for DQfD); scripted-arm panels; anchor ablation | IN FORCE; its "no better-than-learner source on the trained objective" verdict scoped to myopic additive rules (erratum 27) | yes (CS-, fork B) |
+| `catfish-surface/` | Where catfish can attach in the MODQN trainer (bounded code, ~470–640 lines for DQfD); scripted-arm panels; pooled-EE and anchor-ablation rounds | PARTLY SUPERSEDED: "no better-than-learner source on the trained objective" scoped to myopic additive rules (erratum 27); ACRM "net negative" paragraph withdrawn (erratum 26); its five-arm pooled-EE table ran on one shared env — only RANDOM at positions 0–23, so its "no age-stream caveat" is wrong (B0 R.5); all numbers on the unpinned archive `e07f3e1e…`; its paired +0.0091 statistic is invalid as paired (CFSCREEN) | yes (CS-) |
 | `zclose/` | MODQNZ had no report; G-3 indicators cannot decide collapse; z lowers pooled EE −3.511 % (n=1) | IN FORCE (= erratum 24) | yes (ZC-, fork B) |
 | `zscore-transfer/` | Why the sibling's z-score win (146.6 → 357.1) does not transfer | IN FORCE (sibling reference-only) | yes (ZT-, sibling section) |
 | `concept-harvest/` | Old-project concepts worth retrying; owner's penalty recollection = capacity penalty | IN FORCE (sibling reference-only numbers) | yes (CH-) |
-| `catfish-screens/` | CFSCREEN: representability (BC probe), action/state distinctness, margin scale of the three sources | IN FLIGHT (no report yet; intermediate numbers only) | yes, as SMOKE-ONLY (SC-) |
+| `catfish-screens/` | CFSCREEN: representability (BC probe), action/state distinctness, margin scale of the three sources; only-episode-0-paired harness fact | IN FORCE — report `CATFISH-SCREENS-2026-09-11.md` written after the rows were extracted; recorded by `V025-CONTROLLER-RECORD-CATFISH-SCREENS-2026-09-11.md` | yes (SC-; diagnostic) |
 | `cf3-pilot/` | CF3PILOT: the three-catfish pilot | IN FLIGHT (step 0; no numbers) | no |
 | `acrm-provenance/` | ACRM lineage; SASR citation resolves; implementation faithful | IN FORCE (= erratum 26) | yes (AP-) |
 | `dqfd-grounding/` | DQfD-family grounding of the five catfish mechanisms | PARTLY SUPERSEDED (ACRM bullets by erratum 26) | yes (DQ-) |
@@ -199,6 +202,54 @@ pilot; the last column says what survives if the V0.25 line is reopened.
 | `thesis-deltas/` | Ch4/Ch5 thesis deltas | DELTA-CH5 marked DO NOT USE (erratum 19); DELTA-CH4 V0.25 stage-C (superseded by K, inferred) | yes (TD-) |
 | `design-state/` | Design state given to the owner 2026-09-10 | SUPERSEDED (S0 claim withdrawn by erratum 17; stage-C closed by K) | yes (DS-) |
 | `conversation-watch/` | watcher state, no findings | n.a. | no |
+
+### 3a′. V0.25 server reports cited by the 09-10 / 09-11 controller documents (on `sat`, read-only)
+
+Not in `.scratch/`, but their numbers carry most of the V0.25 rows (SV-) in the registry.
+
+| report (sat path) | what it answered | status | rows |
+|---|---|---|---|
+| beamcount-ws/BEAM-COUNT-CAP-2026-09-10.md | active-beam cap sweep, floor 8, EE monotone in cap to 62.502712 | IN FORCE (search-winner labelling per E23; Part 3 not run) | SV-BC-* |
+| specprofile-ws/SPECIALIST-QOS-PROFILE-2026-09-11.md | non-EE profile of the search winner; fails handover guards; 17.257910 under budget; interruption not expressible | IN FORCE | SV-SP-* |
+| c1vsgain-ws/C1-VS-GAIN-HEURISTIC-2026-09-11.md | exact C1 loses to RSS_MAX/S0 on 93 anchors; C3 oracle marginal ~0 | IN FORCE; basis of kill-all | SV-C1G-* |
+| rank-ws/STATIC-BASELINE-FAMILY-2026-09-10.md | six static arms (published) | SUPERSEDED for the two search arms (E19); direct-rule rows stand | SV-ST-05,06,09 |
+| rank2-ws/STATIC-BASELINE-FAMILY-CLEANPATH-2026-09-10.md | clean six-arm family | IN FORCE | SV-ST-* |
+| surface-ws/SELECTION-SURFACE-2026-09-10.md | stopped at parity gate; exposed contamination | IN FORCE (as the contamination finding) | via SV-ST-07/08 |
+| crowd-ws/CROWDING-COST-2026-09-10.md | concentration family; slope; max-vs-TDM; overheads | PARTLY SUPERSEDED (concentration claim E22; slope V0.25-only E28); physics facts stand | SV-CC-* |
+| ceiling2-ws/CEILING-CLEAN-AND-LEVERS-2026-09-10.md | clean ceilings; support lever; 2.40 deg | IN FORCE | SV-CE-* |
+| ceiling30-ws/TRAINING-PANEL-CEILINGS-2026-09-10.md | contaminated ceilings | SUPERSEDED (E19, CEILING2) | SV-PC-01 |
+| beam-ws/BEAM-WIDTH-CEILING-SWEEP / FINAL-BEAMWIDTH-CURVE | beam-width ceilings (contaminated / demand-capped) | SUPERSEDED (CEILING2; RETRACTION-2 numerator) | SV-BW-01, SV-FB-01 |
+| coord-ws/COORDINATION-VALUE-2026-09-10.md | k=1 from good points; F rejects +7.85 Mbit/J | IN FORCE | SV-CV-* |
+| basin-ws/BASIN-BARRIER-2026-09-10.md | no multi-user barrier; F-descent to 31.81 | IN FORCE | SV-BS-* |
+| etafix-ws/ETA-EXCHANGE-RATE-2026-09-10.md | eta_ref value; no eta orders arms | IN FORCE | SV-ET-* |
+| c2target-ws/C2-TARGET-VALUE-2026-09-10.md | oracle C2 ~0; C2 horizon unmeasurable | IN FORCE (C2 continuation later abandoned) | SV-C2T-* |
+| zscoring-ws/Z-VIEW-SCORING-2026-09-10.md | route marginals, three runs | PARTLY SUPERSEDED: in-sample (E21); "surrogate labels" §8 wrong (E21) | SV-ZV-* |
+| convscore-ws/CONVERGED-EXACT-SCORING-2026-09-11.md | leakage gate; exact-label identity | IN FORCE (scoring never ran — trainings killed) | SV-CS-* |
+| exact93-ws/EXACT93-TRAINING-2026-09-10.md | 93-anchor corpus; label audit; seed-1 stopping | IN FORCE as corpus/audit; training killed | SV-E93-* |
+| exacttrain-ws/EXACT-CORPUS-TRAINING-2026-09-10.md | 22-anchor corpus; label audit | IN FORCE as audit | SV-E22-01 |
+| probe-ws/BASE-COLLAPSE-DIAGNOSIS-2026-09-10.md | a0 concentration (beam counts) | IN FORCE (source of the 41.28 beam count) | SV-BCD-* |
+| design-ws/ZSCORE-VIEW-AND-TRAINING-2026-09-10.md | z view build + a0 EE on 12-anchor panel | PARTLY SUPERSEDED (contaminated references); a0 EE figures not addressed by any erratum — conflicts with E23 | SV-ZS-* |
+| qcollinear-ws/Q-ROW-COLLINEARITY-2026-09-10.md; rawdup-ws/RAW-DUP-CONTROL-2026-09-10.md | Q-row pathology absent; z gain = normalisation | IN FORCE (in-sample, V0.25 learner only) | SV-QC-*, SV-RD-01 |
+| q1v4-ws/Q1-SCHEMA-V4-2026-09-10.md | Q1 v4 corpus built | IN FORCE as build; never trained (kill-all) | SV-Q4-* |
+| mqcollapse-ws/MODQN-COLLAPSE-2026-09-10.md | MODQN not physically collapsed (sat, TLE 427e6a91) | IN FORCE | SV-MC-* |
+| mqz-ws (no report; artifacts only) | z lowers MODQN pooled EE 3.511 %, n=1 | NO REPORT EXISTS (E24); numbers read from `result.json` | SV-MZ-* |
+| modqn-ws/BASELINE-MODQN-REFERENCE-2026-09-10.md; bridge-ws/MODQN-BRIDGE-2026-09-10.md | no V0.25 path for the frozen MODQN baseline | IN FORCE (moot after pivot to MODQN harness) | SV-BM-01, SV-BR-01 |
+| beamcap-ws/BEAM-CAPACITY-REALISM-2026-09-10.md | no per-beam user cap in V0.25; occupancy-12 RF cap | IN FORCE | SV-BCAP-* |
+| probe-ws/EVALPATH-2026-09-10.md | scalar vs dense path; authority UNDETERMINED | IN FORCE (root cause of E19) | SV-EP-01 |
+| triage-ws/KILL-TRIAGE-2026-09-10.md | 38 negative rulings triaged | IN FORCE | SV-KT-* |
+| selector-ws/SET-LEVEL-DECODER-REVIVAL-2026-09-10.md | S0 not deployable; C3-S v1 is (V0.23) | IN FORCE (basis of E17) | SV-SL-* |
+| harness-ws/SELECTOR-LATENCY; dates-ws/DATE-ALLOCATION-DECISION; approach-ws/APPROACHING-THE-INSTRUMENTS | latency; date allocation; a0 lacks gain feature | IN FORCE (stage-C route now dead) | SV-SLAT-01, SV-DA-01, SV-AP-01 |
+| c1c2-ws/LR-CONVERGENCE-SWEEP; decay-ws/DECAY-SCHEDULE; horizon-ws/HORIZON-LEVER | convergence of stage-C heads | IN FORCE as diagnostics; moot after kill-all | SV-LR-01, SV-DC-01, SV-HZ-01 |
+| coalgen-ws/C3-ARGMAX-REACHABILITY; scale-ws/INTERACTION-SCALE; mutants-ws/NEUTRAL-VS-KNOCKOUT | C3 reach / scale / neutral control | IN FORCE as diagnostics; moot | SV-CAR-01, SV-IS-01, SV-NK-01 |
+| arch-ws/ORACLE-FACTORIAL, ORACLE-FULL-SPAN, ORACLE-RESIDUAL-TOGGLE, CONTROL-LAW-CEILING; ladder-ws/MULTISTART-CEILING; rank-ws/MULTISTART-DEMAND-CAPPED | morning oracle spans and headroom | SUPERSEDED / RETRACTED (RETRACTION + RETRACTION-2 + CONSOLIDATED) | SV-OF-01..05 |
+| ladder-ws/LOAD-REGIME-SWEEP-2026-09-10.md | gap does not grow with load | IN FORCE (dev) | SV-OF-06 |
+| arch-ws/PROVISIONING-DECISION-2026-09-10.md | sealed provisioning rule stands (outcome B) | IN FORCE (decision) | not in rows (no number) |
+| penalty-ws/INTENT-TAIL-PENALTY-2026-09-10.md | sibling capacity_penalty cannot fire on V0.25 interface | PARTLY SUPERSEDED (E20: wrong module assessed; verdict stands narrowly) | not in rows (no EE number) |
+| concepts-ws/SIBLING-CONCEPT-TRANSFER-2026-09-10.md | 4 of 44 sibling concepts survive | IN FORCE as audit (sibling numbers are REFERENCE-ONLY) | not in rows |
+| endpoint-review-ws/ENDPOINT-REVIEW-ASTRA.md; strategic-astra/fable-ws/*; xadv/xblind-astra-ws/* | cross-model reviews | reviews, no project numbers | not in rows |
+| witness-ws/SCORING-PANEL, CONTROL-CEILING-FRAMING; retrain-ws/C3-PANEL-HARNESS, TRAINING-RUNNER; panelfix/panelz/panelv3-ws; c1c2suff-ws/*; coalgen-ws/C3-COALITION-BUILD, C3-DECLARED-TARGET-LEARNABILITY; design-ws/Q1-SCHEMA-V2, CORPUS-V2-WIRING; q1v3-ws/Q1-SCHEMA-V3; datepool-ws/*; certprofile-ws; prevalence-ws; floor-ws; coverage-ws; oracle-ws; coalext-ws | stage-C build/panel/label infrastructure (09-10) | stage-C route closed by R-C1VSGAIN; not read in full | not in rows (breadth cut) |
+
+Out of slice, noted: the MODQN demonstrator-probe / pooled-EE / anchor-ablation numbers behind the 09-11 MODQN rulings live locally in `.scratch/catfish-surface/` (not on sat); `.scratch/cap-penalty` results were produced on sat (`/home/sat/mcrl-v025-cap-penalty-ws`), which matters for comparison #4.
 
 ### 3b. 2026-09-08 / 09-09 V0.23–V0.25 successor work (historical; numbers not in registry unless a current document cites them)
 

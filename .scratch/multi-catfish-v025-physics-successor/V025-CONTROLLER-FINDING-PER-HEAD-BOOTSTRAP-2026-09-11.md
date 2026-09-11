@@ -1,5 +1,7 @@
 # Finding — each head bootstraps with its own argmax, so the scalarised sum is not a Q-function
 
+> **PROVENANCE WARNING (added 2026-09-11 by the controller after CURATE):** this document contains at least one comparison between numbers produced under different conditions (physics/harness, estimand, host + TLE archive, or paired vs unpaired). Before citing any number from it, look it up in `.scratch/RESULTS-REGISTRY.md` (conditions per row, §2 lists the cross-condition comparisons) and check this document's status in `.scratch/DOCUMENT-STATUS.md`. Text below is unchanged.
+
 > **Correction, same day (`V025-CONTROLLER-RULING-B0-THREE-QUESTIONS-2026-09-11.md`).** This is **not
 > a reproduction defect**. It is published MODQN eq. (16), reproduced faithfully and frozen as
 > contract **B1** (`docs/PREREG-DRAFT.md:324`) so the baseline is unambiguously the paper's

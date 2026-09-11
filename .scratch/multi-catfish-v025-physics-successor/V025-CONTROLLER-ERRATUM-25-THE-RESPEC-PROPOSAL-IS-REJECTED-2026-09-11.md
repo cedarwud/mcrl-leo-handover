@@ -1,5 +1,7 @@
 # Erratum 25 — the objective re-specification proposal is rejected; my r3 argument contains an algebra error
 
+> **PROVENANCE WARNING (added 2026-09-11 by the controller after CURATE):** this document contains at least one comparison between numbers produced under different conditions (physics/harness, estimand, host + TLE archive, or paired vs unpaired). Before citing any number from it, look it up in `.scratch/RESULTS-REGISTRY.md` (conditions per row, §2 lists the cross-condition comparisons) and check this document's status in `.scratch/DOCUMENT-STATUS.md`. Text below is unchanged.
+
 Date: 2026-09-11. Adversarial review: `.scratch/reviews/objrespec/ADVERSARY-OBJECTIVE-RESPEC-2026-09-11.md`.
 **Verdict: REJECT.** I accept it in full.
 

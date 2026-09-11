@@ -1,5 +1,7 @@
 # Erratum 26 — ACRM has a published lineage, its citation resolves, and its implementation is faithful
 
+> **PROVENANCE WARNING (added 2026-09-11 by the controller after CURATE):** this document contains at least one comparison between numbers produced under different conditions (physics/harness, estimand, host + TLE archive, or paired vs unpaired). Before citing any number from it, look it up in `.scratch/RESULTS-REGISTRY.md` (conditions per row, §2 lists the cross-condition comparisons) and check this document's status in `.scratch/DOCUMENT-STATUS.md`. Text below is unchanged.
+
 Date: 2026-09-11. Owner challenged three conclusions I had reported. **All three were wrong.**
 Source: `.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`.
 
