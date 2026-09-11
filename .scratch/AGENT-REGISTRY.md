@@ -9,6 +9,27 @@ the agents, never the detached `sat` jobs. Resume = `SendMessage(to=<agentId>, m
 (`ssh sat 'for p in $(pgrep -u sat python); do echo $p $(readlink /proc/$p/cwd) $(tr "\0" " " </proc/$p/cmdline|cut -c1-120); done'`);
 never let an agent relaunch a live or finished item.
 
+### STATE 20:15 UTC 2026-09-11 (04:15 Taipei) — after the daily-cost interruption; owner direction `gpt8.md` = Amendment 7
+
+Second interruption ~19:15 UTC: the **daily cost limit (HTTP 402, $80/day)** killed LP-ORACLE, B1-CREDIT and DEVHARNESS
+(T0REPR had already finished). Quota back at ~20:10; **all three resumed by `SendMessage`** with verified deltas, and a fourth
+lane was dispatched. Verified by the controller at 20:07 UTC against the filesystem and processes, not the progress files:
+- **DEVHARNESS** `a2741063f273e5f85` — dev worktree at `63b02dc0`, minimum E0 surface written but **uncommitted**;
+  `tests/test_cf_dev.py` **14 passed / 5 failed**, single root cause (the DEV-NULL composite key `(9_231_000, k)` rejected by
+  `assert_dev_seed` recursion, `cf_dev.py:144 → :92 → :102`). Its instruction: minimal validator fix → commit → fixed-prompt agy
+  review → launcher smoke and stop/resume test → **launch E0a** (D0, D2-T0, D2-null at equal_share, DEV seed k = 0, 100 episodes,
+  DEVVAL at 100). Runs are versioned as **MCRL-Dev-v0.1**; no hot-patching of a live trajectory.
+- **LP-ORACLE** `a931738d2046dbe76` — A-floor eval, B-floor eval and B-floor calibration all **24/24**, no process alive; it
+  re-derives the floored evaluation numbers against `.scratch/h4-probe/BRANCH-NUMBERS-FLOOR-R1-EVAL.md`, writes a minimal branch
+  adjudication artefact, and holds A-floor calibration, R2, reverse order and the unfloored tie-ins.
+- **B1-CREDIT** `ae9d69e8a6fa8791b` — local lanes finished, cells and `LP-CREDIT-AGGREGATE.json` present; it fills the PASS/FAIL
+  first line, re-runs the 13 mutants against `63b02dc0`, and commits under `docs/b1-credit/`. It does not block E0a.
+- **B2REPR** `a0060f830cdeb2bdb` (opus, NEW) — the T_SEQ representability screen for Amendment 4 §2 condition 3, brief
+  `.scratch/b2-representability/BRIEF-DRAFT.md`, sat ws `/home/sat/mcrl-v025-b2-repr-ws/`, ≤ 3 processes; runs **in parallel**
+  with E0a and blocks nothing. Resume: *"Resume the B2 representability lane: read `.scratch/b2-representability/PROGRESS.md`
+  and the brief; check your sat processes by cwd + cmdline; continue from the first incomplete step; measurement only."*
+- **Closed**: T0REPR (commit `a4c8ce12`), CEILING2 (report written). Do not restart their compute.
+
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 
 The failure notifications said the limit resets **05:10 Asia/Taipei**, but **all four agents were resumed successfully at
