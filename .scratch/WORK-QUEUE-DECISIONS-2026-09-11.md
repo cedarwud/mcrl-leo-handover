@@ -159,6 +159,14 @@ lighting_price diagnostics; DEV triple k=0; 300 episodes; η fixed at η_0). Re-
 B1 engineering-core commit now, CEILING2 stopped (complete), DEVHARNESS dispatched. Exact-DR learner arms still wait for Amendment 1
 rule 1 on the rate-floored A-real.
 
+## T0 representability — ADMITTED (18:10 UTC; `.scratch/t0-repr/T0-REPRESENTABILITY-2026-09-12.md` line 1)
+
+Closed-loop `R_repr` of the declared 100-epoch clones (learner architecture, learner observation, 180 training-like episodes, held out
+by episode; placebo bit-for-bit on both sets): **evaluation 0.930 (one-hot BC) / 0.976 (soft, τ = 3 chosen on VAL); calibration 0.952 /
+1.052** — both clones pass on both sets (Amendment 3 §3). T0's action is a deterministic function of the learner's observation
+(300,000 / 300,000 decisions), so its conditional entropy is 0. The 400-epoch sensitivity is being finished. Consequence: condition (a)'s
+T0 part of Amendment 5 Part II is met; T0 is an admissible anchor teacher for E0 / S1.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
