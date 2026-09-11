@@ -32,6 +32,12 @@ s_E / s_B`` is ``eta`` (bit/J) expressed in the heads' units; ``lambda``
 multiplies ``Q_H`` in the same normalised score (one unit = ``s_B`` bits per
 inter-satellite handover).
 
+Credit (B1-CREDIT, ``.scratch/b1-credit/``): ``CFRatioSettings.credit_mode``
+selects the ``(B, E)`` credit -- ``equal_share`` (the default, CF3 exactly as
+above, bit-identical), ``difference`` (difference reward from the
+environment's counterfactual evaluator) or ``lighting_price`` (analytic
+marginal joules); see :mod:`mcrl.algorithms.cf_credit`.  ``H`` is unchanged.
+
 Sources (Amendments 1 and 3): each fixed source policy's transitions are
 PRE-GENERATED before training (``generate_pool``; unshaped raw ``(B, E, H)``)
 and loaded once into an immutable ``PoolBuffer``.  One common minibatch
@@ -63,6 +69,13 @@ from ..runtime.finiteness import (
 from ..runtime.replay_buffer import ReplayBuffer
 from ..runtime.trainer_config_validation import TD_BOOTSTRAP_SHARED
 from ..runtime.trainer_spec import TrainerConfig
+from .cf_credit import (
+    CREDIT_MODES,
+    DEFAULT_CREDIT_MODE,
+    PowerModel,
+    credit_matrix,
+    difference_context,
+)
 from .cf_sources import (
     CF3_SPECS,
     HEAD_B,
@@ -153,8 +166,12 @@ class CFRatioSettings:
     calibration_env_seed_base: int = 9_121_000
     calibration_mobility_seed_base: int = 9_122_000
     calibration_episodes: int = 24
+    credit_mode: str = DEFAULT_CREDIT_MODE
+    """B1-CREDIT: ``equal_share`` (CF3, default) | ``difference`` | ``lighting_price``."""
 
     def __post_init__(self) -> None:
+        if self.credit_mode not in CREDIT_MODES:
+            raise MCRLContractError(f"credit_mode must be one of {CREDIT_MODES}")
         if self.source_kind not in SOURCE_KINDS:
             raise MCRLContractError(f"source_kind must be one of {SOURCE_KINDS}")
         if not 0.0 <= self.rho < 1.0:
@@ -199,10 +216,16 @@ def generate_pool(
     env_factory: Callable[[], Any],
     seeds: Sequence[tuple[int, int]],
     config: TrainerConfig,
+    credit_mode: str = DEFAULT_CREDIT_MODE,
 ) -> dict[str, np.ndarray]:
     """Roll a fixed source for ``len(seeds)`` episodes (fresh env, per-episode
     reseeded) and return its transitions with RAW ``(B, E, H)``, filtered
-    exactly as the main replay (P-03)."""
+    exactly as the main replay (P-03).  ``credit_mode`` other than the default
+    is recorded in the output (``"credit_mode"``) so a trainer can refuse a
+    pool credited differently from its own replay."""
+    if credit_mode not in CREDIT_MODES:
+        raise MCRLContractError(f"credit_mode must be one of {CREDIT_MODES}")
+    model = None
     cols: dict[str, list] = {f: [] for f in POOL_FIELDS}
     t0_hashes = []
     import hashlib
@@ -215,10 +238,17 @@ def generate_pool(
         states, masks, _ = env.reset(env_rng, mob_rng)
         enc = encode_with_time(states, 0, users, config, steps)
         t0_hashes.append(hashlib.sha256(np.ascontiguousarray(enc).tobytes()).hexdigest())
+        if credit_mode != DEFAULT_CREDIT_MODE and model is None:
+            model = PowerModel.of(env)
         for t in range(steps):
             actions = policy(states, masks)
+            ctx = (difference_context(env, actions, masks, env_rng, model=model)
+                   if credit_mode == "difference" else None)
             res = env.step(actions, env_rng)
-            raw = cf_reward_matrix(res, env.last_outcome)
+            if credit_mode == DEFAULT_CREDIT_MODE:
+                raw = cf_reward_matrix(res, env.last_outcome)
+            else:
+                raw = credit_matrix(credit_mode, res, env.last_outcome, model=model, ctx=ctx)
             nxt = encode_with_time(res.user_states, t + 1, users, config, steps)
             for u in range(users):
                 if is_no_op(int(actions[u])):
@@ -246,6 +276,8 @@ def generate_pool(
         "dones": np.asarray(cols["dones"], dtype=bool),
         "t0_obs_sha256": np.asarray(t0_hashes),
     }
+    if credit_mode != DEFAULT_CREDIT_MODE:
+        out["credit_mode"] = np.asarray(credit_mode)
     return out
 
 
@@ -262,6 +294,8 @@ class PoolBuffer:
         for arr in self._a.values():
             arr.setflags(write=False)
         self.sha256 = sha256
+        self.credit_mode = (str(np.asarray(arrays["credit_mode"])) if "credit_mode" in arrays
+                            else DEFAULT_CREDIT_MODE)
 
     @classmethod
     def load(cls, path: str | Path) -> "PoolBuffer":
@@ -270,6 +304,8 @@ class PoolBuffer:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
         with np.load(path, allow_pickle=False) as z:
             arrays = {f: z[f] for f in POOL_FIELDS}
+            if "credit_mode" in z.files:
+                arrays["credit_mode"] = z["credit_mode"]
         return cls(arrays, sha256=digest)
 
     def __len__(self) -> int:
@@ -304,6 +340,15 @@ class PoolSource:
         if (state["name"], int(state["head"]), state.get("pool_sha256"),
                 state.get("pool_len")) != (self.name, self.head, self.buffer.sha256, len(self.buffer)):
             raise MCRLContractError("resume state's source pool is not this pool")
+
+
+def _check_pool_credit(pools, credit_mode: str) -> None:
+    """Every source pool must carry the learner's own credit (B1-CREDIT)."""
+    for name, _head, buf in pools:
+        got = getattr(buf, "credit_mode", DEFAULT_CREDIT_MODE)
+        if got != credit_mode:
+            raise MCRLContractError(
+                f"pool {name!r} was credited {got!r}, the learner uses {credit_mode!r}")
 
 
 # ------------------------------------------------------------------ rollouts
@@ -501,7 +546,10 @@ class CFRatioTrainer(MODQNTrainer):
                 f"source_kind {settings.source_kind!r} needs pools {expected}, got "
                 f"{[(n, h) for n, h, _b in pools]}"
             )
+        _check_pool_credit(pools, settings.credit_mode)
         self.sources = [PoolSource(n, h, b) for n, h, b in pools]
+        self._power_model = (None if settings.credit_mode == DEFAULT_CREDIT_MODE
+                             else PowerModel.of(env))
         # Amendment 1 item 2: 1/27 of the batch from EACH source, rounded to
         # nearest (128/27 = 4.74 -> 5), the main replay takes the rest (113).
         self.n_per_source = (
@@ -727,11 +775,23 @@ class CFRatioTrainer(MODQNTrainer):
             n_upd = 0
             n_steps = 0
             src_rows = np.zeros(len(self.sources) + 1, dtype=np.int64)
+            sys_bits = sys_joules = 0.0
             for _t in range(self.env.config.steps_per_episode):
                 actions = self.select_actions(encoded, masks, eps)
+                # B1-CREDIT: the difference credit's counterfactuals are taken on
+                # the PRE-step state; they neither commit state nor advance any RNG.
+                ctx = (difference_context(self.env, actions, masks, self._env_rng,
+                                          model=self._power_model)
+                       if s.credit_mode == "difference" else None)
                 result = self.env.step(actions, self._env_rng)
                 outcome = self.env.last_outcome
-                raw = cf_reward_matrix(result, outcome)
+                if s.credit_mode == DEFAULT_CREDIT_MODE:
+                    raw = cf_reward_matrix(result, outcome)
+                else:
+                    raw = credit_matrix(s.credit_mode, result, outcome,
+                                        model=self._power_model, ctx=ctx)
+                    sys_bits += float(outcome.energy.system_throughput_bps) * DT_S
+                    sys_joules += float(outcome.energy.system_consumed_power_w) * DT_S
                 tot += raw.sum(axis=0)
                 served += int(outcome.energy.served)
                 beams += float(outcome.energy.eff_beams)
@@ -798,6 +858,11 @@ class CFRatioTrainer(MODQNTrainer):
                 "catfish_buffer_sizes": [len(x.buffer) for x in self.sources],
                 "quarter": None,
             }
+            if s.credit_mode != DEFAULT_CREDIT_MODE:
+                # bits / joules / EE stay SYSTEM quantities; the credit sums differ.
+                log.update(bits=sys_bits, joules=sys_joules, ee_behaviour=sys_bits / sys_joules,
+                           credit_mode=s.credit_mode,
+                           credit_sums=[float(x) for x in tot])
             episode_done = ep + 1
             gate_stop = None
             if episode_done % s.quarter_episodes == 0:
@@ -844,7 +909,9 @@ class CFRatioTrainer(MODQNTrainer):
 
     def load_training_state_dict(self, state) -> None:
         cf = state["cf"]
-        if cf["settings"] != dataclasses.asdict(self.settings):
+        stored = dict(cf["settings"])
+        stored.setdefault("credit_mode", DEFAULT_CREDIT_MODE)   # pre-B1 states are equal_share
+        if stored != dataclasses.asdict(self.settings):
             raise MCRLContractError("resume state CF settings do not match")
         super().load_training_state_dict(state)
         self.eta = float(cf["eta"])
