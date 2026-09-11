@@ -1,5 +1,55 @@
 # Agent registry — resume after any interruption
 
+## RESUME-NOW — 2026-09-11 afternoon session (controller = Fable 5.1). Read this block first after any limit / crash.
+
+Three Claude agents are live, all resumable with `SendMessage(to=<agentId>, message=<block below>)`. **Before sending**: read that
+agent's `PROGRESS.md`, put the delta into the message (what is already done, what is live on `sat` by cwd + cmdline), and never
+relaunch a running or finished computation. The daily cost limit (HTTP 402, $80/day) kills all agents at once; detached `sat`
+jobs keep running.
+
+| name | agentId | model | workspace / PROGRESS | deliverable | dispatched → resumed |
+|---|---|---|---|---|---|
+| **VALIDITY-FABLE** | `ab15c86158b2b327e` | fable | `.scratch/validity-audit/PROGRESS.md` (brief `PROMPT-BLIND.md`) | `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md` | 12:20 → 12:36 UTC |
+| **CEILING2** | `aeff029c95c8d0633` | opus | `.scratch/ee-ceiling/PROGRESS.md` (brief `PROMPT.md`); sat ws `/home/sat/mcrl-v025-ceiling-ws/` | `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md` + `results/*.json` | 12:20 → 12:36 UTC |
+| **REPORTWRITER** | `af80cc36ea6c8b4ae` | sonnet | `.scratch/cf3-pilot/PROGRESS.md` (heading `REPORTWRITER`; brief `REPORT-WRITER-PROMPT.md`) | `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md` + commit of named paths | 12:27 → 12:36 UTC |
+| AGY-VALIDITY | — (agy, not resumable) | Gemini 3.8 Flash (High) | `.scratch/reviews/validity-agy/` | **DONE 12:33** (`VALIDITY-AUDIT-AGY-BLIND-…md`; see `CONTROLLER-CHECK-…md`) | — |
+
+**Resume messages (send verbatim, then append "It is now <time UTC>. Delta: <what PROGRESS.md shows as done; what is live on sat>."):**
+
+- VALIDITY-FABLE → *"Resume the blind validity audit: your run was interrupted by a daily API cost limit. Read your own
+  `.scratch/validity-audit/PROGRESS.md` first and continue from where it stops; every item ticked there is done — do not re-read
+  those artefacts. All rules in `.scratch/validity-audit/PROMPT-BLIND.md` are unchanged (blindness: no ssh, forbidden paths,
+  PROGRESS.md ≤ line 148, forecast ≤ line 57, no gpt4.md, nothing under `.scratch/ee-ceiling/` except PROMPT.md, nothing under
+  `.scratch/reviews/validity-agy/`; no files outside `.scratch/validity-audit/`; no edits; no training). Update PROGRESS.md after
+  each analysis section. Return only the report's first line and the Traditional Chinese executive summary."*
+- CEILING2 → *"Resume CEILING: your run was interrupted by a daily API cost limit. Read your own `.scratch/ee-ceiling/PROGRESS.md`
+  first; continue from the first incomplete step, idempotently (check each step's output before computing). Check by cwd +
+  cmdline whether any detached process of yours is still running under `/home/sat/mcrl-v025-ceiling-ws/` before launching
+  anything; never relaunch a live or finished job. All constraints in `.scratch/ee-ceiling/PROMPT.md` unchanged (blind to the
+  pilot outputs, ≤ 4 processes, `nice -n 16`, 1 BLAS thread, < 5 GB, `setsid nohup` for long runs, placebo bit-for-bit first,
+  benchmark and declare the budget in PROGRESS.md before the counted run, exact-PID kills only). Return the report's first line
+  and the wall time used."*
+- REPORTWRITER → *"Resume REPORTWRITER: your run was interrupted by a daily API cost limit. Read `.scratch/cf3-pilot/PROGRESS.md`
+  (your heading REPORTWRITER, if present) and `.scratch/cf3-pilot/REPORT-WRITER-PROMPT.md`; continue idempotently (sha256 check
+  against sat, re-copy only mismatches, write the report from the generated tables, commit only the named paths). Your final
+  message must contain no numbers, no arm ordering and no branch outcome."*
+
+**Controller state to restore with them:**
+- **Blind rule still in force**: do not open `.scratch/cf3-pilot/CF3-PILOT-2026-09-11.md`, `.scratch/cf3-pilot/report/`,
+  `sat:ws/report/`, `sat:ws/eval/`, any `readings.jsonl`, or `.scratch/cf3-pilot/PROGRESS.md` lines 149–182 until the Fable blind
+  report exists.
+- **On VALIDITY-FABLE completion**: read its report (the artefact, not the summary) → then read the pilot report (Q3b) →
+  `SendMessage` phase 2 to VALIDITY-FABLE with the pilot report path and, when available, `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md`,
+  asking whether the verdict changes → dispatch an agy adversarial check of the Fable report (new dir `.scratch/reviews/validity-agy-2/`,
+  same agy command form) → Q9 curation (sonnet) → update HANDOFF.
+- **On CEILING2 completion**: read its report; feed it to phase 2; registry rows in Q9.
+- **On REPORTWRITER completion**: its message carries no numbers; do not open the report until the Fable blind report exists.
+- No session monitors need re-arming (agents notify on completion; the `REPORT-DONE` and agy-exit monitors already fired).
+- Decisions and gating: `.scratch/WORK-QUEUE-DECISIONS-2026-09-11.md` (Q4–Q7 gated/deferred; Q8 awaits owner OK; Q9 after Q3b).
+- If agy must be re-run: `cd .scratch/reviews/validity-agy && agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 120m </dev/null > agy.log 2>&1` (detached with `setsid nohup`).
+
+---
+
 > **Session of 2026-09-11 ~12:20 UTC (controller = Fable 5.1). Live agents now — decisions in `.scratch/WORK-QUEUE-DECISIONS-2026-09-11.md`:**
 > - **VALIDITY-FABLE** `ab15c86158b2b327e` (model fable, fresh context) — blind validity audit per `.scratch/validity-audit/PROMPT-BLIND.md`; writes `.scratch/validity-audit/VALIDITY-AUDIT-BLIND-2026-09-11.md` + `PROGRESS.md`. **Phase 2 pending:** after the blind report exists, `SendMessage` it the pilot report path + the ceiling report path and ask whether the verdict changes. Resume: "Read your `.scratch/validity-audit/PROGRESS.md`, continue from the last completed section; blindness rules unchanged."
 > - **CEILING2** `aeff029c95c8d0633` (model opus) — EE ceiling measurement per `.scratch/ee-ceiling/PROMPT.md`; sat workspace `/home/sat/mcrl-v025-ceiling-ws/`; writes `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md` + `PROGRESS.md`. Resume: "Read your `PROGRESS.md`; check your detached sat processes by cwd+cmdline before relaunching; continue from the first incomplete step."
