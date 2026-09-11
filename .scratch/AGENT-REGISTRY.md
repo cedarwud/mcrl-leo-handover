@@ -11,10 +11,11 @@ never let an agent relaunch a live or finished item.
 
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 
-The failure notifications say the limit resets **05:10 Asia/Taipei**; the owner says the Claude sub-agent quota is back at
-**04:00 Asia/Taipei (20:00 UTC)**. A one-shot session cron is set for **04:07 Taipei** to resume all four in this order:
-LP-ORACLE → DEVHARNESS → B1-CREDIT → T0REPR (if this session is gone, resume by hand with the blocks below). The main session
-(`claude-opus-5[1m]`) is a different model id and still works, so controller-side work continues meanwhile.
+The failure notifications said the limit resets **05:10 Asia/Taipei**, but **all four agents were resumed successfully at
+18:31 UTC (02:31 Taipei)** by `SendMessage` with per-lane deltas — the window had already reopened, so do not assume a stated
+reset time is binding: **try the resume first.** The main session (`claude-opus-5[1m]`) is a different model id and keeps
+working through a sub-agent limit, so controller-side work continues meanwhile. A session cron at 04:07 Taipei now only
+**checks** and resumes whichever lane is not running.
 
 **Verified state at 18:18–18:22 UTC (read-only):**
 - `sat` detached jobs survived: four v6 `oracle_cells.py` shards (PIDs 3552072, 3554551, 3554776, 3555066) running the
