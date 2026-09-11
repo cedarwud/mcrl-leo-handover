@@ -78,8 +78,7 @@ is not comparable to pinned-archive numbers.
 
 | name | agentId | workspace | report (first line = verdict) | current task |
 |---|---|---|---|---|
-| **CF3REVIEW** | `af8d412c9162118a5` | local `.scratch/cf3-review` | `CF3-CODE-REVIEW-2026-09-11.md` | read-only code review of worktree `cf3/pilot-20260911` vs declaration + Amendments 1-2; resume: "Resume CF3REVIEW; read your PROGRESS.md; read-only; finish the report." |
-| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep; **+ seeds 3-4 for A1/A2/A3**) on pinned archive; Amendment 2 (lambda=0); **HOLD full launch until launch-hardening list done** (gate off-by-one, DECISION.json race, code fingerprint + RUN-MANIFEST, process-level resume test, 5 GB cap at full buffers, launch.sh hardening; rerun s0 diagnostics under final commit → 18 fresh runs) |
+| **CF3PILOT** | `a6a39605fae28be63` | local `.scratch/cf3-pilot` + `/home/sat/mcrl-v025-cf3-pilot-ws` | `CF3-PILOT-2026-09-11.md` | implement + launch the declared 3-catfish pilot (A0 BASELINE / A1 OFF / A2 CF3 / A3 NULL3, 3 seeds × 1000 ep; **+ seeds 3-4 for A1/A2/A3**) on pinned archive; Amendment 2 (lambda=0); **HOLD full launch until launch-hardening list done** (gate off-by-one, DECISION.json race, code fingerprint + RUN-MANIFEST, process-level resume test, 5 GB cap at full buffers, launch.sh hardening; then launch **12** fresh runs (seeds 0-2; seeds 3-4 deferred: 18-way contention = ~3x slowdown) and deploy HEAD `cf3_report.py`) |
 
 **Second usage-limit interruption 2026-09-11 ~09:30Z.** POWERACCT and PENALTYARM were
 terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
@@ -88,7 +87,7 @@ terminated; FEASFRONT and B0CORRECT survived. Both terminated agents resumed by
 
 Completed today and not to be resumed: LFDSCREEN, ENDPOINTREV-astra, C1VSGAIN,
 SPECPROFILE, CATFISHSURFACE, ZCLOSE, ZWHY, R23HISTORY, DQFDGROUND, CATFISHFACT,
-**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`), **EEGAP** `a774b381a016fc9c4` (`.scratch/ee-magnitude/EE-MAGNITUDE-RECONCILIATION-2026-09-11.md`), **HARVEST** `ad98bdcb7c81b29a0` (`.scratch/concept-harvest/CONCEPT-HARVEST-2026-09-11.md`), **CAPPENALTY** `aec999753c170e5f3` (`.scratch/cap-penalty/CAP-PENALTY-2026-09-11.md`), **CFSCREEN** `af73f19801f7967c8` (`.scratch/catfish-screens/CATFISH-SCREENS-2026-09-11.md`), **B0CORRECT** `a1f2ae507b9ec7674` (`.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md`, commit `db30b334`; READY `363845e8`; TLE pinned `427e6a91…`), **CURATE** `a989dbbca3b5748b8` (`.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md`).
+**ACRMSOURCE** `ae8b8402e12022648` (`.scratch/acrm-provenance/ACRM-PROVENANCE-2026-09-11.md`), **POWERACCT** `ab622bcc795b950d8` (`.scratch/beam-power-accounting/BEAM-POWER-ACCOUNTING-2026-09-11.md`), **PENALTYARM** `a846df68eb09cb7ab` (`.scratch/penalty-arm/PENALTY-ARM-2026-09-11.md`; server ws is `mcrl-v025-penalty-arm-ws`), **FEASFRONT** `a295ca3c20644fd7b` (`.scratch/feasible-frontier/FEASIBLE-FRONTIER-2026-09-11.md`), **EEGAP** `a774b381a016fc9c4` (`.scratch/ee-magnitude/EE-MAGNITUDE-RECONCILIATION-2026-09-11.md`), **HARVEST** `ad98bdcb7c81b29a0` (`.scratch/concept-harvest/CONCEPT-HARVEST-2026-09-11.md`), **CAPPENALTY** `aec999753c170e5f3` (`.scratch/cap-penalty/CAP-PENALTY-2026-09-11.md`), **CFSCREEN** `af73f19801f7967c8` (`.scratch/catfish-screens/CATFISH-SCREENS-2026-09-11.md`), **B0CORRECT** `a1f2ae507b9ec7674` (`.scratch/b0-corrected/B0-CORRECTED-BASELINE-2026-09-11.md`, commit `db30b334`; READY `363845e8`; TLE pinned `427e6a91…`), **CURATE** `a989dbbca3b5748b8` (`.scratch/RESULTS-REGISTRY.md`, `.scratch/DOCUMENT-STATUS.md`), **CF3REVIEW** `af8d412c9162118a5` (`.scratch/cf3-review/CF3-CODE-REVIEW-2026-09-11.md`: 0 INVALIDATES, 1 BIASES — stale report script on sat).
 
 **Usage-limit interruption 2026-09-11 ~04:20Z.** All five running agents were terminated
 mid-task by an HTTP 429 session limit; four were resumed by `SendMessage` after the reset
@@ -128,7 +127,7 @@ at C=50 is **52.042303**; and **41.28 is a mean active-beam count, not an EE**.
 
 | name | how it runs | resume |
 |---|---|---|
-| **CF3-AGY** | agy Gemini 3.8 Flash (High), local pid 403247, cwd `.scratch/reviews/cf3-agy` | **not resumable** — if `CF3-AGY-REVIEW.md` is absent, re-run `agy -p "$(cat PROMPT.md)" --dangerously-skip-permissions --model "Gemini 3.8 Flash (High)" --print-timeout 60m </dev/null` in that dir |
+| **CF3-AGY** | agy Gemini 3.8 Flash (High) | **COMPLETED** — `.scratch/reviews/cf3-agy/CF3-AGY-REVIEW.md`: 0 INVALIDATES, 0 BIASES |
 | XBLIND-ASTRA | codex `gpt-6-astra` ultra, server, `run_resumable2.sh`; ws `/home/sat/mcrl-v025-xblind-astra-ws` | **auto** — the runner resumes its codex session on failure; check `chain.log` |
 | XADV-ASTRA | same; ws `/home/sat/mcrl-v025-xadv-astra-ws` | auto |
 | agy blind | `agy -p ... --model "Gemini 3.8 Flash (High)" --print-timeout 60m`, local, cwd `.scratch/reviews/agy-blind` | **not resumable** — if `BLIND-REVIEW.md` is absent, re-run the same command |
