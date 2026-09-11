@@ -9,6 +9,13 @@ the agents, never the detached `sat` jobs. Resume = `SendMessage(to=<agentId>, m
 (`ssh sat 'for p in $(pgrep -u sat python); do echo $p $(readlink /proc/$p/cwd) $(tr "\0" " " </proc/$p/cmdline|cut -c1-120); done'`);
 never let an agent relaunch a live or finished item.
 
+### Amendment 6 re-triage (18:12 UTC) — supersedes the state column below where they differ
+- **LP-ORACLE** KEEP, shortened: finish B-floor R1 eval → write BRANCH NUMBERS (`.scratch/h4-probe/BRANCH-NUMBERS-FLOOR-R1-EVAL.md`) and end its turn → on resume: B-floor R1 calibration only; A-floor cal, R2, reverse, unfloored cal = HELD.
+- **T0REPR** KEEP: first `R_repr` verdict line, end turn; entropy / 400-epoch / polish after resume.
+- **B1-CREDIT** KEEP, de-serialised: engineering-core commit now → line `ENGINEERING-CORE COMMIT: …` atop its PROGRESS; then LP greedy screen + diagnostics + PASS/FAIL report; **no longer owns the harness**.
+- **CEILING2** STOPPED — complete (report `.scratch/ee-ceiling/EE-CEILING-2026-09-11.md`).
+- **DEVHARNESS** `a2741063f273e5f85` (opus) NEW: waits for the engineering-core line, worktree `/home/u24/papers/mcrl-leo-handover-dev` (branch `dev/e0-harness-20260912`), minimum E0 surface (D0, D2-T0, D2-null, D3-T0), preflight, agy review with the fixed prompt `.scratch/dev-training/AGY-E0-REVIEW-PROMPT.md`, launch E0 batch 1 on sat ws `/home/sat/mcrl-v025-dev-e0-ws/`; PROGRESS `.scratch/dev-training/PROGRESS.md`; ends its turn with "E0 LAUNCHED: …". Resume: *"Resume DEVHARNESS after an API limit: read `.scratch/dev-training/PROGRESS.md` and Amendment 6; check your sat processes in `/home/sat/mcrl-v025-dev-e0-ws/` by cwd + cmdline; never relaunch a live or finished run; continue from the first incomplete step."*
+
 ### Live Claude sub-agents (4, all opus)
 
 | name | agentId | workspace / PROGRESS | deliverable | state at 18:05 UTC | detached processes |

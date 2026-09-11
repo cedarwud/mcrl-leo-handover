@@ -150,6 +150,15 @@ the B1 agent without training; first stage = D0 + D1..D4 with T0 and a matched n
 required comparator, D4 gating test, D1 lineage baseline; downstream list fixed. Part II (early branch-invariant D0/T0 runs)
 **not adopted** — pros/cons and a conditional recommendation written for the owner.
 
+## Development-first (18:12 UTC; Amendment 6: `…-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md`)
+
+Owner direction (`gpt7.md`): E0 / E1 development runs alongside the unchanged formal S1 regime; development kernel frozen (ratio
+learner; T0 = LP-prev(1,0) anchor teacher; D0, D2-T0 primary, D2-null, D3-T0 comparator); DEV / DEVVAL / DEV-NULL / CONFIRM seeds
+declared and committed (`9a3aafa4`) before any development result; first E0 batch frozen (arms 1–4 equal_share, optional 5–6
+lighting_price diagnostics; DEV triple k=0; 300 episodes; η fixed at η_0). Re-triage: LP-ORACLE shortened, T0REPR verdict-first,
+B1 engineering-core commit now, CEILING2 stopped (complete), DEVHARNESS dispatched. Exact-DR learner arms still wait for Amendment 1
+rule 1 on the rate-floored A-real.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
