@@ -1497,12 +1497,23 @@ class MODQNTrainer:
 
             # Record metrics
             avg_reward = ep_reward / max(self.num_users, 1)
-            scalar = scalarize_objectives(avg_reward, cfg.objective_weights)
             avg_losses = ep_losses / max(update_count, 1)
             # Both scalings: the effective trade-off is omega_j / c_j, so a
             # log carrying only one of them cannot answer B17's second
             # question without recomputing from numbers it no longer has.
             calibrated = apply_reward_calibration(avg_reward, cfg)
+            # B0 D-3: the HEADLINE scalar is the calibrated one -- the
+            # objective training actually optimises.  The uncalibrated number
+            # this line used to produce is numerically 0.5*r1 (the omega_1 r_1
+            # term is ~4.1e5x omega_3 r_3 and ~7.6e6x omega_2 r_2), so the
+            # curve every judgement was read off showed one head of three.
+            # It is kept beside, under a name that says not to plot it.
+            scalar_calibrated = scalarize_objectives(
+                calibrated, cfg.objective_weights
+            )
+            scalar_uncalibrated = scalarize_objectives(
+                avg_reward, cfg.objective_weights
+            )
             if collapse_first is None or collapse_last is None:
                 raise MCRLContractError(
                     f"episode {ep} produced no collapse sample at "
@@ -1518,7 +1529,8 @@ class MODQNTrainer:
                 r1_mean=float(avg_reward[0]),
                 r2_mean=float(avg_reward[1]),
                 r3_mean=float(avg_reward[2]),
-                scalar_reward=float(scalar),
+                scalar_reward_calibrated=float(scalar_calibrated),
+                scalar_reward_uncalibrated_deprecated=float(scalar_uncalibrated),
                 total_handovers=ep_handovers,
                 replay_size=len(self.replay),
                 losses=(float(avg_losses[0]), float(avg_losses[1]), float(avg_losses[2])),

@@ -214,7 +214,31 @@ class EpisodeLog:
     r1_mean: float
     r2_mean: float
     r3_mean: float
-    scalar_reward: float
+
+    # -- B0 D-3 (2026-09-11): the headline scalar ------------------------
+    #
+    # ``scalar_reward`` used to sit here and hold ``Σ ωⱼ·rⱼ`` on the
+    # UNCALIBRATED means, while training pushed the CALIBRATED vector into
+    # replay.  With ``REWARD_SCALES = (2029238.43…, 1.0, 6.0)`` the ω₁r₁ term
+    # is ~4.1e5 times ω₃r₃ and ~7.6e6 times ω₂r₂, so that number was
+    # numerically ``0.5·r1`` and every judgement made from the curve saw one
+    # head of three.
+    #
+    # The field is RENAMED rather than repurposed: a reader of an old log and
+    # a reader of a new one must not get different quantities out of the same
+    # key.  ``scalar_reward`` survives as a read-only property returning the
+    # deprecated number, because ``training_pipeline`` already calls it
+    # ``last_scalar_reward_raw`` — which is exactly what it is.
+    scalar_reward_calibrated: float
+    """**The headline.**  ``Σ ωⱼ·rⱼ/cⱼ`` — the objective training optimises."""
+
+    scalar_reward_uncalibrated_deprecated: float
+    """``Σ ωⱼ·rⱼ`` on the raw means.  **Do not plot this as the curve.**
+
+    Kept so runs logged before 2026-09-11 stay comparable, and because B17's
+    second question needs both scalings present in one row to recover ωⱼ/cⱼ.
+    """
+
     total_handovers: int
     replay_size: int
     losses: tuple[float, float, float] = (0.0, 0.0, 0.0)
@@ -228,9 +252,23 @@ class EpisodeLog:
     # objectives looks like, and the effective trade-off is omega_j/c_j,
     # not omega_j.  Logging only one scaling means recomputing the other
     # afterwards from numbers the log no longer has.
+    #
+    # B0 D-3 also makes these three LOAD-BEARING rather than diagnostic: the
+    # headline scalar is their weighted sum, so a curve that moves without a
+    # visible head moving is now a contradiction in the same record.
     r1_mean_calibrated: float = 0.0
     r2_mean_calibrated: float = 0.0
     r3_mean_calibrated: float = 0.0
+
+    @property
+    def scalar_reward(self) -> float:
+        """Deprecated alias for the UNCALIBRATED scalar.
+
+        Read-only on purpose.  ``EpisodeLog(scalar_reward=…)`` no longer
+        constructs, so no caller can set the ambiguous name and believe it
+        has logged the headline.
+        """
+        return self.scalar_reward_uncalibrated_deprecated
 
     def collapse_report(self, point: str = "last") -> dict[str, float]:
         """The G-3 four at one end of the episode.

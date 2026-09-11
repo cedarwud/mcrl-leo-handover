@@ -484,6 +484,14 @@ def _all_finite_json(value: Any) -> bool:
     return False
 
 
+OBJECTIVE_WEIGHTS_FOR_LOG_RECONSTRUCTION = TrainerConfig().objective_weights
+"""B0 D-3: the weights used to rebuild a pre-D-3 row's calibrated scalar.
+
+Read off the config default rather than written out, so the reconstruction
+cannot drift from the deployed selector's weights.
+"""
+
+
 def _episode_log_from_dict(row: Mapping[str, Any]) -> EpisodeLog:
     def collapse(name: str) -> CollapseSample | None:
         value = row.get(name)
@@ -496,13 +504,40 @@ def _episode_log_from_dict(row: Mapping[str, Any]) -> EpisodeLog:
     losses = row.get("losses", ())
     if not isinstance(losses, (list, tuple)) or len(losses) != 3:
         raise ValueError("resume episode log losses must contain three values")
+    # B0 D-3: a row logged before 2026-09-11 carries the ambiguous
+    # ``scalar_reward`` key, and what it holds is the UNCALIBRATED number.  It
+    # is read into the deprecated field, never into the headline one, so
+    # resuming an old run cannot smuggle 0.5*r1 in as the objective.
+    if "scalar_reward_uncalibrated_deprecated" in row:
+        uncalibrated = float(row["scalar_reward_uncalibrated_deprecated"])
+    else:
+        uncalibrated = float(row["scalar_reward"])
+    if "scalar_reward_calibrated" in row:
+        calibrated_scalar = float(row["scalar_reward_calibrated"])
+    else:
+        # A pre-D-3 row never carried it.  Reconstruct it from the calibrated
+        # head means the row does carry, rather than leaving a silent zero.
+        calibrated_scalar = float(
+            sum(
+                weight * float(row.get(name, 0.0))
+                for weight, name in zip(
+                    OBJECTIVE_WEIGHTS_FOR_LOG_RECONSTRUCTION,
+                    (
+                        "r1_mean_calibrated",
+                        "r2_mean_calibrated",
+                        "r3_mean_calibrated",
+                    ),
+                )
+            )
+        )
     return EpisodeLog(
         episode=int(row["episode"]),
         epsilon=float(row["epsilon"]),
         r1_mean=float(row["r1_mean"]),
         r2_mean=float(row["r2_mean"]),
         r3_mean=float(row["r3_mean"]),
-        scalar_reward=float(row["scalar_reward"]),
+        scalar_reward_calibrated=calibrated_scalar,
+        scalar_reward_uncalibrated_deprecated=uncalibrated,
         total_handovers=int(row["total_handovers"]),
         replay_size=int(row["replay_size"]),
         losses=tuple(float(value) for value in losses),
@@ -1188,6 +1223,14 @@ def _run_training(
             status["episode_logs"] = str(logs_path)
             status["episode_logs_sha256"] = _file_sha256(logs_path)
             status["last_scalar_reward_raw"] = log.scalar_reward
+            # B0 D-3: the live status file used to carry ONLY the uncalibrated
+            # scalar, which is numerically 0.5*r1.  The headline and all three
+            # calibrated heads go beside it, so a run being watched in flight
+            # cannot show a curve with two of its three terms invisible.
+            status["last_scalar_reward_calibrated"] = log.scalar_reward_calibrated
+            status["last_r1_mean_calibrated"] = log.r1_mean_calibrated
+            status["last_r2_mean_calibrated"] = log.r2_mean_calibrated
+            status["last_r3_mean_calibrated"] = log.r3_mean_calibrated
             status["updated_utc"] = _utc_now()
             _write_json(status_path, status)
 

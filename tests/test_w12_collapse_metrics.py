@@ -362,7 +362,7 @@ def test_the_episode_log_report_satisfies_the_g3_gate():
 
     log = EpisodeLog(
         episode=0, epsilon=1.0, r1_mean=1.0, r2_mean=0.0, r3_mean=-1.0,
-        scalar_reward=0.0, total_handovers=0, replay_size=0,
+        scalar_reward_calibrated=0.0, scalar_reward_uncalibrated_deprecated=0.0, total_handovers=0, replay_size=0,
         collapse_first=sample(7.0, 0.25),
         collapse_last=sample(3.0, 0.60),
     )
@@ -385,7 +385,7 @@ def test_a_log_missing_an_indicator_still_fails_the_gate():
 
     log = EpisodeLog(
         episode=0, epsilon=1.0, r1_mean=0.0, r2_mean=0.0, r3_mean=0.0,
-        scalar_reward=0.0, total_handovers=0, replay_size=0,
+        scalar_reward_calibrated=0.0, scalar_reward_uncalibrated_deprecated=0.0, total_handovers=0, replay_size=0,
         collapse_first=CollapseSample(0.1, 0.9, 1.0, 10.0, 7.0, 0.2, 7.0, 0.2),
         collapse_last=CollapseSample(0.1, 0.9, 1.0, 10.0, 7.0, 0.2, 7.0, 0.2),
     )
@@ -402,7 +402,7 @@ def test_an_absent_sample_fails_loudly_rather_than_reporting_zeros():
 
     log = EpisodeLog(
         episode=11, epsilon=0.5, r1_mean=0.0, r2_mean=0.0, r3_mean=0.0,
-        scalar_reward=0.0, total_handovers=0, replay_size=0,
+        scalar_reward_calibrated=0.0, scalar_reward_uncalibrated_deprecated=0.0, total_handovers=0, replay_size=0,
     )
     with pytest.raises(ValueError, match="no last-step collapse sample"):
         log.collapse_report()
