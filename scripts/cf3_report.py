@@ -19,7 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
-SEEDS = {"A0": (0, 1, 2), "A1": (0, 1, 2, 3, 4), "A2": (0, 1, 2, 3, 4), "A3": (0, 1, 2, 3, 4)}
+# Launch of 12 runs: every arm at seeds 0-2 (seeds 3-4 deferred; addendum H).
+SEEDS = {"A0": (0, 1, 2), "A1": (0, 1, 2), "A2": (0, 1, 2), "A3": (0, 1, 2)}
 NAMES = {"A0": "BASELINE", "A1": "OFF", "A2": "CF3", "A3": "NULL3"}
 H_CAP = 0.6016
 CS_MARGIN = -0.005
@@ -153,7 +154,17 @@ def main() -> int:
         branch = "3: A1 >= A2 -> no catfish effect at pilot scale"
     else:
         branch = "none of the declared branches"
-    out = {"pairing": pairing, "per_seed": per, "arm_means": means, "comparisons": comp,
+    import subprocess
+    here = Path(__file__).resolve()
+    try:
+        rep_commit = subprocess.run(["git", "-C", str(here.parent), "log", "-1", "--format=%H", "--",
+                                     here.name], capture_output=True, text=True).stdout.strip() or None
+    except OSError:
+        rep_commit = None
+    import hashlib
+    out = {"report_script": {"path": str(here), "sha256": hashlib.sha256(here.read_bytes()).hexdigest(),
+                             "git_commit": rep_commit},
+           "pairing": pairing, "per_seed": per, "arm_means": means, "comparisons": comp,
            "C_S_vs_A1": cs, "branch": branch}
     Path(a.out).write_text(json.dumps(out, indent=2, default=str))
     print(json.dumps({"means": means, "comparisons": comp, "branch": branch, "C_S": cs,

@@ -44,6 +44,15 @@ KIND = {"A1": "none", "A2": "cf3", "A3": "null3"}
 CHECKPOINT_EVERY = 100
 
 
+class StopAfter(Exception):
+    """The declared --stop-after boundary (diagnostic stage) -- never StopIteration."""
+
+
+class GateUnavailable(RuntimeError):
+    """The A1 gate readings / decision never arrived: fail loud (status failed,
+    relaunchable), NEVER a learning-check stop."""
+
+
 def utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -248,7 +257,7 @@ def main() -> int:
         files = [gate_dir / f"A1-s{j}.json" for j in C.GATE_SEEDS]
         while not all(f.is_file() for f in files):
             if time.time() > deadline:
-                raise cfr.LearningCheckStop("timed out waiting for the A1 gate readings")
+                raise GateUnavailable("timed out waiting for the A1 gate readings")
             time.sleep(20)
         seeds = [json.loads(f.read_text()) for f in files]
         for srow in seeds:
@@ -273,7 +282,7 @@ def main() -> int:
                 pass
         while not dfile.is_file():
             if time.time() > deadline:
-                raise cfr.LearningCheckStop("timed out waiting for DECISION.json")
+                raise GateUnavailable("timed out waiting for DECISION.json")
             time.sleep(5)
         decision = json.loads(dfile.read_text())
         if decision.get("gate_fingerprint") != gfp:
@@ -303,7 +312,7 @@ def main() -> int:
                   f"{now - t_last[0]:.0f}s since last save; wall {now - t0:.0f}s", flush=True)
             t_last[0] = now
         if a.stop_after is not None and episode_done >= a.stop_after:
-            raise StopIteration
+            raise StopAfter
 
     try:
         if cf_arm:
@@ -322,7 +331,7 @@ def main() -> int:
             logs[:] = init
             trainer.train(progress_every=50, start_episode=start, initial_logs=list(init),
                           episode_callback=on_episode)
-    except StopIteration:
+    except StopAfter:
         status.update(status="stopped-at", stopped_at=a.stop_after, stopped_utc=utc())
         C.write_json(status_path, status)
         print(f"[{arm}s{k}] stopped cleanly at {a.stop_after}", flush=True)

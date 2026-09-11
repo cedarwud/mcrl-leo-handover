@@ -19,7 +19,7 @@ Usage::
     cf3_launch.py --root DIR --calibration FILE [--init-manifest] [--smoke]
                   [--stop-after N] [--expect N] [--memory-max 5G]
                   [--memory-max-cf 6G] [--verify] [--dry-run] [SPEC ...]
-    SPEC = ARM:K (A0:0 ... A3:4); default = the declared 18.
+    SPEC = ARM:K (A0:0 ... A3:2); default = the 12 runs of this launch (all arms x seeds 0-2).
 """
 
 from __future__ import annotations
@@ -36,9 +36,9 @@ from pathlib import Path
 import cf3_common as C
 
 NAMES = {"A0": "BASELINE", "A1": "OFF", "A2": "CF3", "A3": "NULL3"}
-DEFAULT_SPECS = [f"A0:{k}" for k in C.A0_SEEDS] + [
-    f"{a}:{k}" for a in ("A1", "A2", "A3") for k in range(len(C.TRAIN_SEEDS))
-]
+# 12 runs: all four arms x seeds 0-2 (seeds 3-4 deferred to a possible
+# second wave for compute reasons -- coordinator, before any result).
+DEFAULT_SPECS = [f"{a}:{k}" for a in ("A0", "A1", "A2", "A3") for k in (0, 1, 2)]
 DRIVER = "scripts/run_cf3_pilot.py"
 
 
@@ -119,7 +119,10 @@ def main() -> int:
         pidf = root / f"{arm}-s{k}.pid"
         st = json.loads((d / "status.json").read_text()) if (d / "status.json").is_file() else {}
         live = is_live(pidf, arm, k, root)
-        if st.get("status") in ("complete", "stopped-learning-check"):
+        decision = root / "learning-check" / "DECISION.json"
+        real_fail = decision.is_file() and json.loads(decision.read_text()).get("pass") is False
+        if st.get("status") == "complete" or (
+                st.get("status") == "stopped-learning-check" and real_fail):
             state = "finished"
         elif live:
             state = f"live pid {live}"
