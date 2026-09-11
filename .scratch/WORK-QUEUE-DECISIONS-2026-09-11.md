@@ -58,6 +58,14 @@ Verdict: 8/14 checks CONFIRMED, 6 WRONG-or-caveat, **DEAD-PATH SURVIVES WITH COR
 | Q4 | wait for the ceiling (scenario B makes it top priority) | gated |
 | Q6 | paused until source value / controllability is shown | gated |
 
+## H4 probe result (13:55 UTC; `.scratch/h4-probe/H4-PROBE-2026-09-11.md`; both placebos bit-for-bit, all 9 deployed rollouts bit-identical to the pilot's eval JSONs)
+
+Pinned archive, sat, 24 evaluation episodes, final checkpoints, inference-time η/λ variation only:
+- **The energy head is not inert at the decision level on the trained networks**: switching η → 0 changes 11.0–42.2 % of the 24,000 decisions per checkpoint (A1 15 %, A2 22 %, A3 36 %; λ → 1 report-only: 44–62 %). The CF3REVIEW figure "0/240" was a one-step contrast of **raw rewards** and does not transfer to trained `Q_E`, which has learned action-dependent (continuation) values. **Correction to the Fable audit's rows 5–7 and to the controller's own earlier wording ("the energy term never acts")**: it acts; whether it helps is the question.
+- **Its effect on pooled EE is small and inconsistent in sign**: closed-loop η → 0 changes EE by −8.1 … +3.1 % (mean −1.5 %): A1 +0.7 %, A2 +1.5 % (removing the energy term slightly *improves* both), A3 −6.6 % (all three seeds). Doubling η: A1 −2.0 %, A2 −13.3 %, A3 +0.6 %. So the learned energy signal does not deliver EE; it perturbs decisions, and for A1/A2 the deployed η is on the wrong side of neutral. This supports the audit's substantive point (equal-share credit yields no usable energy lesson) while refuting its "decorative / inert" wording.
+- **The explicit own-bits greedy rule `(1/(load+1))·log2(1+γ)` scores below every learner**: evaluation set 93.76 vs A1 98.64 / A3 101.24 / A2 102.03 / MAX_NOMINAL_GAIN 104.67 / `A m=2dB` 107.00; calibration set 98.70 vs A1 102.9 / A3 105.4 / A2 106.2 / 110.51 / 112.20. It lights fewer beams (57.9) and churns most (H_inter 0.77). **Correction to the audit's D.i / K.4 characterisation "the learner is structurally an own-bits DQN"**: the learners are not reducible to that rule; they sit between it and max-gain. The learners' 5–8 % shortfall below `A m=2dB` stands; its mechanism (own-bits congestion vs under-optimisation vs representation) is **not** established by this probe.
+- None of this changes the ruling (Q5 NO-GO) or the ceiling scenarios; it goes to Fable in phase 2b together with the ceiling, and to the registry (Q9b).
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
