@@ -31,8 +31,10 @@ lane was dispatched. Verified by the controller at 20:07 UTC against the filesys
 - **Closed**: T0REPR (commit `a4c8ce12`), CEILING2 (report written), **LP-ORACLE** (reports `ORACLE-CELLS-2026-09-11.md` and
   `LP-PROBE-2026-09-11.md`; HELD items recorded), **B1-CREDIT** (commits `63b02dc0` + `d75c18be`; verdict FAIL for the
   lighting-price credit; the exact-DR credit's energy term equals the analytic lighting price, the outage charge is validated,
-  cost ≈ 6.2 h per 1000-episode run with an unwired `O(U²)` path). Do not restart their compute. **Live: DEVHARNESS (E0a) and
-  B2REPR only.**
+  cost ≈ 6.2 h per 1000-episode run with an unwired `O(U²)` path), **B2REPR** (`T-SEQ-REPRESENTABILITY-2026-09-12.md`:
+  `R_repr` 0.150 / 0.129 evaluation and 0.092 / 0.051 calibration, condition 3 FAILS, B2 not entered; 99 files sha256-verified).
+  Do not restart their compute. **Live: DEVHARNESS only** (E0b wave 1: PIDs 3577210/3577211/3577212 resumed to 300,
+  3577336 D3-T0, 3577470/3577471/3577472 k = 1; readout scheduled 21:52 UTC, then wave 2's τ sweep).
 
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 

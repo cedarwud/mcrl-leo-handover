@@ -316,6 +316,39 @@ replicate keeps the frozen 300-episode configuration stopped at 100 rather than 
 authorised hashes are unchanged. Expected: k = 1 ~21:10–21:15, k = 0 resumes ~21:20–21:35, D3-T0 ~21:30–21:45 UTC. Wave 2 (τ
 sweep) queued, B4 deferred.
 
+## B2 lane CLOSED 21:00 UTC — condition 3 FAILS, B2 is not entered (`.scratch/b2-representability/T-SEQ-REPRESENTABILITY-2026-09-12.md`)
+
+`R_repr(T_SEQ)` = **0.150 (one-hot BC) / 0.129 (soft τ = 0.3)** on the 24 evaluation episodes and **0.092 / 0.051** on the 24
+calibration episodes, against the 0.5 admission line; 0 of 10,000 bootstrap resamples reach 0.5 on any arm. Neither clone is
+throughput-degenerate (served 0.9966–0.9977, bits ratio 0.951–0.979, p10 1.04–1.15 × the rule), so this is a **representability
+shortfall, not a collapsed rate tail**. Placebos exact: `A m=2dB` bit-identical on both sets, the teacher's pooled EE re-derived
+(134,129,417.19 evaluation / 137,497,201.09 calibration), 26 replays reproducing actions, observations and committed bits and
+joules at max |Δ| = 0.
+
+Four findings that decide more than the verdict:
+1. **Changing the execution contract buys nothing.** The best T_SEQ clone reaches **+3.81 %** over `A m=2dB` — below the
+   simultaneous, observation-only rule LP-prev(1,0) at **+6.66 %** under the *unchanged* contract, and below the T0 clones'
+   +6.20 % / +6.50 % on the same episodes.
+2. **The declared current-step context block is worth ≈ 0**: ablation moves `R_repr` by +0.040, −0.011, +0.009, −0.038 (mean
+   ≈ 0.0001, both signs) and 0.008 bits per decision open-loop.
+3. **It is not a missing-feature problem.** A non-deployable diagnostic clone given the teacher's *entire* joint context scores
+   held-out top-1 0.3573, no better than with (0.3665) or without (0.3650) the context block. **The sequential oracle's advantage
+   lives in the counterfactual evaluation itself, not in any feature a per-user observation could carry.**
+4. **Physical form of the failure**: T_SEQ wins by lighting *more* beams (66.9 vs 63.3) for 32 % more bits; every clone lights
+   *fewer* (58.8–60.9) for 2–4 % fewer bits, falling back to the LP/T0 lever. The controller's reverse-order check retains
+   84 % / 92 % of the (small) value, so it is not an order artefact; the teacher itself was only measured forward.
+
+**Consequences.** Amendment 1 rule 3 pointed at B2; Amendment 4 §2 condition 3 now fails, so **B2 is not entered and B1 keeps the
+contract** — no threshold moved, the decision followed the pre-declared rule. The observation-redesign screen that rule 5
+indicated is answered in the negative for the obvious candidate: adding the current-step lighting pattern is worth nothing. The
+privileged teachers' value is, on this evidence, **unteachable to a per-user student** — the imitation gap the literature review
+predicted, now measured; the same mechanism argument applies to T_DR, whose advantage is also counterfactual. The teacher that
+does transfer is the non-privileged anchor T0 (`R_repr` 0.93–0.98), which is exactly the one the development line is using.
+**Named cheapest test that could overturn this negative** (not run, the owner's call, ~35 min): ~17 further floored B-real
+calibration cells plus a multi-seed closed-loop refit. Three things argue it would not change the reading: held-out top-1 is flat
+from 12 training episodes, the torch-seed spread (0.109 / 0.063) exceeds the data increment, and the full-context diagnostic caps
+fidelity regardless.
+
 ## Sequencing actually in force
 
 1. Now, in parallel: Q1 (ceiling, sat), Q2-Fable (blind), Q2-agy (blind), background wait for `REPORT-DONE` → Q3a (report writer).
