@@ -18,8 +18,17 @@ never let an agent relaunch a live or finished item.
 | **CATFISH2-DISCOVERY** | `af6175e5685e4686f` | opus | `.scratch/catfish2-discovery/PROGRESS.md`; worktree `/home/u24/papers/mcrl-leo-handover-cf2` (`catfish2/discovery-20260912` from `05aadf1b`); sat ws `/home/sat/mcrl-v025-catfish2-ws/` | `.scratch/catfish2-discovery/STAGE0-2026-09-12.md` | Steps 0–5 done; step 6 (complementarity diagnostic, 3 shards) running; steps 7–8 pending. **Was blocked on `R_min`; unblocked 23:22 UTC by Amendment 11** (`98dd3f48`), which refuses an absolute rate threshold and re-specifies C-Q′-local / C-Q′-global / C-RC′ on the project's own p10 tail convention. **Stage 1 canaries need my explicit confirmation.** No training, ever, in this lane |
 | **CURATE-2** | `a53ed673b082598a9` | opus | `.scratch/curation/PROGRESS-CURATE2.md` | new sections in `.scratch/RESULTS-REGISTRY.md` + `.scratch/curation/CURATE2-2026-09-12.md` | Q9b: registry rows for H4/LP/oracle/ceiling/T0-repr/T_SEQ/B1/E0, prefixes `H4- LP- OR- EC- T0R- TSQ- B1C- E0-`. Read-only, re-measures nothing, **E1 excluded** (controller adds those). Dispatched 23:24 UTC |
 
-Resume both with the standard block: read your PROGRESS.md, continue from the first incomplete step, never relaunch a live or
-finished computation, do not touch `/home/sat/mcrl-v025-dev-e0-ws/`.
+| **S1-PREP** | `a76ae76a5ce287bfb` | opus | `.scratch/dev-training/PROGRESS-S1PREP.md` | `.scratch/dev-training/S1-PREFLIGHT-2026-09-12.md` | Implements `T0-XEP` (Amendment 12), the residual-leakage diagnostic, verifies `D3-null` against Amendment 8 §3b and the MODQN eq-(16) arm, mutants, preflight ≤ 20 DEV episodes in its own root. **Must not launch S1; must not touch any formal / calibration / CONFIRM episode set.** Dispatched 23:32 UTC |
+
+Resume all three with the standard block: read your PROGRESS.md, continue from the first incomplete step, never relaunch a live or
+finished computation, do not touch `/home/sat/mcrl-v025-dev-e0-ws/runs-e1-*`.
+
+**E1 is finished and adjudicated** — nine runs complete, all PIDs exited, cron `566842f2` cancelled, background wait `bjgxorba3`
+fired. Verdict `1dd29ab5`: `D3-T0` passes 3/3 fresh seeds, seed mean +9.42 %, 144/144 paired episodes positive, QoS floors met,
+neither Amendment 10 §4 reopen condition triggered. E1 freeze + the S1 proposal are at `5cab1fb1`. **The open owner decision is
+the baseline-budget asymmetry** (the frozen MODQN eq-(16) checkpoint `e6b063ef…` was trained for 9,000 episodes; S1's budget is
+1000) — see `.scratch/dev-training/E1-FREEZE-AND-S1-PROPOSAL-2026-09-12.md` Part IV. **Nothing may run on the formal evaluation
+set until the owner signs off.**
 
 **Live on `sat` — E1, nine runs** (they survive any agent death; never relaunch them). Launched 23:07 UTC at code `05aadf1b`
 (digest `7440236979d6`), cwd `/home/sat/mcrl-v025-dev-e0-ws/tree-v0.4`, roots `/home/sat/mcrl-v025-dev-e0-ws/runs-e1-d0-d3` and
