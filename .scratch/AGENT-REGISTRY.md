@@ -28,7 +28,11 @@ lane was dispatched. Verified by the controller at 20:07 UTC against the filesys
   `.scratch/b2-representability/BRIEF-DRAFT.md`, sat ws `/home/sat/mcrl-v025-b2-repr-ws/`, ≤ 3 processes; runs **in parallel**
   with E0a and blocks nothing. Resume: *"Resume the B2 representability lane: read `.scratch/b2-representability/PROGRESS.md`
   and the brief; check your sat processes by cwd + cmdline; continue from the first incomplete step; measurement only."*
-- **Closed**: T0REPR (commit `a4c8ce12`), CEILING2 (report written). Do not restart their compute.
+- **Closed**: T0REPR (commit `a4c8ce12`), CEILING2 (report written), **LP-ORACLE** (reports `ORACLE-CELLS-2026-09-11.md` and
+  `LP-PROBE-2026-09-11.md`; HELD items recorded), **B1-CREDIT** (commits `63b02dc0` + `d75c18be`; verdict FAIL for the
+  lighting-price credit; the exact-DR credit's energy term equals the analytic lighting price, the outage charge is validated,
+  cost ≈ 6.2 h per 1000-episode run with an unwired `O(U²)` path). Do not restart their compute. **Live: DEVHARNESS (E0a) and
+  B2REPR only.**
 
 ### ⚠ INTERRUPTION 18:16 UTC 2026-09-11 (02:16 Taipei) — all four opus sub-agents killed by an opus session limit
 

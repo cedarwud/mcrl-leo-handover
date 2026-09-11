@@ -224,6 +224,23 @@ Amendment 5 Part II has **no admissible credit** — the contingency cannot fire
 formal restriction; E0a is unaffected because it runs `equal_share`; the LP *rule* family (LP-prev(1,0)) is untouched — a rule
 and a credit with the same name land on opposite sides of the gate, which is exactly why the owner required this screen.
 
+**B1 lane CLOSED** 20:25 UTC: commits `63b02dc0` (engineering core) and `d75c18be` (diagnostics, screen scripts and
+`docs/b1-credit/`). Four facts to carry beyond the FAIL verdict:
+- **Physics of "without u", established by reading and by test**: removing a user changes only the shared beam's bandwidth
+  denominator, that beam's power when u is its unique maximum-power user, and the extinction of the beam or satellite. Joules
+  are independent of interference and fading, so the difference credit's energy term **equals the analytic lighting price
+  exactly** (largest observed discrepancy 6.3e-12 J, and 0.0 J in the screen).
+- **The outage free ride is real and quantified**: an unserved user's bits and joules are both exactly 0, so a pure difference
+  reward scores an outage 0 while **52.2 % of served decisions score D < 0**. The declared charge (`E_out = E_max = 268.35 J =
+  2.2248 s_E`, `B_out = min(0, the worst served alternative's B)`) makes outage never preferable for any `η ≥ 0`; in 60
+  closed-loop episodes it was never chosen (served = 1.00000).
+- **Credit influence on decisions** (same 2,000 decisions): equal share 3, lighting price 1,787, difference 866; the difference
+  credit agrees with the unilateral system best response in 1,982/2,000, and every one of the 18 mismatches is a decision whose
+  system best response is an outage.
+- **Cost**: 15.0 ms per counterfactual evaluation, +1.70 s per step, +17.0 s per rule-like episode and +43.7 s under random
+  exploration, ≈ 6.2 h per 1000-episode run. An incremental formulation, verified but not wired, would bring this to `O(U²)`
+  arithmetic — the thing to build if an exact-DR formal arm is ever authorised.
+
 **Oracle lane closed** (`.scratch/h4-probe/ORACLE-CELLS-2026-09-11.md`, `LP-PROBE-2026-09-11.md`). Its aggregation **matches the
 controller's independent one field for field**; `BRANCH-NUMBERS-FLOOR-R1-EVAL.md` needs no correction. New facts: A-real-floor
 has **32.2 % of served user-steps under the rate floor** even with the per-move floor, because 72–96 of 100 users move each
