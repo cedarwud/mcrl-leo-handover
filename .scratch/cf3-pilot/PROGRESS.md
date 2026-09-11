@@ -170,3 +170,12 @@ Arm means: A0 95.13, A1 101.53, A2 97.18, A3 101.59. Progress reading only; not 
 - Waits for all 12 runs terminal (complete / failed / stopped-learning-check with a failing DECISION / DEAD = status running but PID gone), up to 8 h; then evaluates every complete final checkpoint (tree `cf3_eval.py`, --repeat), re-verifies pools (`diag/cf3_verify_pools.py`) and generator identity (tree-pools-d04d9dbe vs tree), runs `diag/cf3_report.py` + `diag/cf3_render.py` (commit 102b2d4d), writes `ws/report/` + marker `REPORT-DONE` or `REPORT-FAILED`. Learning-check stop -> `LEARNING-CHECK-STOP.json` + REPORT-DONE(kind=learning-check-stop). Log `ws/report/postjob.log`.
 - State detection checked live at 11:37: 12 x running (alive).
 - Takeover guide: `.scratch/cf3-pilot/TAKEOVER.md`.
+
+### Episode 500 — LEARNING CHECK PASSED (DECISION.json 11:43:41 UTC, by A1s2, pass=true, 3/3 A1 seeds > RANDOM 51.87M); eta updated at 500 in every CF run
+| run | EE (M bit/J) | H_inter | H_intra | served | beams |
+|---|---:|---:|---:|---:|---:|
+| A0 s0 / s1 / s2 | 94.55 / 97.90 / 94.21 | 0.196 / 0.218 / 0.206 | 0.030 / 0.007 / 0.002 | 0.9987 / 0.9981 / 0.9985 | 61.9 / 64.0 / 53.9 |
+| A1 s0 / s1 / s2 | 107.39 / 102.89 / 104.16 | 0.580 / 0.508 / 0.633 | 0.002 / 0.061 / 0.029 | 0.9996 / 0.9985 / 0.9985 | 63.6 / 65.0 / 65.1 |
+| A2 s0 / s1 / s2 | 102.79 / 104.60 / 106.27 | 0.519 / 0.603 / 0.569 | 0.038 / 0.033 / 0.013 | 0.9977 / 0.9992 / 0.9987 | 63.2 / 62.3 / 64.2 |
+| A3 s0 / s1 / s2 | 106.87 / 103.75 / 106.36 | 0.549 / 0.534 / 0.544 | 0.002 / 0.022 / 0.020 | 0.9981 / 0.9984 / 0.9963 | 63.4 / 62.1 / 60.2 |
+Arm means: A0 95.56, A1 104.81, A2 104.55, A3 105.66. Progress reading only; not the result.
