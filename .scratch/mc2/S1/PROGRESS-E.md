@@ -45,17 +45,32 @@ S1-TRAIN seed stepped, lane A's worktree never touched, named-path commits only.
 construct-only builds that step nothing. No formal, calibration, CONFIRM, S1-TRAIN, S1-NULL or
 S1-NULL-MC2 value was ever constructed — audited by an RNG spy independent of the harness's guards.
 
-## What would block an immediate S1 launch (none of it is engineering)
+## What would block an immediate S1 launch
 
-1. The **DEV screen** must pass (lane A's ep-100 selection, then ep-300 survival on fresh seeds).
-2. The controller must freeze **which mechanism id** runs — the matrix, and whether `A-only-v2`
-   exists at all, follow from it.
-3. The controller must decide the **optional cells** (`D3-null`, `D3-XEP`, both, neither).
-4. The controller must freeze the **reading rules** as a document; `s1_manifest.py` /
-   `s1_launch.py` refuse a formal manifest without its digest.
-5. The **fresh-context review** must return 0 INVALIDATES and 0 BIASES on the frozen manifest.
-6. The tree must be **synced to sat** (it never has been by this lane) and the frozen MODQN
-   checkpoint's sha256 re-verified there.
+Reconciled with the controller's reading rules v1 (`68698702`), which closed three of the five open
+items. **Nothing on this list is lane E engineering.**
+
+1. **A version must survive the DEV screen.** As of the controller's ep-100 decision, *neither*
+   `MC2-JGO-v1` nor `MC2-ARB-v2` qualified, and a third version (`MC2-SEL-EXP-v3`) awaits the owner.
+   Until something passes a three-fresh-seed ep-300 screen there is no `mechanism_id` to freeze and
+   therefore no formal manifest. **This, not engineering, is the critical path.**
+2. `⟨FREEZE⟩ mechanism_id` and, mechanically from it, the drop-one-of-B cell.
+3. The reading rules must be **frozen** (they are adopted but pre-freeze, with those two fields open);
+   `s1_manifest.py` / `s1_launch.py` refuse a formal manifest without the digest of a frozen file.
+4. The **fresh-context review** must return 0 INVALIDATES and 0 BIASES on the frozen manifest.
+5. **Re-merge** onto lane A's final mechanism commit (it is still editing `cf_judge.py`) and re-run
+   the suites plus the mutant sweep.
+6. **Sync to sat** (this tree has never been there) and re-verify the frozen MODQN checkpoint's
+   sha256 on that host.
+
+Closed by the controller: both optional nulls are **included** (27 runs under v1, 30 under v2); the
+calibration is **pinned** at sha256 `59952214…4562d` — the same sha256 as the local copy every
+measurement in this lane used; the formal set stays at **24 episodes, one read at ep 1000**.
+
+If `MC2-SEL-EXP-v3` becomes the frozen version, the matrix needs one more cell (`R-ungated`,
+dose-matched) and a sixth gate: a declared ~10-line change in three named places, documented in
+`S1-MC2-MANIFEST-PLAN.md` §1a. It is deliberately **not** pre-built, because its identity must come
+from lane A's implementation rather than from a guess — the harness refuses the id until then.
 
 ## Next step if resumed
 

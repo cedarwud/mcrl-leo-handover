@@ -24,7 +24,28 @@ fixed list:
 | `MC2-ARB-v2` | **`A-only-v2`** — the judge-gated `{x_u, a^A}` cell; `D3-T0` stays as the baseline only | 8 | **24** |
 
 `s1_common.cells(mechanism_id)` encodes exactly this and nothing else. Adding either optional null
-adds 3 runs each.
+adds 3 runs each; the controller has **included both** (reading rules v1 §2.1), so the live counts
+are **27 runs (v1)** and **30 runs (v2)**.
+
+### 1a. If a third version is authorised (`MC2-SEL-EXP-v3`)
+
+The controller's reading rules v1 §3 records that neither declared version qualified at ep 100 and
+that a third version (the experience channel) is proposed and awaits the owner. It is **not**
+implemented and **not** authorised, so this harness deliberately refuses it today
+(`cells("MC2-SEL-EXP-v3")` → "unknown MC2 mechanism id"). Making it runnable is a declared,
+~10-line change in exactly three places — *not* a redesign — and it must follow lane A's
+implementation rather than guess it:
+
+1. `s1_common.MECHANISM_IDS` + `RULE_PREFIX` — add the id and its development cell-label prefix
+   (this also widens the `--mechanism-id` choices in both CLIs).
+2. `s1_common.DROP_ONE_OF_B` — `D3-T0` for v3 (its anchor label is unconditional, so its A-only arm
+   *is* the frozen single-Catfish arm, exactly as under v1).
+3. `s1_common._BASE_CELLS` / `cells()` — add v3's **dose-matched `R-ungated`** cell, with its source
+   set and rule id taken from `cf_judge.DECLARED_CELLS` once that exists (the harness asserts the
+   cell against that table, so a guessed identity fails closed).
+
+Its sixth gate (`FULL vs R-ungated > 0`, seed-mean with ≥ 2/3 seeds positive) goes into §4.4 below.
+Schedule impact: one more judge cell ≈ 2–3 h per run × 3 seeds, i.e. ≈ +1 h of makespan at 8 workers.
 
 ### The table (`CELL:k`, k = 0, 1, 2 for every cell)
 
@@ -237,12 +258,22 @@ greedy agreement with `a^A` and with `a^B` where they differ; and, if the option
 
 ---
 
-## 5. Open items the controller must close before the manifest is hashed
+## 5. Open items — state after the controller's reading rules v1 (`68698702`)
 
-1. **Which mechanism id is frozen** (`MC2-JGO-v1` or `MC2-ARB-v2`) — the matrix, and whether
-   `A-only-v2` exists, follow from it.
-2. **Which optional cells are included** (`D3-null`, `D3-XEP`, both, neither).
-3. **The reading-rules document**: §4 of this file, amended as the controller wants, saved and
-   hashed into the manifest (`--reading-rules`).
-4. **The calibration file** to pin (`59952214…` is the one this lane used locally).
-5. Whether the 24 formal evaluation episodes stay at 24 (Amendment 13's count; unchanged here).
+| item | state |
+|---|---|
+| The reading-rules document | **CLOSED** — `S1-MC2-READING-RULES-CONTROLLER-v1-PREFREEZE.md` adopts §4 of this file verbatim; it is still *pre-freeze* because two fields remain |
+| Optional cells | **CLOSED — both included** (`D3-null`, `D3-XEP`): 27 runs under v1, 30 under v2 |
+| Calibration | **CLOSED — pinned** at `/home/sat/mcrl-v025-cf3-pilot-ws/premeasure/calibration.json`, sha256 `59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d`. This lane's local copy (`.scratch/catfish2-successor/premeasure/calibration.json`) has **the same sha256**, so everything measured here was measured against the pinned file |
+| Formal evaluation depth / count | **CLOSED — unchanged**: 24 episodes, one read at ep 1000, one checkpoint, 1000 episodes × 3 seeds, ε-decay 222 |
+| `⟨FREEZE⟩ mechanism_id` | **OPEN, and not ours**: neither declared version qualified at ep 100; a third version awaits the owner. Until a version passes a three-fresh-seed ep-300 screen there is no id to freeze and therefore no formal manifest |
+| `⟨FREEZE⟩ drop-one-of-B cell` | **OPEN, but mechanical**: `D3-T0` for `MC2-JGO-v1` (and for a v3 of the same shape), `A-only-v2` for `MC2-ARB-v2` — `DROP_ONE_OF_B` already encodes the first two |
+| Additional diagnostics to carry into the S1 record (reading rules §2.5) | the ep-100 dose-response and the output-change measurement are **lane B / controller artefacts**, not harness outputs; the harness already emits the per-episode judge diagnostics and the formal-set `a^A` / `a^B` agreement inputs they are computed from |
+
+Two further engineering preconditions, neither of them a decision:
+
+- **Re-merge before launch.** Lane A is still editing `cf_judge.py`. Whatever its final mechanism
+  commit is, this branch must be re-merged onto it and the full suite plus the mutant sweep re-run;
+  `test_the_s1_port_changed_no_development_identity` is the tripwire for an accidental identity change.
+- **Sync to sat.** This tree has never been on sat. The sync, and re-verifying the frozen MODQN
+  checkpoint's sha256 there, are part of the launch sequence in §3.
