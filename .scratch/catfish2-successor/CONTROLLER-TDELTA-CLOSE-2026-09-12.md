@@ -91,3 +91,20 @@ framing, and the evidence returns to the owner.
 `TDELTA-CANARY-PREP` loses its purpose — `D3-T_DELTA` will never run. Its generic teacher-identity wiring and its
 cost-profiling method are handed to Lane M rather than discarded, and the lane then stops. Formal S1 remains PARKED
 and untouched.
+
+---
+
+## 7. Retrospective addition, 2026-09-12 — `T_DELTA` was also failing on representability
+
+The `T_TAIL` closure later established a standard that did not exist when this document was written: a candidate's
+`A_repr` must be read against its **own pure-T0-imitation baseline**, `1 − disagreement`. Applied retrospectively to
+`T_DELTA`: disagreement 0.79121 → trivial baseline **0.2088**, against a selected-clone TEST top-1 of **0.2198**
+(BC 0.2305). **Margin over trivial: +0.011 (BC +0.022)** — against `T_NEXT`'s +0.168.
+
+Its clone-versus-T0 agreement of 0.39/0.51 against the teacher's 0.21 is collapse toward T0: the same mechanism that
+later killed `T_TAIL`.
+
+**The verdict is unchanged** — `T_DELTA` closed on the non-degeneracy failure of §3a, and that remains the operative
+reason. This is recorded because it makes the closure better founded, not different: the clone was barely above
+"learn nothing" as well. It could not have been seen at the time; the standard was derived from `T_TAIL`'s data two
+candidates later. Full working in `CONTROLLER-CF3-PREP-RULING-2026-09-12.md` §2.
