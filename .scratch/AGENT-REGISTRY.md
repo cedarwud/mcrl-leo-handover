@@ -496,3 +496,27 @@ the owner.
 **Two privileged teachers have now died at the same screen** (`T_SEQ` `R_repr` 0.13–0.15; `T_DELTA` a degenerate
 0.51). Both remaining candidates must report clone action-distribution and collapse behaviour alongside `A_repr`, and
 must state where a marginal value sits relative to the T0 screen's 0.930–1.052 at 100 % of resamples.
+
+### Update 2026-09-12 03:05 UTC — portfolio narrowed to one survivor; k=8 is the only remaining path
+
+| source | outcome | adjudication |
+|---|---|---|
+| `T_H` | CLOSED | `e3f9b90e` — no separation from seed variation on two seeds |
+| `T_DELTA` | CLOSED | `f747de86` — clone reached `R_repr ≥ 0.5` only by shedding 18 % of the bits |
+| **`T_NEXT`** | **ADMITTED to k = 8** | `c529b8f9` + `07af3ece` — both gates, and its own trivial baseline, cleared |
+| `T_TAIL` | CLOSED | `296efc42` — `A_repr` 0.4635, below the floor **and** below its own 0.5885 baseline |
+
+**No fourth family may be added** (Amendment 15 §1). Lanes N, Q, B0 and CANARY-PREP are all closed with clean trees
+and nothing on `sat`. **Lane M (`a0b0a7d3f857cfeed`) is the only live lane** and holds the critical path: integration
+closure per `716f104e`, then it launches the k = 8 five-cell matrix itself without returning to me. `sat` is idle
+(zero python, load 0.10).
+
+**Methodological rule added by the `T_TAIL` closure, binding on any future source screen:** `A_repr ≥ 0.50` must be
+read alongside the candidate's **own pure-T0-imitation baseline** (= its agreement rate with T0). A fixed floor cannot
+serve sources with different agreement rates — for `T_TAIL` the 0.50 floor sat *below* the trivial baseline of 0.5885.
+Checked against `T_NEXT` after the fact: +0.168 over its own baseline, so the admission stands.
+
+**Silent-failure hazard added:** a lane worktree's untracked `COMMIT` marker is what `dev_e0_common.code_manifest()`
+reads. Deleting it while tidying silently swaps the recorded configuration identity for the `uncommitted-worktree`
+fallback. Lane Q's `COMMIT` holds `27f69edf…` and must not be removed. Same class as `scp` writing empty files,
+dropped `ssh until` loops, and unanchored `pgrep -f` matching its own command line.
