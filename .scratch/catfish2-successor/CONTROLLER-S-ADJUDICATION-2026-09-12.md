@@ -102,3 +102,71 @@ evidence the T0 screen produced on 24. Second, the reference endpoints are alrea
 
 `T_DELTA` closes, and with `T_H` already closed the bounded Catfish-2 search returns to the owner as **exhausted**
 under Amendment 14 §11 — with the single-source S1 as the prepared fallback and the framing decision the owner's.
+
+---
+
+# ERRATUM, 2026-09-12 — §6's frozen denominators were wrong and are withdrawn
+
+Raised by the owner before any clone outcome existed. I verified it against the pre-outcome declaration and the owner
+is right. **§6 above is superseded by this erratum; the original text is left standing so the error is auditable.**
+
+## What I got wrong
+
+`PROGRESS-PHASE-B0.md` line 82 declares, prospectively: **"teacher = the `T_DELTA` joint rollout (**J**) on the same
+set."** Lines 79–81 declare **rule = `A m=2dB`**, with a `rule = T0` variant reported only as a **sensitivity**.
+
+I froze `EE(T0) − EE(A m=2dB)` = 5,761,125 (A) and 6,406,692 (B) as the admission denominators. Those are **T0
+headroom**, not teacher headroom — and worse, they take a quantity declared for a different role (T0 as an alternative
+*rule*) and use it as the *teacher* term. That is not the declared protocol, and I reinterpreted it rather than
+reading it.
+
+`J` has not run, so the declared denominator **cannot be known yet**. My instinct to freeze it immediately was right
+about the discipline and wrong about the arithmetic: freezing a number that does not exist yet produced a wrong number
+instead of a commitment.
+
+## The correct contract
+
+For each declared half `h`:
+
+    den_h      = EE(J_h) − EE(rule_h)
+    R_repr_h   = [ EE(clone_h) − EE(rule_h) ] / [ EE(J_h) − EE(rule_h) ]
+
+with `rule = A m=2dB` and `J_h` the exact `T_DELTA` joint rollout on the same half. **The T0–rule gaps are retained
+only as a labelled sensitivity/context number and are not the admission denominator.** The hard-coded `5_761_125` and
+`6_406_692` must be removed from `cf2s_agg.py` as admission denominators.
+
+## How the anti-outcome-shopping discipline is preserved instead
+
+`J` is independent of clone fitting, so the commitment still happens before any outcome is read: (1) J may run
+concurrently with C; (2) when J lands, compute `EE(J_h) − EE(rule_h)` for both halves; (3) record the two values and
+their source hashes; (4) **freeze them before reading any closed-loop clone outcome**; (5) only then compute the point
+`R_repr`. That is a genuine pre-commitment without substituting T0 for the declared teacher.
+
+## Bootstrap — also corrected
+
+Holding the denominator fixed inside the bootstrap is **not** the inherited protocol. The T_SEQ screen resampled the
+**same episode indices** for clone, teacher and rule together and recomputed
+
+    R_repr_b = [ EE(clone_b) − EE(rule_b) ] / [ EE(teacher_b) − EE(rule_b) ]
+
+on every draw. Use that same procedure. It matters here because each declared half carries only 12 episodes. The
+bootstrap stays **supplementary**, exactly as in the inherited screen — **no new lower-confidence-bound admission rule
+is invented.** The admission rule remains the inherited point rule: `R_repr ≥ 0.5` on **both** declared halves for at
+least one declared clone, subject to the existing non-degeneracy checks.
+
+## Pre-declared now: what happens if the denominator is not positive
+
+The herding pathology registered in §5 makes this a live possibility. If, on either half, **`EE(J_h) ≤ EE(rule_h)`**,
+then the positive-headroom interpretation of `R_repr` is undefined for the inherited admission screen. In that case:
+
+- **do not** substitute T0 as teacher;
+- **do not** take an absolute value of the denominator;
+- **do not** flip the inequality;
+- **do not** invent an action-accuracy threshold;
+- **do not** call a negative or undefined ratio a representability pass.
+
+Mark that half's inherited `R_repr` admission test **not applicable / non-identifiable, because the declared teacher
+supplies no positive EE headroom over the rule**, report the held-out imitation and regret metrics diagnostically, and
+**stop before any RL learner training** for controller adjudication. This would **not** prove the per-user privileged
+information useless; it would mean the inherited closed-loop instrument cannot supply its intended admission evidence
+for this teacher. **The instrument is not repaired after seeing J.**
