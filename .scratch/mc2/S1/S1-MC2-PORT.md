@@ -206,6 +206,29 @@ Every run's distinct seed arguments were exactly
 **Forbidden hits: none**, in any run — no formal evaluation, calibration, CONFIRM, S1-TRAIN, S1-NULL
 or S1-NULL-MC2 value was ever constructed.
 
+### 5a. The manifest generator, dry-run (no episode touched, seeds computed arithmetically)
+
+`s1_manifest.py` was run for **both** versions with both optional cells and a DRAFT rules file, into
+the session scratchpad (never into `artifacts/`, which is for the frozen one):
+
+| frozen id | runs | distinct hashes | drop-one of B | manifest sha256 |
+|---|---|---|---|---|
+| `MC2-JGO-v1` | 27 | 27 | `D3-T0` | `722eaa30…` (draft rules `dd87c0d4…`) |
+| `MC2-ARB-v2` | 30 | 30 | `A-only-v2` | `801cd54c…` (same draft rules) |
+
+`--check` regenerates each byte for byte. `s1_launch.py --init-manifest` **refuses** to write a
+formal manifest without `--reading-rules`.
+
+**A defect this dry run caught in the lane's own work, worth recording as a method point.** The first
+version of the payload hashed each cell's ROW POSITION in the table (`cell_index` / `run_name`).
+That made `B-only` — the cell that exists precisely because it is *rule-independent* — hash
+differently under v1 and v2, because inserting `A-only-v2` shifts every later row. The claim in this
+document would have been false while every test passed. Fixed by removing the position from the
+hashed payload (it stays in the manifest as `run_names`, outside the identity) and by asserting the
+property directly: `B-only` and every non-judge cell are now **the same configuration in both
+manifests**, and only `FULL` and `B-null` — the rule-dependent cells — are version-specific. A
+declaration's identity should be what a run computes, not where it sits in a list.
+
 **Measured judge cost (machine-independent call counts), at ε ≈ 1, per episode / per decision step:**
 `FULL` 995 / 110, `B-null` 1442 / 160, `B-only` 779 / 87, `A-only-v2` 637 / 71. These are used in
 `S1-MC2-MANIFEST-PLAN.md` §2 in place of the ≈ 200 calls/step early-regime estimate, which was about

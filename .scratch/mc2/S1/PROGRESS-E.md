@@ -17,8 +17,8 @@ S1-TRAIN seed stepped, lane A's worktree never touched, named-path commits only.
 ## Commits (read back from git)
 
 - `4611f68f` — phase 1: the accepted S1 harness on the MC2 lineage, the lane as a subclass.
-- `<<<phase 2 commit — filled in after committing>>>` — merge of `11466998` + the judge cells wired
-  into the S1 matrix.
+- `004e1c50` — phase 2: merge of `11466998` + the judge cells wired into the S1 matrix.
+- `<<<phase 2b commit>>>` — the cell-position-out-of-the-identity fix found by the manifest dry run.
 
 ## Phase log
 

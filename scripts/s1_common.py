@@ -554,11 +554,15 @@ def cell_config_payload(record, calib: dict, mechanism_id: str, name: str, k: in
     """Everything that defines one S1 run, for its configuration hash."""
     spec = cell(mechanism_id, name, optional=optional)
     train_seed, env_seed, mob_seed = train_triple(k, lane=lane)
+    # NOTE: the cell's ROW POSITION in the table (``cell_index`` / ``run_name``) is
+    # deliberately NOT hashed.  It is derived from which cells the frozen version and
+    # the controller's optional choice happen to include, and a run's identity is what
+    # it computes, not where it sits in a list.  Hashing it made the rule-INDEPENDENT
+    # B-only cell hash differently under v1 and v2, which is exactly the claim that
+    # cell exists to support; the position stays in the manifest, outside the payload.
     payload = {
         "lane": lane,
         "cell": spec.name,
-        "cell_index": cell_index(mechanism_id, name, optional=optional),
-        "run_name": run_name(mechanism_id, name, optional=optional),
         "kind": spec.kind, "role": spec.role, "serves": list(spec.serves),
         "optional": bool(spec.optional),
         "mechanism": (judge_mechanism_name() if spec.is_judge else spec.mechanism),
@@ -734,6 +738,8 @@ def declared_manifest(record, calib: dict, calibration_sha256: str, *,
         "code": code, "code_digest": manifest_digest(code),
         "arm_configs": {key: config_hash(p) for key, p in payloads.items()},
         "arm_payloads": payloads,
+        "run_names": {f"{name}:{k}": f"{run_name(mid, name, optional=optional)}-k{k}"
+                      for name in names for k in SEED_INDICES},
         "reading_rules": reading_rules or {
             "status": "NOT FROZEN -- s1_manifest.py --reading-rules FILE is required "
                       "for a formal manifest",

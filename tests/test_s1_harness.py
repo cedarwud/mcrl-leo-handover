@@ -942,6 +942,9 @@ def test_the_frozen_manifest_carries_everything_that_must_be_hashed(tmp_path,
     from mcrl.runtime import training_pipeline as tp
     real_judge = _stub_judge(monkeypatch)
     record = tp.read_prereg(tp.CANONICAL_PREREG)
+    bonly: dict[str, str] = {}
+    full: dict[str, str] = {}
+    control: dict[str, str] = {}
     rules = tmp_path / "rules.md"
     rules.write_text("frozen reading rules\n")
     for mid in (V1, V2):
@@ -985,6 +988,11 @@ def test_the_frozen_manifest_carries_everything_that_must_be_hashed(tmp_path,
             if "R" in tuple(p["judge_spec"]["sources"]):
                 assert tuple(p["judge_spec"]["null_key"]) == (
                     9_263_000, p["seed_index"])
+        # the rule-INDEPENDENT B-only cell is the SAME configuration under both
+        # versions; every rule-dependent judge cell is not
+        bonly[mid] = m["arm_configs"]["B-only:0"]
+        full[mid] = m["arm_configs"]["FULL:0"]
+        control[mid] = m["arm_configs"]["D0:0"]
         if real_judge:      # the library's own dataclass, once it is in the tree
             import dev_e0_common as D
             import mcrl.algorithms.cf_judge as cfj
@@ -1010,6 +1018,11 @@ def test_the_frozen_manifest_carries_everything_that_must_be_hashed(tmp_path,
                                                    "sha256": "f" * 64})
         assert json.dumps(m, sort_keys=True, default=str) == json.dumps(
             again, sort_keys=True, default=str)
+    # a cell's identity is what it computes, not where it sits in the table:
+    assert bonly[V1] == bonly[V2], (
+        "B-only is rule-independent and must be ONE configuration under both versions")
+    assert control[V1] == control[V2], "D0 is the same control under both versions"
+    assert full[V1] != full[V2], "FULL under v1 and v2 are different mechanisms"
 
 
 def test_every_non_judge_cell_payload_is_distinct_and_carries_its_lane():
