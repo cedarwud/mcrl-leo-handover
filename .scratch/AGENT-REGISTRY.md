@@ -599,6 +599,16 @@ controller session `1f482c61-51b5-49e1-b379-c7b1f57a074d`. Takeover + handoff co
 | **B** method / readout | `ae75ab12192600cfc` | opus | `…-mc2/.scratch/mc2/B/PROGRESS-B.md` | `B/CONTRACT-COSIGN.md` (first line gates A's launch), `B/LITERATURE-DELTA.md`, `B/CODE-READ.md`, `B/b_readout.py`, `B/b_output_change.py` |
 | **C** paper | `ab516cd1d1a7bcb0e` | opus | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-paper-20260912/PROGRESS-C.md` | problem-setup / method / table-skeleton / citation / symbol / claim-boundary deltas |
 | **D** deck / figures | `a08be6050027da1ba` | sonnet | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-deck-20260912/PROGRESS-D.md` | `build_mc2_pages.py`, `mc2-pages-r1.pptx`, `figures/`, `renders/` |
+| **E** S1 port / manifest / review brief | `a97524155035da490` | opus | `/home/u24/papers/mcrl-leo-handover-mc2-s1/.scratch/mc2/S1/PROGRESS-E.md` | worktree `…-mc2-s1`, branch `mc2/s1-port-20260912` from `67e175bd`; `S1-MC2-PORT.md`, `S1-MC2-MANIFEST-PLAN.md`, `S1-MC2-REVIEW-BRIEF.md`. Never launches S1 |
+
+**Update (owner's second message, 2026-09-12): fast iteration, freeze the algorithm ASAP, "multi-catfish" narrative,
+maximise parallel sub-agents.** Contract **r1** (`9d3625c4`): v1 `MC2-JGO-v1` and v2 `MC2-ARB-v2` run **concurrently**
+at ep 100 (16 runs, k = 10, 11; shared B-only cell); version selection + fixed-order fallback (k = 15–17) declared in
+§7 before any result. Lane A launches on `STATUS: COSIGNED r1` (first line of `…-mc2/.scratch/mc2/B/CONTRACT-COSIGN.md`).
+Controller probe (non-learning, P0 episodes, 5 detached processes on sat, cwd = Lane M tree, cmdline
+`mc2_judge_probe.py`): `/home/sat/mcrl-v025-mc2-ws/controller-probe/probe-{t0,composite,tnext,learner,random}.json`.
+agy cross-model contract review (local, not resumable — rerun if lost): brief `…-mc2/.scratch/mc2/agy/AGY-CONTRACT-REVIEW-BRIEF-r1.md`,
+output `…-mc2/.scratch/mc2/agy/AGY-CONTRACT-REVIEW-r1.md`.
 
 Resume template: `SendMessage(to=<agentId>)` — "resume from your PROGRESS file; do not redo finished steps; first check
 sat processes by anchored /proc scan before touching any run".
