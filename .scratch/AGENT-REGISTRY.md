@@ -9,7 +9,37 @@ the agents, never the detached `sat` jobs. Resume = `SendMessage(to=<agentId>, m
 (`ssh sat 'for p in $(pgrep -u sat python); do echo $p $(readlink /proc/$p/cwd) $(tr "\0" " " </proc/$p/cmdline|cut -c1-120); done'`);
 never let an agent relaunch a live or finished item.
 
-### STATE 23:25 UTC 2026-09-11 (07:25 Taipei) — E1 live on sat; two sub-agents live. **This block supersedes every state block below it.**
+### STATE 2026-09-12 — formal S1 HELD; three lanes live. **This block supersedes every state block below it.**
+
+**The single most important fact: the formal evaluation set `9_111_000+i / 9_112_000+i` is UNTOUCHED and must stay
+that way.** Verified by a sweep of every `sat` workspace — hits only in pre-existing artefacts of closed lanes
+(`arch-ws`, `b0-ws` TLE files, `b2-repr-ws`, `beam-ws`, `c1c2-ws`, the `catfish2-ws` tarball), **zero in
+`mcrl-v025-dev-e0-ws` and zero in any new result root**. Calibration and CONFIRM likewise untouched.
+
+Governing documents, in order: **Amendment 14** (`f6a01ab1`, S1 HOLD + the bounded successor lane) and its
+**execution supplement** (`3d4bb884`, lane priority, the corrected no-optimizer wording, the extended parity gate,
+the renamed cheap path, S1-PREP parked). Amendment 13 (`2b14cde3`) still defines the six-arm S1 manifest; only its
+§7 automatic launch authority is superseded.
+
+| priority | name | agentId | worktree / branch | server root | state |
+|---|---|---|---|---|---|
+| **1** | **CF2S-PHASE-A** (`T_H`) | `ad6a09927aee59205` | `-cf2s` / `catfish2/successor-20260912` @ `27f69edf` | `/home/sat/mcrl-v025-cf2s-ws/` | Critical path. Clean tests + the `T_H` = `A m=12dB` 100 % equivalence receipt, commit, then launch DEV **k=6**, 100 ep: `D0`, `D3-T_H`, matched `D3-null`. **No review gate before the canary.** Reading rule = Amendment 14 §6b. PROGRESS `.scratch/catfish2-successor/PROGRESS-PHASE-A.md` |
+| **2** | **CF2S-PHASE-B0** (`T_DELTA`) | `a053e48e0351bc1e6` | `-cf2s-b0` / `catfish2/successor-b0-20260912` @ `27f69edf` | `/home/sat/mcrl-v025-cf2s-b0-ws/` | No RL training. Extend the parity sample to **competing-action** decisions (the first smoke's `top1_top2_margin` was empty ⇒ not yet a gate), then the exact diagnostic in ≤ 4 shards, then **one** frozen supervised `R_repr` clone (§7d, the only optimizer exception). PROGRESS `.scratch/catfish2-successor/PROGRESS-PHASE-B0.md` |
+| **3** | **S1-PREP** | `a76ae76a5ce287bfb` | `-dev` / `dev/e0-harness-20260912` | `/home/sat/mcrl-v025-dev-e0-ws/` | Finish the running batch, commit, then **PARK**. No S1 review dispatch, no heavy S1 cycle, no sat compute, no formal set. `T0-XEP` reference **sealed**, sha256 `9bb0c01efdd403fb0e765bd133d718f7b07273a188c9f173b39fbb112ae1900c`, never regenerated |
+
+**Closed, do not resume:** `CURATE-2` (`a53ed673b082598a9`, Q9b done at `c44d1de8`), `CATFISH2-DISCOVERY`
+(`af6175e5685e4686f`, Stage 0 zero survivors at `99263da9`), the B2 lane, the B1 lane, DEVHARNESS.
+
+**Verified base facts** (re-derive only if something looks wrong): `27f69edf` differs from `05aadf1b` by
+`scripts/dev_e0_aggregate.py` alone (+149 lines, aggregation only). `63b02dc0` is an ancestor of `27f69edf` and
+`cf_credit.py` there is byte-identical to the b1 tip, so `without_user_rates` is already in the successor base;
+`d75c18be` adds only measurement scripts. `102b2d4d` is an ancestor of `05aadf1b` with no `env/` change between them,
+so cap off / segment anchor on / interruption off / users 100 holds across every lane.
+
+**Next controller update covers only**: Phase-A preflight/commit and the k=6 result; B0's nontrivial parity, then its
+diagnostic and `R_repr`; and S1-PREP reaching PARKED. No new branch without instruction.
+
+### (superseded) STATE 23:25 UTC 2026-09-11 (07:25 Taipei) — E1 live on sat; two sub-agents live.
 
 **Live sub-agents (2).**
 
