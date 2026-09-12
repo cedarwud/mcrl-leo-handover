@@ -452,3 +452,32 @@ resumed twice this way and produced its most important findings on the second re
 
 - ~~codex chain completions~~ — **stopped 2026-09-11** (owner: no codex for now). Do not re-arm.
 - server health: `tail -F /home/sat/bigtmp/watch_health.log | grep LOAD HIGH|MEMORY LOW|^ORPHAN|ENOSPC`
+
+## RESUME-NOW 2026-09-12 (Amendment 15 portfolio) — supersedes every block above
+
+**Formal S1 is PARKED and UNTOUCHED. Verified: no S1 result root on sat; no result file since 2026-09-11 in the dev,
+cf2s or cf2s-b0 workspaces contains 9111000/9112000.** Governing document: **Amendment 15** (`e5809fdf`).
+
+| lane | agentId | worktree / branch (base `27f69edf`) | sat root | state |
+|---|---|---|---|---|
+| **B0 / T_DELTA** | `a053e48e0351bc1e6` | `-cf2s-b0` / `catfish2/successor-b0-20260912` | `/home/sat/mcrl-v025-cf2s-b0-ws/` | C corpus done; clone fitting under way (`CLONE-SOFT-tau1/tau3`, `TAU-SELECTION`); **4 J shards live**; **no `CLOSED-*` and no `JOINT-J` yet**. Corrected contract: `den_h = EE(J_h) − EE(rule_h)` |
+| **CANARY-PREP** | `a3258ecc059dbb6ad` | `-cf2s-prep` / `catfish2/tdelta-canary-prep-20260912` | own | engineering only, no RL |
+| **Lane N / T_NEXT** | `a81e4518a90632338` | `-cf2s-next` / `catfish2/tnext-20260912` | `/home/sat/mcrl-v025-cf2s-next-ws/` | Amendment 15 §2A; structural blocker check first |
+| **Lane Q / T_TAIL** | `a0b89526a10296cfb` | `-cf2s-tail` / `catfish2/ttail-20260912` | `/home/sat/mcrl-v025-cf2s-tail-ws/` | Amendment 15 §2B |
+| **Lane M / MULTI-D3** | (see below) | `-cf2s-multi` / `catfish2/multid3-20260912` | local mostly | Amendment 15 §6, twelve tests |
+
+**CLOSED, do not resume:** Phase A / `T_H` (`ad6a09927aee59205`), CURATE-2, CATFISH2-DISCOVERY, DEVHARNESS, B2, B1.
+**S1-PREP** (`a76ae76a5ce287bfb`) is PARKED — accepted at `4e91589f`, manifest `7646bb00…`, XEP reference `9bb0c01e…`.
+
+**Frozen by Amendment 15:** P0 collection env `9_202_500+i` / mob `9_203_500+i`; portfolio learner seeds **k = 8, 9**
+(DEV `9_201_00k / 9_202_00k / 9_203_00k`, DEV-NULL `(9_231_000,k)` / `(9_241_000,k)`) — audited unused, and no result
+anywhere carries `seed_index` 8 or 9; **`delta_DEV = +1.0 %`**; `A_repr ≥ 0.50` for the two new sources;
+`disagreement ≥ 0.25` distinctness for both.
+
+**Base-commit fact, verified, do not re-litigate:** the new lanes are based on `27f69edf`, **not** on Amendment 15's own
+commit (`e5809fdf` is on the wip branch and carries **no** harness code — `27f69edf` is not its ancestor), and **not**
+on the dev tip `a24b90b2`, whose S1 `DevSettings` fields change every arm's config hash and would break comparability
+with the frozen `D3-T0` lineage.
+
+**Resource:** global cap 8 single-threaded scientific workers on sat; 4 are B0's J shards. New lanes stay local /
+tiny-smoke until those free.
