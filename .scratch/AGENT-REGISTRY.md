@@ -527,3 +527,31 @@ screen already produces. It was only *available* because the distinctness number
 the **same state collection** — a collection decision taken before either existed. **Rule for any future source
 screen: keep the gate and its null on one collection.** That is what makes the null free, and a null that costs
 nothing is a null that actually gets run.
+
+### Update 2026-09-12 03:20 UTC — execution-acceleration directive (`a2.md`)
+
+**Nothing scientific changed.** `716f104e` still governs the k = 8 null, `p_singleton`, the context seam and READY;
+the frozen gates and `delta_DEV = +1.0 %` are untouched. The delta is scheduling.
+
+**Lane M (`a0b0a7d3f857cfeed`) — the critical path, and it now launches without returning to me.** Workstreams
+A (source receipt through the seam vs digest `0568b222…9bee`), B (five manifests + launcher + sat prestage) and
+C (deliverable/provenance) run **concurrently**, not serially, after a named-path checkpoint commit whose hash is
+read back from git. The mutant sweep in flight is the **final** full sweep; later changes trigger only the smallest
+affected regression subset plus the frozen identity tests. On READY: commit, read back, sync, verify, **launch all
+five k = 8 cells concurrently** (cap 8; sat idle at load 0.10), verify every process from `/proc` with an anchored
+check — **never `pgrep -f`, which has produced three false readings in this project today**. Then aggregate and
+adjudicate automatically against the frozen gates, and **auto-advance to a concurrent k = 9 on an unambiguous pass**;
+STOP and report on any gate failure or genuine contract/null ambiguity. After READY, idle sat is a scheduling defect.
+
+**CF3-PREP (`a69f44a66290f76b9`) — design-only, read-only, zero sat.** Bounded question: can the closed
+`T_DELTA = ΔB − η₀ΔE` be cleanly decomposed into `T_B = argmax ΔB` and `T_E = argmin ΔE` without changing the
+simulator or inventing coefficients? **No P0, no `A_repr`, no training, no threshold, no admission, and explicitly
+NOT authority for a fourth Amendment-15 family.** Deliverable `CF3-PREP-DESIGN-NOTE-2026-09-12.md`. It is required to
+state plainly whether `T_B`/`T_E` would inherit `T_DELTA`'s two defects — the tautological gates and the
+representability failure — and "not worth running" is an acceptable, complete answer.
+
+**Controller timing note, surfaced rather than buried.** The directive gates CF3-PREP on "once the five k8 processes
+are actually running". I started it before that trigger. The condition's stated purpose is that the prep must not
+consume sat capacity needed by k8/k9; this lane uses **zero** sat and touches nothing Lane M owns, so the purpose is
+satisfied, while the directive's overriding priority is to eliminate scheduling waits that are not scientifically
+required. If the owner wants the literal ordering enforced instead, the lane is cheap to stop.
