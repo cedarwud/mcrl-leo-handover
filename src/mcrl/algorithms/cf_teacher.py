@@ -38,6 +38,12 @@ Mechanisms (Amendment 6 section 2), all on the deployed scalar score
     the same margin loss with ``a_T`` replaced by a seeded uniform random LEGAL
     action (DEV-NULL generator) -- the matched null for "does D3's gain need T0's
     action", with no T0 quantity in any loss input.
+``D3-XEP`` (Amendment 12)
+    the same margin loss with ``a_T`` replaced by ``T0-XEP``'s action: T0's ordinary
+    frozen score computed on the state recorded at step ``t`` of a FIXED pre-recorded
+    reference episode, argmax restricted to the learner's CURRENT legal mask.  The
+    plausible-but-uninformative second null: same functional form, same
+    hyperparameters, same score scale, decorrelated from the current state.
 """
 
 from __future__ import annotations
@@ -49,14 +55,33 @@ import torch.nn.functional as F
 from ..env.action_contract import NUM_ACTIONS, no_op_actions
 from ..errors import MCRLContractError
 
-MECHANISMS: tuple[str, ...] = ("D0", "D2-T0", "D2-null", "D3-T0", "D3-null")
-TEACHERS: tuple[str, ...] = ("none", "T0", "random")
+MECHANISMS: tuple[str, ...] = ("D0", "D2-T0", "D2-null", "D3-T0", "D3-null", "D3-XEP")
+TEACHERS: tuple[str, ...] = ("none", "T0", "random", "T0-XEP")
 T0_C: float = 1.0
 MASK_FILL: float = -1e9
 """Finite fill for illegal actions (never -inf: 0 * -inf would be NaN)."""
 
 
 # ------------------------------------------------------------------ T0 labels
+def t0_score_matrix(states, c: float = T0_C) -> np.ndarray:
+    """``(U, 28)`` float64 T0 scores from the RAW user states -- no mask, no action.
+
+    THE single expression of ``score(a) = log2(1 + max(gamma_a, 0)) - c [N_a == 0]``
+    in this tree.  :func:`t0_scores` is this plus the masked argmax, and ``T0-XEP``
+    (Amendment 12) is this on a DIFFERENT state with the CURRENT mask's argmax, so
+    both teachers are guaranteed to score with the same unmodified arithmetic.
+    """
+    users = len(states)
+    scores = np.zeros((users, NUM_ACTIONS), dtype=np.float64)
+    for u, s in enumerate(states):
+        gain = np.asarray(s.channel_quality, dtype=np.float64)
+        load = np.asarray(s.beam_loads, dtype=np.float64)
+        gain_floor = np.maximum(gain, 0.0)
+        penalty = c * (load == 0.0).astype(np.float64)
+        scores[u] = np.log2(1.0 + gain_floor) - penalty
+    return scores
+
+
 def t0_scores(states, masks, c: float = T0_C):
     """``(U, 28)`` float64 scores, ``(U,)`` int64 actions, ``(U, 28)`` legal mask.
 
@@ -64,21 +89,15 @@ def t0_scores(states, masks, c: float = T0_C):
     ``t0_common.t0_scores`` -- from the RAW user state.
     """
     users = len(states)
-    scores = np.zeros((users, NUM_ACTIONS), dtype=np.float64)
+    scores = t0_score_matrix(states, c)
     legal_mask = np.zeros((users, NUM_ACTIONS), dtype=bool)
     acts = np.asarray(no_op_actions(users), dtype=np.int64)
-    for u, s in enumerate(states):
+    for u in range(users):
         legal = np.asarray(masks[u].mask, dtype=bool)
-        gain = np.asarray(s.channel_quality, dtype=np.float64)
-        load = np.asarray(s.beam_loads, dtype=np.float64)
-        gain_floor = np.maximum(gain, 0.0)
-        penalty = c * (load == 0.0).astype(np.float64)
-        score = np.log2(1.0 + gain_floor) - penalty
-        scores[u] = score
         legal_mask[u] = legal
         ok = np.flatnonzero(legal)
         if ok.size:
-            acts[u] = int(ok[int(np.argmax(score[ok]))])
+            acts[u] = int(ok[int(np.argmax(scores[u][ok]))])
     return scores, acts, legal_mask
 
 
@@ -137,6 +156,31 @@ def random_legal_actions(mask: np.ndarray, rng: np.random.Generator) -> np.ndarr
         if valid.size:
             out[u] = int(rng.choice(valid))
     return out
+
+
+def t0_xep_labels(reference_states, current_mask: np.ndarray, c: float = T0_C):
+    """``T0-XEP`` (Amendment 12 section 2): ``(U, 28)`` scores, ``(U,)`` actions.
+
+    T0's ordinary frozen score -- :func:`t0_score_matrix`, ``c = 1``, ``m = 0``,
+    unmodified -- computed on ``reference_states`` (step ``t`` of the FIXED
+    pre-recorded reference episode), with the resulting argmax restricted to
+    ``current_mask``, the LEARNER's legal action mask at its own step ``t``.
+
+    The two inputs come from different episodes on purpose: the 28 candidate slots
+    are satellite-major beam-minor over the VISIBLE set, so slot ``k`` in the
+    reference episode is not the same physical beam as slot ``k`` now, and user row
+    ``u`` is not the same user.  That decorrelation IS the null.
+    """
+    mask = np.asarray(current_mask, dtype=bool)
+    if mask.ndim != 2 or mask.shape[1] != NUM_ACTIONS:
+        raise MCRLContractError(f"T0-XEP: current mask has shape {mask.shape}")
+    if len(reference_states) != mask.shape[0]:
+        raise MCRLContractError(
+            f"T0-XEP: {len(reference_states)} reference rows for {mask.shape[0]} "
+            "learner rows -- the reference episode must have the same user count"
+        )
+    scores = t0_score_matrix(reference_states, c)
+    return scores, masked_argmax_rows(scores, mask)
 
 
 def soft_targets(scores: np.ndarray, mask: np.ndarray, tau: float) -> np.ndarray:

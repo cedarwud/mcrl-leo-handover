@@ -19,7 +19,7 @@ Usage::
     dev_e0_launch.py --root DIR --calibration FILE [--init-manifest] [--smoke]
                      [--episodes 300] [--stop-after N] [--expect N]
                      [--memory-max 5G] [--dry-run] [--verify] [SPEC ...]
-    SPEC = ARM:K  (1:0 .. 6:0);  default = arms 1-4 on DEV triple k = 0.
+    SPEC = ARM:K  (1:0 .. 8:0);  default = arms 1-4 on DEV triple k = 0.
 """
 
 from __future__ import annotations
@@ -102,6 +102,13 @@ def main() -> int:
         parsed.append((arm, k))
 
     from mcrl.runtime import training_pipeline as tp
+    if any(D.ARMS[arm][0] == "D3-XEP" for arm, _k in parsed):
+        # Fail closed BEFORE anything is planned: the declared reference trajectory
+        # must exist and carry the declared sha256 (Amendment 12 section 2).
+        ref = D.load_xep_reference()
+        print(f"T0-XEP reference {D.XEP_REFERENCE_PATH} verified: "
+              f"sha256 {ref.sha256}, key {ref.key}, policy {ref.policy}, "
+              f"{ref.steps} steps x {ref.users} users")
     episodes = 3 if a.smoke else int(a.episodes)
     n_devval = 2 if a.smoke else int(a.devval_episodes)
     record = tp.read_prereg(tp.CANONICAL_PREREG)
@@ -133,7 +140,10 @@ def main() -> int:
             "DEVVAL": [D.DEVVAL_ENV_BASE, D.DEVVAL_MOB_BASE],
             "DEVVAL_RANDOM": D.DEVVAL_RANDOM_BASE,
             "DEV_NULL_D2": D.DEV_NULL_D2_BASE,
+            "DEV_NULL_D3": D.DEV_NULL_D3_BASE,
+            "XEP_REFERENCE": [D.XEP_REF_ENV_SEED, D.XEP_REF_MOB_SEED],
         },
+        "xep_reference_sha256": D.XEP_REFERENCE_SHA256,
     }
     if mpath.is_file():
         have = json.loads(mpath.read_text())

@@ -163,10 +163,10 @@ def mutant(monkeypatch):
     elif MUTANT == "null_uses_train_rng":
         real = T.teacher_labels
 
-        def bad(self, states, masks):
+        def bad(self, states, masks, *, step=None):
             if self.dev.mechanism == "D2-null":
                 self._null_rng = self._train_rng
-            return real(self, states, masks)
+            return real(self, states, masks, step=step)
 
         monkeypatch.setattr(T, "teacher_labels", bad)
     elif MUTANT == "teacher_applied_at_zero_weight":
@@ -233,8 +233,8 @@ def mutant(monkeypatch):
     elif MUTANT == "d3null_target_is_t0_action":
         real = T.teacher_labels
 
-        def bad(self, states, masks):
-            t0, used, scores, legal, raw = real(self, states, masks)
+        def bad(self, states, masks, *, step=None):
+            t0, used, scores, legal, raw = real(self, states, masks, step=step)
             if self.dev.mechanism == "D3-null":
                 used = t0
             return t0, used, scores, legal, raw
@@ -249,17 +249,17 @@ def mutant(monkeypatch):
     elif MUTANT == "d3null_uses_train_rng":
         real = T.teacher_labels
 
-        def bad(self, states, masks):
+        def bad(self, states, masks, *, step=None):
             if self.dev.mechanism == "D3-null":
                 self._null_rng = self._train_rng
-            return real(self, states, masks)
+            return real(self, states, masks, step=step)
 
         monkeypatch.setattr(T, "teacher_labels", bad)
     elif MUTANT == "d3null_scores_carry_t0":
         real = T.teacher_labels
 
-        def bad(self, states, masks):
-            t0, used, scores, legal, raw = real(self, states, masks)
+        def bad(self, states, masks, *, step=None):
+            t0, used, scores, legal, raw = real(self, states, masks, step=step)
             if self.dev.mechanism == "D3-null":
                 scores = raw
             return t0, used, scores, legal, raw
@@ -692,8 +692,8 @@ def test_stored_labels_are_the_collection_time_labels_of_their_own_state():
     seen = []
     real = tr.teacher_labels
 
-    def record(states, masks):
-        out = real(states, masks)
+    def record(states, masks, *, step=None):
+        out = real(states, masks, step=step)
         seen.append((np.array(out[0]), np.array(out[2]), np.array(out[3])))
         return out
 

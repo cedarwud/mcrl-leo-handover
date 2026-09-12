@@ -115,9 +115,12 @@ def main() -> int:
     factory = C.env_factory()
     env = factory()
     env.assert_ready_to_train()
+    # Amendment 12: D3-XEP loads the ONE pre-recorded reference trajectory and fails
+    # closed unless its file sha256 is the declared one.  It is bound here, once.
+    xep_ref = D.load_xep_reference() if mech == "D3-XEP" else None
     trainer = cfd.CFDevTrainer(env, config, settings, dev, env_factory=factory,
                                train_seed=train_seed, env_seed=env_seed,
-                               mobility_seed=mob_seed)
+                               mobility_seed=mob_seed, xep_reference=xep_ref)
 
     fingerprint = {
         "arm": arm, "arm_name": D.arm_name(arm), "mechanism": mech,
@@ -130,6 +133,8 @@ def main() -> int:
         "code": code, "code_digest": code_digest,
         "lane": "E0-development (Amendment 6): not formal evidence",
     }
+    if xep_ref is not None:
+        fingerprint["xep_reference"] = xep_ref.identity()
     status = {
         "status": "running", "arm": arm, "arm_name": D.arm_name(arm),
         "mechanism": mech, "credit_mode": credit, "seed_index": k,

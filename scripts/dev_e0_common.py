@@ -38,6 +38,33 @@ DEV_NULL_D2_BASE = 9_231_000
 DEV_NULL_D3_BASE = 9_241_000
 N_DEVVAL = 24
 
+# ------------------------------------------------- T0-XEP reference (Amendment 12)
+# The ONE pre-recorded reference episode behind the second null.  Amendment 12
+# section 2 requires it to be recorded once, under the DEV-NULL seed namespace,
+# never DEV / DEVVAL / CONFIRM, with its identity and file sha256 recorded BEFORE the
+# first S1 run and never regenerated afterwards.  The declared DEV-NULL namespaces
+# (Amendment 6 section 3) are 9_231_000.. (D2-null) and 9_241_000.. (D3/D4-null);
+# D3-XEP is a D3-family null, so the reference episode is rolled inside the D3
+# DEV-NULL range, clear of the k = 0..9 composite keys (9_241_000, k) that D3-null
+# draws from.  Recorded by scripts/dev_e0_xep_reference.py.
+XEP_REF_ENV_SEED = 9_241_500
+XEP_REF_MOB_SEED = 9_241_501
+XEP_REF_POLICY = "T0"
+"""The reference episode is rolled under T0 itself (``cf_teacher.t0_policy``).
+
+Amendment 12 does not name the policy, and the visited states depend on it.  T0 is
+chosen because section 2 requires the null to be PLAUSIBLE: a T0-rolled reference
+carries a realistic lit-set / beam-load structure, so the structural prior the null
+delivers is the one the amendment exists to test.  Declared here, before any number."""
+XEP_REFERENCE_PATH = REPO / "artifacts" / "dev-e0" / "t0-xep-reference.json"
+XEP_REFERENCE_SHA256 = "9bb0c01efdd403fb0e765bd133d718f7b07273a188c9f173b39fbb112ae1900c"
+"""SEALED 2026-09-12, before any S1 run (Amendment 12 section 2, Amendment 13 section 5).
+
+Recorded once by ``scripts/dev_e0_xep_reference.py`` on the pinned TLE archive
+``427e6a91...38fe9``; 10 steps x 100 users; re-recording reproduces the file byte for
+byte (``dev_e0_xep_reference.py --verify``).  It is NEVER regenerated, and it stays in
+the DEV-NULL namespace even though S1 moves the other seeds to fresh formal ones."""
+
 # ---------------------------------------------------------------- batch
 EPISODES = 300
 DEVVAL_AT = (100, 200, 300)
@@ -50,6 +77,7 @@ ARMS: dict[int, tuple[str, str]] = {
     5: ("D0", "lighting_price"),
     6: ("D2-T0", "lighting_price"),
     7: ("D3-null", "equal_share"),
+    8: ("D3-XEP", "equal_share"),
 }
 ALPHA0, TAU0, TAU_S0, MARGIN0, LAMBDA_E0 = 1.0, 3.0, 1.0, 0.15, 1.0
 ETA0_EXPECTED = 110_507_234.83444457
@@ -133,15 +161,29 @@ def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
     DIFFERENT VERSION: it changes the configuration hash."""
     if mechanism not in cft.MECHANISMS:
         raise SystemExit(f"unknown mechanism {mechanism!r}")
+    xep = mechanism == "D3-XEP"
     return cfd.DevSettings(
         mechanism=mechanism,
-        teacher={"D0": "none", "D3-null": "random"}.get(mechanism, "T0"),
+        teacher={"D0": "none", "D3-null": "random",
+                 "D3-XEP": "T0-XEP"}.get(mechanism, "T0"),
         alpha=ALPHA0, tau=(TAU0 if tau is None else float(tau)),
         tau_s=TAU_S0, margin=MARGIN0, lambda_e=LAMBDA_E0,
         null_key=_null_key_for(mechanism, k),
         devval_env_base=DEVVAL_ENV_BASE, devval_mobility_base=DEVVAL_MOB_BASE,
         devval_episodes=int(devval_episodes),
+        # The reference identity is the SAME for every seed index: one reference
+        # trajectory for the whole arm (Amendment 12: recorded once).
+        xep_reference_sha256=(XEP_REFERENCE_SHA256 if xep else None),
+        xep_reference_key=((XEP_REF_ENV_SEED, XEP_REF_MOB_SEED) if xep else None),
+        xep_reference_policy=(XEP_REF_POLICY if xep else None),
     )
+
+
+def load_xep_reference(path=None):
+    """The declared T0-XEP reference trajectory, verified against its sha256."""
+    from mcrl.algorithms import cf_xep as cfx
+
+    return cfx.load_reference(Path(path or XEP_REFERENCE_PATH), XEP_REFERENCE_SHA256)
 
 
 def arm_config_payload(record, calib: dict, arm: int, k: int, *, episodes: int,
@@ -181,11 +223,13 @@ MANIFEST_FILES = (
     "src/mcrl/algorithms/cf_ratio.py",
     "src/mcrl/algorithms/cf_credit.py",
     "src/mcrl/algorithms/cf_sources.py",
+    "src/mcrl/algorithms/cf_xep.py",
     "src/mcrl/algorithms/modqn.py",
     "scripts/dev_e0_common.py",
     "scripts/run_dev_e0.py",
     "scripts/dev_e0_launch.py",
     "scripts/dev_e0_refs.py",
+    "artifacts/dev-e0/t0-xep-reference.json",
     "docs/dev-e0/V025-CONTROLLER-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md",
 )
 
