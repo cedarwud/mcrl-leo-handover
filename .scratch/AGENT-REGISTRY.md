@@ -579,3 +579,26 @@ framing — dropping "Multi-Catfish" and carrying the backbone/catfish decomposi
 direction on a genuinely new information axis. **Formal S1 remains PARKED and untouched**; its manifest is complete
 and hashed (`7646bb00…`, `T0-XEP` sealed at `9bb0c01e…`). Two things are held pending that decision: the S1
 fresh-context review (held since Amendment 14) and the final S1 manifest.
+
+## RESUME-NOW 2026-09-12 (MC2 genuine Multi-Catfish round) — supersedes every block above
+
+**Owner ruling 2026-09-12**: genuine two-source Multi-Catfish (competition / selective intervention); single T0 kept as
+the strong baseline; Amendment 15 / k8 failure stays closed; integration redesign authorised in a new version. New
+controller session `1f482c61-51b5-49e1-b379-c7b1f57a074d`. Takeover + handoff corrections:
+`.scratch/mc2-controller/CONTROLLER-MC2-TAKEOVER-2026-09-12.md`.
+
+- Worktree `/home/u24/papers/mcrl-leo-handover-mc2`, branch `mc2/judge-override-20260912`, base `6136c514`;
+  contract r0 committed at `67e175bd` (`.scratch/mc2/MC2-CATFISH-IDENTITY-AND-INTERVENTION-CONTRACT-2026-09-12.md`).
+- sat workspace `/home/sat/mcrl-v025-mc2-ws/` (root `runs-ep100/`). Cap 8 single-thread workers.
+- Seeds: selection k = 10, 11 (ep 100); confirmation k = 12, 13, 14 (ep 300); reserve 15–17; **k = 9 unused**;
+  DEV-NULL base `9_243_000`. Formal / calibration / CONFIRM / S1 untouched.
+
+| lane | agentId | model | progress file | deliverable |
+|---|---|---|---|---|
+| **A** engineering / training | `a9835c17806d1176b` | opus | `…-mc2/.scratch/mc2/PROGRESS-A.md` | `MC2-JGO-v1` code + tests + smoke + sat launch of the 10-run ep-100 matrix + P0 rule screen; then `MC2-ARB-v2` code (not launched) |
+| **B** method / readout | `ae75ab12192600cfc` | opus | `…-mc2/.scratch/mc2/B/PROGRESS-B.md` | `B/CONTRACT-COSIGN.md` (first line gates A's launch), `B/LITERATURE-DELTA.md`, `B/CODE-READ.md`, `B/b_readout.py`, `B/b_output_change.py` |
+| **C** paper | `ab516cd1d1a7bcb0e` | opus | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-paper-20260912/PROGRESS-C.md` | problem-setup / method / table-skeleton / citation / symbol / claim-boundary deltas |
+| **D** deck / figures | `a08be6050027da1ba` | sonnet | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-deck-20260912/PROGRESS-D.md` | `build_mc2_pages.py`, `mc2-pages-r1.pptx`, `figures/`, `renders/` |
+
+Resume template: `SendMessage(to=<agentId>)` — "resume from your PROGRESS file; do not redo finished steps; first check
+sat processes by anchored /proc scan before touching any run".
