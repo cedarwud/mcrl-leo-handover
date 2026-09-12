@@ -48,9 +48,15 @@ never evidence.
   a three-fresh-seed ep-300 screen there is no mechanism id to freeze and therefore no formal manifest.
 - `⟨FREEZE⟩ drop-one-of-B cell` — follows mechanically from the mechanism id: `D3-T0` for `MC2-JGO-v1` and for
   `MC2-SEL-EXP-v3` (both keep the anchor's label unconditional, so their A-only arm *is* the frozen single-Catfish arm);
-  `A-only-v2` for `MC2-ARB-v2`. If `MC2-SEL-EXP-v3` is the frozen mechanism, its matrix additionally carries the
-  dose-matched `R-ungated` cell, and clause (iv-b) of its DEV screen (`FULL vs R-ungated > 0`) is added to §4.4 as a
-  sixth gate with the same `> 0`, ≥ 2/3-seeds form.
+  `A-only-v2` for `MC2-ARB-v2`.
+- **Corrected 2026-09-12 per the owner ruling of 15:36 (§5, §7), before any v3 counted outcome:** `R-ungated` is a
+  **secondary mechanism analysis, NOT a formal cell and NOT a gate** — the earlier sentence here that added it to the
+  matrix and to §4.4 as a sixth gate is withdrawn. Under `MC2-SEL-EXP-v3` the S1 matrix is the core five (`D0`,
+  `A-only` = `D3-T0`, `B-only-v3`, `FULL-v3`, gated `B-null-v3`) + same-budget `MODQN-eq16` + `D2-T0 τ = 0.3` +
+  `D3-null` + `D3-XEP`, equivalent cells deduplicated; the survival conjunction is §4.4 with its gated-null clause, and
+  "beats same-budget MODQN" alone is never sufficient for a multi-Catfish claim. The v3 action-collection seam, its
+  planning random stream and its replay format must be wired into the formal driver and verified before the manifest
+  is frozen.
 
 ## 4. What this file is not
 
