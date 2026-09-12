@@ -597,8 +597,8 @@ controller session `1f482c61-51b5-49e1-b379-c7b1f57a074d`. Takeover + handoff co
 |---|---|---|---|---|
 | **A** engineering / training | `a9835c17806d1176b` | opus | `…-mc2/.scratch/mc2/PROGRESS-A.md` | `MC2-JGO-v1` code + tests + smoke + sat launch of the 10-run ep-100 matrix + P0 rule screen; then `MC2-ARB-v2` code (not launched) |
 | **B** method / readout | `ae75ab12192600cfc` | opus | `…-mc2/.scratch/mc2/B/PROGRESS-B.md` | `B/CONTRACT-COSIGN.md` (first line gates A's launch), `B/LITERATURE-DELTA.md`, `B/CODE-READ.md`, `B/b_readout.py`, `B/b_output_change.py` |
-| **C** paper | `ab516cd1d1a7bcb0e` | opus | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-paper-20260912/PROGRESS-C.md` | problem-setup / method / table-skeleton / citation / symbol / claim-boundary deltas |
-| **D** deck / figures | `a08be6050027da1ba` | sonnet | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-deck-20260912/PROGRESS-D.md` | `build_mc2_pages.py`, `mc2-pages-r1.pptx`, `figures/`, `renders/` |
+| ~~**C** paper~~ | `ab516cd1d1a7bcb0e` | opus | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-paper-20260912/PROGRESS-C.md` | 7 deltas delivered, then **STOPPED 2026-09-12: the owner moved paper / symbol table / deck to another session.** Handover index: `.scratch/multi-catfish-v025-paper-lane-20260909/MC2-PAPER-DECK-HANDOVER-2026-09-12.md` |
+| ~~**D** deck / figures~~ | `a08be6050027da1ba` | sonnet | `.scratch/multi-catfish-v025-paper-lane-20260909/mc2-deck-20260912/PROGRESS-D.md` | `build_mc2_pages.py`, `mc2-pages-r1.pptx/.pdf`, `figures/` (5 figures × py/svg/png), `renders/`; **STOPPED 2026-09-12, same handover** |
 | **E** S1 port / manifest / review brief | `a97524155035da490` | opus | `/home/u24/papers/mcrl-leo-handover-mc2-s1/.scratch/mc2/S1/PROGRESS-E.md` | worktree `…-mc2-s1`, branch `mc2/s1-port-20260912` from `67e175bd`; `S1-MC2-PORT.md`, `S1-MC2-MANIFEST-PLAN.md`, `S1-MC2-REVIEW-BRIEF.md`. Never launches S1 |
 
 **Update (owner's second message, 2026-09-12): fast iteration, freeze the algorithm ASAP, "multi-catfish" narrative,
