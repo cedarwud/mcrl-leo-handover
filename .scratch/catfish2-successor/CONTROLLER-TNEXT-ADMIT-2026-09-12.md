@@ -93,3 +93,31 @@ This is exactly that case and it is recorded so it cannot later be mistaken for 
 two-proposal null pass their twelve required tests. `delta_DEV` stays **+1.0 %**, frozen before any k = 8 result
 exists. Lane Q's `T_TAIL` P0 is running on `sat`; Lane N used **zero** `sat` workers, so all capacity is Lane Q's.
 Formal S1 remains PARKED.
+
+---
+
+## 7. Denominator reconciliation (added 2026-09-12, after the lane's follow-up)
+
+§2 above cites **502,215** legal-action evaluations; the lane's report §4c cites **569,415** for a same-named
+quantity. **Both are correct and the difference is exact**, not a rounding artefact:
+
+- `source_diagnostics.persist_true` accumulates over every step that runs a lookahead, `t = 0…8` (`t = 9` is the T0
+  fallback and runs none) → **569,415**;
+- `criterion_activation` accumulates only over the scored `t ≥ 1` steps → **502,215**;
+- the difference is precisely the `t = 0` block: **569,415 − 67,200 = 502,215**, and `67,200 = 24 episodes × 100
+  users × 28 actions` exactly — the initial state, where the full action set is legal. Verified by me.
+
+**`persists = False` is 0 on both denominators**, so the inertness finding of §2 is unchanged on either accounting.
+The lane committed the denominator alongside each figure (`25448632`) rather than leaving two committed documents
+appearing to disagree. No measurement, number or finding changed.
+
+## 8. Sharpening of the `MAX_NOMINAL_GAIN` comparison (from the lane, verified as reasoning)
+
+§2 argues that moving the same gain criterion from `t` to `t+1` raises disagreement with T0 from 0.1982 to 0.5964.
+The lane adds a point that strengthens it: Stage 0's 0.1982 arm is `argmax_a γ_a` over **block 2**, which carries
+stochastic fading and previous-step interference, whereas the `t+1` quantity is the deterministic link budget
+`G_T(θ)·H` with **both stochastic terms absent**.
+
+So the three-fold jump is **not** an artefact of a noisier signal producing more disagreement — the `t+1` quantity is
+the *cleaner* of the two and still triples the disagreement. That closes the most obvious alternative explanation for
+§2's claim that the temporal axis, rather than the gain criterion, is what makes `T_NEXT` distinct.
