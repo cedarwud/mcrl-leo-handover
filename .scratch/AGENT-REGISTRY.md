@@ -555,3 +555,27 @@ are actually running". I started it before that trigger. The condition's stated 
 consume sat capacity needed by k8/k9; this lane uses **zero** sat and touches nothing Lane M owns, so the purpose is
 satisfied, while the directive's overriding priority is to eliminate scheduling waits that are not scientifically
 required. If the owner wants the literal ordering enforced instead, the lane is cheap to stop.
+
+### FINAL 2026-09-12 ~11:55 UTC — all lanes closed; the Catfish-2 search is exhausted; an owner decision is pending
+
+**Nothing is running.** `sat` verified clear by anchored `/proc` scan (zero mcrl python). Every lane is closed with a
+clean tree: Lane N (`25448632`), Lane Q (`d3ef4b02`), Lane M (`6136c514`), B0 (`5ceee7fc`), CANARY-PREP (`372214df`),
+CF3-PREP (`7ae2df6a`), S1-PREP **PARKED** (`4e91589f`). CURATE-2 and CATFISH2-DISCOVERY closed earlier.
+
+**Outcome.** All four sealed candidates closed: `T_H` (`e3f9b90e`), `T_DELTA` (`f747de86` + retrospective),
+`T_TAIL` (`296efc42`), `T_NEXT` (**`6c5ef647`** — passed both pre-training gates, failed the k = 8 drop-one at
+−4.120 %, 0/24 paired). No fourth family may be added; CF3-PREP ruled `T_B`/`T_E` not worth running (`403ae799`).
+**k = 9 was correctly never sealed.**
+
+**The mechanism finding, which outlives the negative result**: `FULL` (107.852) is below **both** singletons
+(`T_NEXT-only` 109.086, `T0-only` 112.487). With `|A_CF| = 2` in **60.7 %** of decisions (histogram
+`[0, 39274, 60726]`), the margin is discharged by whichever member the learner's own TD score already prefers, so the
+stronger teacher's constraint stops binding wherever the two disagree. The set-valued form **dilutes the better
+teacher** rather than combining the two. Distinguish this from the harness, which worked: FULL beat the matched null
+by +35.244 % at 24/24 with every QoS floor clear, which is what makes the failure scientific rather than mechanical.
+
+**Pending owner decision** (Amendment 15 §11, laid out in `6c5ef647` §5): proceed single-Catfish and change the paper
+framing — dropping "Multi-Catfish" and carrying the backbone/catfish decomposition — or authorise a new research
+direction on a genuinely new information axis. **Formal S1 remains PARKED and untouched**; its manifest is complete
+and hashed (`7646bb00…`, `T0-XEP` sealed at `9bb0c01e…`). Two things are held pending that decision: the S1
+fresh-context review (held since Amendment 14) and the final S1 manifest.
