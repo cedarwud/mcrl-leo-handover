@@ -17,9 +17,10 @@ source enters training), which is a different research variable from the source 
 ## 0. What failed and what this design must not repeat
 
 k = 8 `MULTI-D3-SETVALUED-v1`: `L = max_a[S+m·1(a∉A_CF)] − max_{a∈A_CF} S`. With `|A_CF| = 2` in 60.7 % of rows the
-learner discharged the margin with whichever member its own `S` already preferred, so the stronger teacher stopped
-binding (FULL 107.85 < T_NEXT-only 109.09 < T0-only 112.49; −4.12 % vs T0-only, 0/24 paired, **one training seed, 24
-evaluation episodes**). That dilution is a *measured* outcome and a *plausible, not causally isolated* explanation.
+learner discharged the margin with whichever member its own `S` already preferred, which would make the T0 constraint
+escapable wherever the two disagreed (FULL 107.85 < T_NEXT-only 109.09 < T0-only 112.49; −4.12 % vs T0-only, 0/24 paired,
+**one training seed, 24 evaluation episodes**). The ordering is the *measurement*; "the stronger teacher stopped binding"
+is the proposed mechanism and was **never causally isolated**.
 Design rule taken from it: **every margin row has exactly one target, chosen by something other than the learner's own
 score.** No union set, no summed conflicting margins, no per-specialist weights.
 
@@ -28,7 +29,7 @@ score.** No union set, no summed conflicting margins, no per-specialist weights.
 | | Catfish-A — anchor specialist | Catfish-B — foresight challenger |
 |---|---|---|
 | source policy | `T0 = LP-prev(c=1, m=0)`: `a^A = argmax_{a legal} log2(1+max(γ_a,0)) − 1[N_a=0]`, first index on ties (`cf_teacher.t0_scores`, unchanged) | `T_NEXT` `assoc-persistence-lookahead-v1` (`cf_tnext.py`, sha256 `86f0d6ee…`, unchanged): lexicographic (same physical `(norad, cell)` visible at `t+1`, nominal `t+1` gain with no fading, current T0 score, −index); users held at `t`; ephemeris-only lookahead |
-| specialty | current-step rate with a lit-beam preference (T0-only bits ×1.105 vs D0 at k8) | one-step geometric foresight (T0 disagreement 0.596 on P0; T_NEXT-only joules ×0.856, beams 53 vs 63 at k8) |
+| specialty | current-step rate with a lit-beam preference (`T0-only` bits ×1.105 vs `D0`, k8, one seed, ep 100) | one-step geometric foresight (T0 disagreement 0.596 on P0; `T_NEXT-only` joules ×0.856 and 53.4 vs 62.6 beams against `D0` — read from `LANE-M-K8-RESULT.json`, not from the adjudication table, k8, one seed, ep 100) |
 | challenge to the main learner | v1: unconditional large margin toward `a^A` on every replay row (the frozen `D3-T0` channel, E1: +9.42 % seed-mean over paired D0, 3/3 seeds, ep 300). v2: margin toward `a^A` only where it wins the §3 comparison | a proposal that replaces the incumbent target **only if** the judge (§2) ranks it strictly higher on the same state and the same other-user actions |
 | quality feedback | v1: none gating A (its quality is the E1 evidence); the judge only *records* `κ(a^A)` vs `κ(x_u)`. v2: the judge comparison with `x_u` | the judge lead is the gate and is stored per row |
 | intervention product | a single-target large-margin label on the learner's own replay row | the same label type, target swapped to `a^B` |

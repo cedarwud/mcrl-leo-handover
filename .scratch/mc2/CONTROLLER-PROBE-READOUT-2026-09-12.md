@@ -39,6 +39,12 @@ positive), and beats T0 by +6.13 % (24/24, median +5.96 %, min +2.35 %). So, at 
   energy-side direction is specific to `T_NEXT`'s content, which is what the k8 single-arm readings already suggested
   (`T_NEXT-only` joules ×0.856).
 
+**One thing the composite rollout shows that a unilateral judge does not guarantee: the per-user decisions compose.**
+The judge evaluates each user's override against a fixed background, but the composite rollout applies *every* approved
+override simultaneously — a joint move the surrogate never scored. It still gained +6.13 % on 24/24 episodes, so in this
+physics the approved overrides do not collide. (In training the question does not even arise: an override changes a
+label, not an executed action, and the stored transition is always the executed one.)
+
 None of this is a learner result, and none of it is a gate; it is the declared §7 diagnostic, read before any ep-100
 file existed.
 
