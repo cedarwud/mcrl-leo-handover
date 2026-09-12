@@ -460,7 +460,7 @@ cf2s or cf2s-b0 workspaces contains 9111000/9112000.** Governing document: **Ame
 
 | lane | agentId | worktree / branch (base `27f69edf`) | sat root | state |
 |---|---|---|---|---|
-| **B0 / T_DELTA** | `a053e48e0351bc1e6` | `-cf2s-b0` / `catfish2/successor-b0-20260912` | `/home/sat/mcrl-v025-cf2s-b0-ws/` | C corpus done; clone fitting under way (`CLONE-SOFT-tau1/tau3`, `TAU-SELECTION`); **4 J shards live**; **no `CLOSED-*` and no `JOINT-J` yet**. Corrected contract: `den_h = EE(J_h) − EE(rule_h)` |
+| ~~B0 / T_DELTA~~ | `a053e48e0351bc1e6` | `-cf2s-b0` @ `5ceee7fc` | `/home/sat/mcrl-v025-cf2s-b0-ws/` (34 MB, kept as receipt store) | **CLOSED, do not resume.** Failed the §7d admission: the only clone reaching `R_repr ≥ 0.5` (SOFT τ=0.3, 0.5061 / 0.5905) has bits ratio **0.8168** against the inherited ≥ 0.95 and lights 48.87 beams vs the rule's 63.38, while the teacher J sends **2.6 % more** bits — a different mechanism, not the teacher's. Adjudication `f747de86`. **J itself did not herd and beat T0 by +4.06 % at served 1.00000** |
 | **CANARY-PREP** | `a3258ecc059dbb6ad` | `-cf2s-prep` / `catfish2/tdelta-canary-prep-20260912` | own | engineering only, no RL |
 | **Lane N / T_NEXT** | `a81e4518a90632338` | `-cf2s-next` / `catfish2/tnext-20260912` | `/home/sat/mcrl-v025-cf2s-next-ws/` | Amendment 15 §2A; structural blocker check first |
 | **Lane Q / T_TAIL** | `a0b89526a10296cfb` | `-cf2s-tail` / `catfish2/ttail-20260912` | `/home/sat/mcrl-v025-cf2s-tail-ws/` | Amendment 15 §2B |
@@ -481,3 +481,18 @@ with the frozen `D3-T0` lineage.
 
 **Resource:** global cap 8 single-threaded scientific workers on sat; 4 are B0's J shards. New lanes stay local /
 tiny-smoke until those free.
+
+### Update 2026-09-12 02:10 UTC — `T_DELTA` closed; capacity freed
+
+`sat` is **idle** (zero python processes, load 0.65) and both remaining lanes were raised from 2 to **4 workers each**
+(global cap 8). `TDELTA-CANARY-PREP` (`a3258ecc059dbb6ad`) is winding down: its source-agnostic engineering and its
+cost-profiling harness hand over to Lane M, then it stops — `D3-T_DELTA` will never run.
+
+**The Amendment 15 portfolio now rests on `T_NEXT` (Lane N) and `T_TAIL` (Lane Q) alone.** `T_H` closed, `T_DELTA`
+closed, Stage 0 zero. If both fail, Amendment 15 §9 applies with no exceptions: stop, relax nothing, sweep nothing,
+invent no fourth family, do **not** launch the single-source S1 under a “Multi-Catfish” framing, return the evidence to
+the owner.
+
+**Two privileged teachers have now died at the same screen** (`T_SEQ` `R_repr` 0.13–0.15; `T_DELTA` a degenerate
+0.51). Both remaining candidates must report clone action-distribution and collapse behaviour alongside `A_repr`, and
+must state where a marginal value sits relative to the T0 screen's 0.930–1.052 at 100 % of resamples.
