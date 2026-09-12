@@ -28,6 +28,7 @@ import json
 import os
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import numpy as np
@@ -237,6 +238,21 @@ def _env_fingerprint(env) -> str:
     return h.hexdigest()
 
 
+def _corrupt_outcome(out, *, flip_served: bool = False, scale_bits: float | None = None):
+    """A committed outcome with one quantity deliberately wrong (negative control)."""
+    energy = out.energy
+    if scale_bits is not None:
+        energy = types.SimpleNamespace(
+            system_throughput_bps=float(out.energy.system_throughput_bps) * scale_bits,
+            system_consumed_power_w=float(out.energy.system_consumed_power_w),
+        )
+    served = np.array(out.resolution.served, dtype=bool)
+    if flip_served:
+        served[0] = not served[0]
+    return types.SimpleNamespace(
+        energy=energy, resolution=types.SimpleNamespace(served=served))
+
+
 def _score_batch(n, seed):
     rng = np.random.default_rng(seed)
     scores = torch.tensor(rng.normal(size=(n, NA)), dtype=torch.float32)
@@ -412,6 +428,13 @@ def test_03_the_base_evaluation_is_the_committed_step():
         assert (bits, joules) == (base.bits, base.joules)
         assert int(np.count_nonzero(out.resolution.served)) == base.served
         judge.assert_committed_parity(out)
+        if _t == 0:
+            # negative control: the guard must REFUSE a corrupted committed step, on
+            # the served flags and on the energy, or it proves nothing
+            for kw in ({"flip_served": True}, {"scale_bits": 1.000001},
+                       {"scale_bits": 1.000001, "flip_served": True}):
+                with pytest.raises(MCRLContractError, match="parity"):
+                    judge.assert_committed_parity(_corrupt_outcome(out, **kw))
         states, masks = res.user_states, res.action_masks
     assert checked_alt >= 3
 
