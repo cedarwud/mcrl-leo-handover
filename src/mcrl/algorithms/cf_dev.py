@@ -53,6 +53,7 @@ from ..runtime.finiteness import (
     assert_finite_parameters,
 )
 from ..runtime.replay_buffer import ReplayBuffer
+from . import cf_judge as cfj
 from . import cf_teacher as cft
 from .cf_credit import DEFAULT_CREDIT_MODE, PowerModel, credit_matrix, difference_context
 from .cf_ratio import (
@@ -72,8 +73,12 @@ FORBIDDEN_SEED_RANGES: tuple[tuple[int, int, str], ...] = (
     (9_301_000, 9_303_999, "CONFIRM training triples"),
     (9_311_000, 9_311_999, "CONFIRM evaluation env"),
     (9_312_000, 9_312_999, "CONFIRM evaluation mobility"),
+    (9_251_000, 9_253_999, "S1-TRAIN triples"),
+    (9_261_000, 9_261_999, "S1-NULL"),
 )
-"""Amendment 6 section 3: no development path may produce any of these."""
+"""Amendment 6 section 3: no development path may produce any of these.  The S1
+namespaces (Amendment 13) were already refused as undeclared; the MC2 contract
+section 6 names them, so they are refused by name as well."""
 
 ALLOWED_SEED_RANGES: tuple[tuple[int, int, str], ...] = (
     (9_201_000, 9_201_999, "DEV train"),
@@ -84,6 +89,7 @@ ALLOWED_SEED_RANGES: tuple[tuple[int, int, str], ...] = (
     (9_221_000, 9_221_999, "DEVVAL RANDOM draws"),
     (9_231_000, 9_231_999, "DEV-NULL D2 permutations"),
     (9_241_000, 9_241_999, "DEV-NULL D3/D4 random actions"),
+    (9_243_000, 9_243_999, "DEV-NULL MC2 proposal-replacement uniform legal actions"),
     (9_271_000, 9_271_999, "derived: train + 70_001 (catfish sampling)"),
     (9_281_000, 9_281_999, "derived: train + 80_000 + k (NULL sources)"),
     (9_291_000, 9_291_999, "derived: train + 90_211 (inherited penalty generator)"),
@@ -91,13 +97,16 @@ ALLOWED_SEED_RANGES: tuple[tuple[int, int, str], ...] = (
 """The only seed values a development run may construct (Amendment 6 section 3)."""
 
 
-DEV_NULL_KEY_BASES: tuple[int, ...] = (9_231_000, 9_241_000)
+DEV_NULL_KEY_BASES: tuple[int, ...] = (9_231_000, 9_241_000, 9_243_000)
 """Amendment 6 section 3: the DEV-NULL generators are the COMPOSITE identities
 ``default_rng((9_231_000, k))`` (D2-null permutations) and
-``default_rng((9_241_000, k))`` (D3/D4-null random actions)."""
+``default_rng((9_241_000, k))`` (D3/D4-null random actions); MC2 contract section 6
+adds ``default_rng((9_243_000, k))`` (the B-null's proposal replacement)."""
 
-MAX_DEV_SEED_INDEX: int = 9
-"""DEV triples are declared for k = 0..9, so a DEV-NULL key's index is one of those."""
+MAX_DEV_SEED_INDEX: int = 19
+"""DEV triples are declared for k = 0..19 (MC2 contract section 6 raised 9 -> 19:
+selection k = 10, 11; confirmation 12-14; reserve 15-17; k = 9 stays unused), so a
+DEV-NULL key's index is one of those."""
 
 
 def _null_generator(key) -> np.random.Generator:
@@ -122,8 +131,18 @@ EXPECTED_TEACHER: dict[str, str] = {
     "D3-null": "random",
     "D3-multi": "multi",
     "D3-multi-null": "random-set",
+    cfj.MECHANISM_NAME: "judge",
 }
 """Mechanism -> the only teacher label it may carry (default: ``T0``)."""
+
+JUDGE_MECHANISMS: tuple[str, ...] = (cfj.MECHANISM_NAME,)
+"""The MC2 judge arm's mechanism (``MC2``, arm 10).  Its identity -- versioned rule
+id (``MC2-JGO-v1`` / ``MC2-ARB-v2`` / the rule-independent shared B-only), source
+set, judge id + eta0, null id + key -- lives in :class:`JudgeSpec`, never in
+:class:`DevSettings`, so no field of the single-teacher arms changes."""
+
+ALL_MECHANISMS: tuple[str, ...] = cft.MECHANISMS + JUDGE_MECHANISMS
+ALL_TEACHERS: tuple[str, ...] = cft.TEACHERS + ("judge",)
 
 NULL_BASE_FOR: dict[str, int] = {
     "D2-null": 9_231_000,
@@ -143,7 +162,7 @@ def assert_dev_null_key(key: Any, what: str = "") -> tuple[int, int]:
 
     The pair is ONE declared generator identity, not two seeds: the base must be a
     declared DEV-NULL namespace and ``k`` a legal development seed index
-    (``0 <= k <= 9``); the index is never checked as though it were a standalone
+    (``0 <= k <= MAX_DEV_SEED_INDEX``); the index is never checked as though it were a standalone
     seed.  A formal namespace may still appear nowhere in the key -- neither in the
     base nor in the index.
     """
@@ -350,6 +369,117 @@ def multi_spec_from_payload(payload: Mapping[str, Any] | None) -> MultiD3Spec | 
     return MultiD3Spec(**raw)
 
 
+# ------------------------------------------------------------------ MC2 judge arms
+@dataclass(frozen=True)
+class JudgeSpec:
+    """Identity of one MC2 judge-gated cell (contract r1 sections 1-3, 5 item 7, 6).
+
+    Everything the cell's identity depends on lives here so that
+    ``dev_e0_common.arm_config_payload`` can hash all of it: the versioned RULE id
+    (``MC2-JGO-v1``, ``MC2-ARB-v2``, or the rule-independent
+    ``MC2-B-ONLY-SHARED-v1``), the CANONICAL source set, the source identities,
+    the judge id + its frozen ``eta0``, and, for a B-null, the null's rule id and
+    its composite DEV-NULL key ``(9_243_000, k)``.  The margin ``m`` and
+    ``lambda_E`` stay in :class:`DevSettings`, frozen at ``0.15`` and ``1.0``.
+
+    Declared cells (``cfj.DECLARED_CELLS``): v1 ``{A,B}``, ``{A,R}``; v2 ``{A}``,
+    ``{A,B}``, ``{A,R}``; shared ``{B}``.  ``A-only-v1`` is refused (it IS arm 4,
+    ``D3-T0``), and ``{B}`` exists only under the rule-independent shared id.
+    """
+
+    mechanism_id: str = cfj.JGO_MECHANISM_ID
+    sources: tuple[str, ...] = ()
+    source_a: str | None = None
+    source_b: str | None = None
+    judge_id: str = cfj.JUDGE_ID
+    judge_definition: str = cfj.JUDGE_DEFINITION
+    judge_eta0: float = cfj.ETA0_JUDGE
+    null_id: str | None = None
+    null_key: tuple[int, int] | None = None
+
+    def __post_init__(self) -> None:
+        if self.mechanism_id not in cfj.DECLARED_CELLS:
+            raise MCRLContractError(
+                f"unknown MC2 rule identity {self.mechanism_id!r}; declared: "
+                f"{tuple(cfj.DECLARED_CELLS)}"
+            )
+        srcs = tuple(str(s) for s in self.sources)
+        if srcs not in cfj.DECLARED_CELLS[self.mechanism_id]:
+            raise MCRLContractError(
+                f"source set {srcs} is not a declared {self.mechanism_id} cell "
+                f"{cfj.DECLARED_CELLS[self.mechanism_id]} (canonical order; A-only-v1 "
+                "is arm 4; {B} is the shared cell)"
+            )
+        if ("A" in srcs) != (self.source_a is not None) or self.source_a not in (
+                None, cfj.SOURCE_A_ID):
+            raise MCRLContractError(f"Catfish-A must be {cfj.SOURCE_A_ID!r} iff A is enabled")
+        if ("B" in srcs) != (self.source_b is not None) or self.source_b not in (
+                None, cfj.SOURCE_B_ID):
+            raise MCRLContractError(f"Catfish-B must be {cfj.SOURCE_B_ID!r} iff B is enabled")
+        if self.judge_id != cfj.JUDGE_ID or self.judge_definition != cfj.JUDGE_DEFINITION:
+            raise MCRLContractError("the judge identity is frozen: MC2-KAPPA-LEX-v1")
+        if float(self.judge_eta0) != cfj.ETA0_JUDGE:
+            raise MCRLContractError(
+                f"the judge price is frozen at eta0 = {cfj.ETA0_JUDGE!r}, not {self.judge_eta0!r}"
+            )
+        if "R" in srcs:
+            if self.null_id != cfj.NULL_ID or self.null_key is None:
+                raise MCRLContractError(
+                    f"the B-null needs null_id {cfj.NULL_ID!r} and its key (9_243_000, k)"
+                )
+            base, _k = assert_dev_null_key(self.null_key, "MC2 B-null key")
+            if base != cfj.NULL_BASE:
+                raise MCRLContractError(
+                    f"the B-null draws from ({cfj.NULL_BASE}, k), not {self.null_key}"
+                )
+        elif self.null_id is not None or self.null_key is not None:
+            raise MCRLContractError("only the B-null (A+R) carries a null identity / key")
+
+    @property
+    def mechanism(self) -> str:
+        return cfj.MECHANISM_NAME
+
+    @property
+    def rule(self) -> str:
+        return cfj.RULE_OF[self.mechanism_id]
+
+    @property
+    def uses_a(self) -> bool:
+        return "A" in self.sources
+
+    @property
+    def uses_b(self) -> bool:
+        return "B" in self.sources
+
+    @property
+    def uses_r(self) -> bool:
+        return "R" in self.sources
+
+    @property
+    def challenger_tag(self) -> int:
+        if self.uses_b:
+            return cfj.TAG_B
+        if self.uses_r:
+            return cfj.TAG_R
+        return cfj.TAG_NONE
+
+    def label(self) -> str:
+        """Run tag: ``v1-A+B``, ``v2-A``, ... and ``B`` for the shared cell."""
+        if self.mechanism_id == cfj.BONLY_MECHANISM_ID:
+            return cfj.source_set_label(self.sources)
+        return f"{self.rule}-{cfj.source_set_label(self.sources)}"
+
+
+def judge_spec_from_payload(payload: Mapping[str, Any] | None) -> JudgeSpec | None:
+    if payload is None:
+        return None
+    raw = dict(payload)
+    raw["sources"] = tuple(str(x) for x in raw.get("sources", ()))
+    if raw.get("null_key") is not None:
+        raw["null_key"] = tuple(int(x) for x in raw["null_key"])
+    return JudgeSpec(**raw)
+
+
 # ------------------------------------------------------------------ settings
 @dataclass(frozen=True)
 class DevSettings:
@@ -368,10 +498,10 @@ class DevSettings:
     devval_episodes: int = 24
 
     def __post_init__(self) -> None:
-        if self.mechanism not in cft.MECHANISMS:
-            raise MCRLContractError(f"mechanism must be one of {cft.MECHANISMS}")
-        if self.teacher not in cft.TEACHERS:
-            raise MCRLContractError(f"teacher must be one of {cft.TEACHERS}")
+        if self.mechanism not in ALL_MECHANISMS:
+            raise MCRLContractError(f"mechanism must be one of {ALL_MECHANISMS}")
+        if self.teacher not in ALL_TEACHERS:
+            raise MCRLContractError(f"teacher must be one of {ALL_TEACHERS}")
         expected_teacher = EXPECTED_TEACHER.get(self.mechanism, "T0")
         if self.teacher != expected_teacher:
             raise MCRLContractError(
@@ -412,7 +542,7 @@ class DevSettings:
         """The weight actually multiplying this mechanism's teacher loss."""
         if self.mechanism in ("D2-T0", "D2-null"):
             return float(self.alpha)
-        if self.mechanism in D3_MECHANISMS + cft.MULTI_MECHANISMS:
+        if self.mechanism in D3_MECHANISMS + cft.MULTI_MECHANISMS + JUDGE_MECHANISMS:
             return float(self.lambda_e)
         return 0.0
 
@@ -664,6 +794,7 @@ class CFDevTrainer(CFRatioTrainer):
 
     def __init__(self, env, config, settings, dev: DevSettings, *,
                  multi: MultiD3Spec | None = None,
+                 judge: JudgeSpec | None = None,
                  env_factory=None, train_seed: int = 9_201_000,
                  env_seed: int = 9_202_000, mobility_seed: int = 9_203_000,
                  device: str = "cpu") -> None:
@@ -691,23 +822,47 @@ class CFDevTrainer(CFRatioTrainer):
                 f"mechanism {dev.mechanism!r} is not a MULTI-D3 arm but carries a spec"
             )
         self.multi = multi
+        if dev.mechanism in JUDGE_MECHANISMS:
+            if judge is None:
+                raise MCRLContractError(
+                    f"{dev.mechanism} needs its JudgeSpec (mechanism id, source set, "
+                    "judge id and null identity go into the configuration hash)"
+                )
+            if judge.mechanism != dev.mechanism:
+                raise MCRLContractError(
+                    f"JudgeSpec describes {judge.mechanism!r}, not {dev.mechanism!r}"
+                )
+        elif judge is not None:
+            raise MCRLContractError(
+                f"mechanism {dev.mechanism!r} is not an MC2 judge arm but carries a spec"
+            )
+        self.judge = judge
         # TRAINING-ONLY teacher-context seam.  It is built at all only when a
         # declared teacher actually asks for it, so every existing arm -- D0, D2,
         # D3-T0, D3-null and any multi arm over context-free sources -- runs the
         # historical path untouched.
         self._needs_teacher_context: bool = bool(
-            multi is not None and not multi.is_null
-            and cft.any_teacher_needs_context(multi.teachers)
+            (multi is not None and not multi.is_null
+             and cft.any_teacher_needs_context(multi.teachers))
+            or (judge is not None and judge.uses_b
+                and cft.teacher_needs_context(judge.source_b))
         )
         self._teacher_context: cft.TeacherContext | None = None
         # Replace the inherited replay with the label-carrying one (same capacity,
         # same sampling arithmetic, same generator).
-        self.replay = TeacherReplayBuffer(config.replay_capacity)
+        self.replay = (cfj.JudgeReplayBuffer(config.replay_capacity) if judge is not None
+                       else TeacherReplayBuffer(config.replay_capacity))
         self._null_rng = (
             _null_generator(dev.null_key) if dev.null_key is not None else None
         )
+        # MC2 B-null: its OWN fresh stream at the declared key (9_243_000, k).
+        self._judge_null_rng = (
+            _null_generator(judge.null_key)
+            if judge is not None and judge.uses_r else None
+        )
         self._last_teacher_loss: float = 0.0
         self._teacher_updates: int = 0
+        self._last_tag_stats: dict | None = None
 
     # -- the formal sets are out of bounds ------------------------------
     def measure_on_calibration(self):  # noqa: D102
@@ -798,6 +953,9 @@ class CFDevTrainer(CFRatioTrainer):
                      teacher_scores=labels["teacher_scores"])
         if "teacher_member" in labels:
             batch["teacher_member"] = labels["teacher_member"]
+        for key in ("judge_target", "judge_tag", "judge_challenger", "judge_override"):
+            if key in labels:
+                batch[key] = labels[key]
         return batch
 
     def _teacher_loss(self, batch, q_all) -> torch.Tensor | None:
@@ -826,6 +984,26 @@ class CFDevTrainer(CFRatioTrainer):
             member = torch.tensor(np.asarray(batch["teacher_member"], dtype=bool),
                                   dtype=torch.bool, device=self.device)
             return d.lambda_e * cft.d3_set_margin_loss(scores, mask, member, d.margin)
+        if d.mechanism in JUDGE_MECHANISMS:
+            # MC2 contract section 3: ONE target per row, weight w = 1[target
+            # exists], mean over the FULL batch -- a row without a target
+            # contributes exactly 0 and the vacated dose is not refilled.  The
+            # frozen m = 0.15 and lambda_E = 1.0.  A target-less row's a_T is only
+            # a legal placeholder (its executed action) under weight 0.
+            if "judge_target" not in batch:
+                raise MCRLContractError("MC2 batch carries no judge targets")
+            target = np.asarray(batch["judge_target"], dtype=np.int64)
+            has = target != cfj.NO_TARGET
+            a_t = torch.tensor(
+                np.where(has, target, np.asarray(batch["actions"], dtype=np.int64)),
+                dtype=torch.long, device=self.device,
+            )
+            w = torch.tensor(has.astype(np.float32), dtype=scores.dtype,
+                             device=self.device)
+            loss, per_row = cfj.weighted_margin_loss(scores, mask, a_t, w, d.margin)
+            self._last_tag_stats = cfj.tag_breakdown(per_row, w, batch["judge_tag"],
+                                                     d.lambda_e)
+            return d.lambda_e * loss
         raise MCRLContractError(f"no teacher loss for mechanism {d.mechanism!r}")
 
     def update(self) -> tuple[float, float, float]:
@@ -862,6 +1040,50 @@ class CFDevTrainer(CFRatioTrainer):
         self._last_teacher_loss = float(teacher_loss.item())
         self._teacher_updates += 1
         return tuple(float(x.item()) for x in td_losses)
+
+    # -- MC2 judge ------------------------------------------------------
+    def _challenger_actions(self, states, masks, legal, is_final: bool):
+        """The challenger's proposal per user -- ``a^B`` (T_NEXT) or ``a^R`` (null) --
+        or ``None`` = ABSTAIN.
+
+        Both abstain at the final decision step (contract section 1): T_NEXT is not
+        even asked there, so its frozen T0 fallback can never be injected by B, and
+        the null draws nothing.  The null reads no T_NEXT quantity and draws exactly
+        one uniform legal action per user with a legal action, from its own stream.
+        """
+        spec = self.judge
+        if is_final:
+            return None
+        if spec.uses_b:
+            slots = cft.teacher_action_slots(
+                (spec.source_b,), states, masks, context=self._teacher_context
+            )
+            return np.asarray(slots[:, 0], dtype=np.int64)
+        if spec.uses_r:
+            return cft.random_legal_actions(legal, self._judge_null_rng)
+        return None
+
+    def _judge_step(self, actions, states, masks, legal, t0_acts, t: int,
+                    n_steps: int, jlog):
+        """Pre-step MC2 labels for every user.  Called after the behaviour action
+        ``x`` and the teacher labels and BEFORE ``env.step(x, env_rng)``; it reads
+        the environment through the judge only (deep-copied generator, frozen
+        driver positions) and consumes no generator but the B-null's own."""
+        spec = self.judge
+        is_final = t >= n_steps - 1
+        challenger = self._challenger_actions(states, masks, legal, is_final)
+        labeller = cfj.labeller_for(spec.mechanism_id)
+        with cfj.StepJudge(self.env, actions, self._env_rng,
+                           eta0=spec.judge_eta0) as judge:
+            judge.base()          # the parity guard and the exact x_u reuse
+            labels = labeller(
+                use_a=spec.uses_a, challenger_tag=spec.challenger_tag, legal=legal,
+                x=actions, a_a=t0_acts, challenger=challenger, kappa=judge.kappa,
+            )
+        jlog.add_step(t, labels, judge, a_a=t0_acts, x=actions,
+                      abstained=(challenger is None),
+                      has_challenger_source=(spec.uses_b or spec.uses_r))
+        return labels, judge
 
     # -- DEVVAL ---------------------------------------------------------
     def devval_seeds(self) -> list[tuple[int, int]]:
@@ -927,6 +1149,9 @@ class CFDevTrainer(CFRatioTrainer):
             step_rows = [0] * int(self.env.config.steps_per_episode)
             step_singletons = [0] * int(self.env.config.steps_per_episode)
             n_ep_steps = self.env.config.steps_per_episode
+            jlog = (None if self.judge is None
+                    else cfj.EpisodeJudgeLog(steps=int(n_ep_steps),
+                                             challenger_tag=self.judge.challenger_tag))
             for _t in range(n_ep_steps):
                 if self._needs_teacher_context:
                     # Training-only, read-only, additive.  The observation is the
@@ -965,11 +1190,18 @@ class CFDevTrainer(CFRatioTrainer):
                             t0_scores_raw[u, int(t0_acts[u])]
                             - t0_scores_raw[u, int(greedy[u])]
                         )
+                step_judge = jlab = None
+                if self.judge is not None:
+                    jlab, step_judge = self._judge_step(
+                        actions, states, masks, legal, t0_acts, _t, n_ep_steps, jlog
+                    )
                 ctx = (difference_context(self.env, actions, masks, self._env_rng,
                                           model=self._power_model)
                        if s.credit_mode == "difference" else None)
                 result = self.env.step(actions, self._env_rng)
                 outcome = self.env.last_outcome
+                if step_judge is not None:
+                    step_judge.assert_committed_parity(outcome)
                 if s.credit_mode == DEFAULT_CREDIT_MODE:
                     raw = cf_reward_matrix(result, outcome)
                 else:
@@ -996,6 +1228,20 @@ class CFDevTrainer(CFRatioTrainer):
                     if not bool(result.done) and not bool(next_mask.any()):
                         self._all_invalid_next_transitions_skipped += 1
                         continue
+                    if jlab is not None:
+                        self.replay.push_judged(
+                            encoded[uid], int(actions[uid]), raw[uid].copy(),
+                            next_encoded[uid], masks[uid].mask.copy(),
+                            next_mask.copy(), bool(result.done),
+                            a_a=int(t0_acts[uid]),
+                            challenger=int(jlab.challenger[uid]),
+                            target=int(jlab.target[uid]), tag=int(jlab.tag[uid]),
+                            override=bool(jlab.override[uid]),
+                            lead_served=int(jlab.lead_served[uid]),
+                            lead_surrogate=float(jlab.lead_surrogate[uid]),
+                        )
+                        jlog.add_push(int(jlab.tag[uid]))
+                        continue
                     self.replay.push_labeled(
                         encoded[uid], int(actions[uid]), raw[uid].copy(),
                         next_encoded[uid], masks[uid].mask.copy(),
@@ -1010,6 +1256,8 @@ class CFDevTrainer(CFRatioTrainer):
                     ep_losses += step_losses
                     teacher_loss_sum += self._last_teacher_loss
                     n_upd += 1
+                    if jlog is not None:
+                        jlog.add_update(self._last_tag_stats)
                 states, masks, encoded = (
                     result.user_states, result.action_masks, next_encoded
                 )
@@ -1078,6 +1326,13 @@ class CFDevTrainer(CFRatioTrainer):
                     ),
                     multi_p_singleton_rational=self.multi.p_singleton_rational,
                 )
+            if jlog is not None:
+                # MC2 contract sections 5-7 report fields.  Diagnostics only: no
+                # loss, gradient or target reads any of them.
+                log.update(judge_mechanism_id=self.judge.mechanism_id,
+                           judge_sources=list(self.judge.sources),
+                           judge_id=self.judge.judge_id,
+                           **jlog.as_log())
             if s.credit_mode != DEFAULT_CREDIT_MODE:
                 log.update(bits=sys_bits, joules=sys_joules,
                            ee_behaviour=sys_bits / sys_joules,
@@ -1110,6 +1365,12 @@ class CFDevTrainer(CFRatioTrainer):
                          else copy.deepcopy(self._null_rng.bit_generator.state)),
             "teacher_updates": int(self._teacher_updates),
         }
+        if self.judge is not None:
+            state["dev"]["judge"] = {
+                "spec": dataclasses.asdict(self.judge),
+                "null_rng": (None if self._judge_null_rng is None
+                             else copy.deepcopy(self._judge_null_rng.bit_generator.state)),
+            }
         return state
 
     def load_training_state_dict(self, state) -> None:
@@ -1125,12 +1386,25 @@ class CFDevTrainer(CFRatioTrainer):
             have_multi["teachers"] = tuple(str(x) for x in have_multi["teachers"])
         if have_multi != want_multi:
             raise MCRLContractError("resume state MULTI-D3 spec does not match")
+        have_judge = dev.get("judge")
+        if (have_judge is None) != (self.judge is None):
+            raise MCRLContractError("resume state MC2 judge block does not match")
+        if (self.judge is not None
+                and judge_spec_from_payload(have_judge["spec"]) != self.judge):
+            raise MCRLContractError("resume state MC2 judge spec does not match")
         super().load_training_state_dict(state)
         if (dev["null_rng"] is None) != (self._null_rng is None):
             raise MCRLContractError("resume state DEV-NULL generator does not match")
         if self._null_rng is not None:
             self._null_rng.bit_generator.state = copy.deepcopy(dev["null_rng"])
         self._teacher_updates = int(dev["teacher_updates"])
+        if self.judge is not None:
+            if (have_judge["null_rng"] is None) != (self._judge_null_rng is None):
+                raise MCRLContractError("resume state MC2 B-null generator does not match")
+            if self._judge_null_rng is not None:
+                self._judge_null_rng.bit_generator.state = copy.deepcopy(
+                    have_judge["null_rng"]
+                )
 
     def policy_payload(self, episode: int) -> dict[str, Any]:
         payload = super().policy_payload(episode)
@@ -1141,6 +1415,10 @@ class CFDevTrainer(CFRatioTrainer):
             # eta; NOTHING in the inference path reads this block, and no teacher
             # source has to exist to load or run the policy.
             payload["multi_spec"] = dataclasses.asdict(self.multi)
+        if self.judge is not None:
+            # Provenance only, as multi_spec: nothing in the inference path reads
+            # it, and neither a Catfish nor the judge has to exist to run a policy.
+            payload["judge_spec"] = dataclasses.asdict(self.judge)
         return payload
 
     def load_policy(self, path):  # noqa: D102
