@@ -1,4 +1,10 @@
-# MC2 — Catfish identity + intervention contract (draft r0, controller, 2026-09-12)
+# MC2 — Catfish identity + intervention contract (draft r1, controller, 2026-09-12)
+
+> **r1 (scheduling + selection only; no formula changed):** after the owner's second message of 2026-09-12 (fast
+> iteration, finalise the algorithm as early as possible, "multi-catfish" narrative, maximise parallel sub-agents),
+> `MC2-ARB-v2` is no longer held back until v1 fails: **v1 and v2 run concurrently at ep 100** on the same selection
+> seeds, and the version-selection rule in §7 is declared here, before any MC2 learner result exists. Still at most two
+> versions, each with its own reason; no sweep.
 
 Owner ruling of 2026-09-12: a genuine two-source Multi-Catfish round (competition / selective intervention).
 This is a **new version** (`MC2`), new worktree `/home/u24/papers/mcrl-leo-handover-mc2`, branch
@@ -70,10 +76,15 @@ Consequences, by construction: every margin row has one target; the learner's ow
 specialists; with B disabled the loop is exactly `D3-T0`; B can only *move* the anchor's target to an action the judge
 ranks strictly higher on the same state and background.
 
-**Declared alternative `MC2-ARB-v2` (used only if v1 shows no clear hope, §7)** — a different reason: v1 keeps the anchor
-unconditional; v2 releases it and lets both specialists compete with the learner. Candidates `{x_u, a^A, a^B}`,
-winner by `κ` with ties to `x_u`, then A, then B; margin toward the winner only if the winner ≠ `x_u`; B abstains at
-`t = T−1`. Same judge, same margin, same weights. No other version, no sweep of `m`, `λ_E`, threshold or tie order.
+**Declared second version `MC2-ARB-v2` (run concurrently with v1 from r1; selection in §7)** — a different reason: v1
+keeps the anchor unconditional; v2 releases it and lets both specialists compete with the learner on the same task.
+Candidates `{x_u, a^A, a^B}` (B absent at `t = T−1`), winner by `κ` with ties to `x_u`, then A, then B; margin toward
+the winner only if the winner ≠ `x_u`, else no margin row. Same judge, same margin, same weights. Its drop-ones:
+`A-only-v2` = candidates `{x_u, a^A}` (T0 margin only where T0 beats the learner's executed action — a new cell, NOT
+`D3-T0`); `B-only` = candidates `{x_u, a^B}`, which is **the same rule as v1's B-only** (without A both versions reduce
+to "inject `a^B` only where it beats `x_u`"), so one shared B-only cell serves both versions, with a test proving the
+two code paths coincide; `B-null-v2` = `{x_u, a^A, a^R}`. `D3-T0` stays the strong-T0 baseline for v2 as well. No other
+version, no sweep of `m`, `λ_E`, threshold or tie order.
 
 ## 4. Relation to the original CDRL / RIS catfish method (claims must stay inside this table)
 
@@ -108,8 +119,10 @@ zero margin.
 
 ## 6. Cells, seeds and budget
 
-Arms: `D0` (arm 1), `A-only` = `D3-T0` (arm 4, same identity), and a new parameterised arm for `B-only` (`{B}`),
-`FULL` (`{A,B}`), `B-null` (`{A,R}`). `A-null` is not run (A's content is not in question: E0/E1 D3-null evidence).
+Arms: `D0` (arm 1), `A-only` = `D3-T0` (arm 4, same identity), and a new parameterised arm over (rule, source set):
+v1 `FULL` (`{A,B}`), v1 `B-null` (`{A,R}`); v2 `A-only-v2` (`{A}`), v2 `FULL` (`{A,B}`), v2 `B-null` (`{A,R}`); and the
+shared `B-only` (`{B}`, rule-independent identity). `A-null` is not run (A's content is not in question: E0/E1 D3-null
+evidence).
 
 Seeds (DEV namespace, formal / calibration / CONFIRM / S1-TRAIN / S1-NULL untouched):
 selection **k = 10, 11** (ep 100); confirmation **k = 12, 13, 14** (ep 300, never used for selection);
@@ -126,10 +139,17 @@ matched in kind between FULL and B-null; **no sample-efficiency claim is made**.
 Estimand everywhere: seed-wise relative pooled EE `EE_X,k / EE_Y,k − 1` on the 24 DEVVAL episodes (`9_211_000+i /
 9_212_000+i`), greedy, fresh env per episode.
 
-**ep 100 continuation of v1 (k = 10, 11)** — continue to confirmation iff: seed-mean FULL vs A-only ≥ +0.5 %; seed-mean
-FULL vs B-only > 0; seed-mean FULL vs B-null > 0; per seed FULL vs D0 served drop ≤ 0.5 pp, p10 ≥ 0.5×, bits ≥ 0.95×;
-FULL's realised override rate ≥ 1 % of decision rows (B not inert). Otherwise one short decision and `MC2-ARB-v2` on the
-same selection seeds (D0 and A-only cells reused, identical identities).
+**ep 100 selection (k = 10, 11; v1 and v2 concurrently).** Cells: `D0`, `D3-T0` (= v1 A-only), shared `B-only`,
+`FULL-v1`, `B-null-v1`, `A-only-v2`, `FULL-v2`, `B-null-v2` — 8 cells × 2 seeds = 16 runs. A version *qualifies* iff,
+with its own drop-ones (v1: A-only = `D3-T0`; v2: A-only = `A-only-v2`): seed-mean FULL vs A-only ≥ +0.5 %; seed-mean
+FULL vs B-only > 0; seed-mean FULL vs its B-null > 0; per seed FULL vs D0 served drop ≤ 0.5 pp, p10 ≥ 0.5×,
+bits ≥ 0.95×; B is not inert (v1: override rate ≥ 1 % of decision rows; v2: B wins ≥ 1 % of decision rows).
+*Selection*: if both qualify, the **primary** is the one with the larger seed-mean of `min(FULL/A-only − 1,
+FULL/B-only − 1)`; within 0.10 pp → v1 (fewer moving parts). If one qualifies it is the primary. If neither qualifies,
+the data go to the owner (both declared versions failed at selection; no third version, no relaxation).
+*Fixed-order fallback*: when both qualify, the non-primary may be confirmed **concurrently** on the reserve seeds
+k = 15, 16, 17 under the same unrelaxed gate; it is read **only if the primary fails** its own confirmation, never
+compared with it to pick a winner. The selection is on k = 10, 11 only; k = 12–17 never enter selection.
 
 **DEV survival at ep 300 (k = 12, 13, 14, fresh)** — owner's gate, unrelaxed: FULL vs A-only and FULL vs B-only each
 seed-mean ≥ +1.0 % with ≥ 2/3 seeds positive; FULL vs B-null seed-mean > 0 with ≥ 2/3 seeds positive; per seed FULL vs
