@@ -1,107 +1,85 @@
-# PROPOSED third version `MC2-SEL-EXP-v3` — the experience / exploration channel
+# `MC2-SEL-EXP-v3` — the experience / exploration channel: AUTHORISED DEV specification
 
-Date 2026-09-12. **Proposal only. Not authorised, not implemented, nothing launched.** A third mechanism version is an
-owner decision (contract r2 allows two). This file exists so that an authorisation costs minutes, not an hour of design.
-Written before the depth diagnostic (the ep-300 extension of the selection seeds) is read, so it cannot be tuned to it.
+**Status: authorised for DEV** by the owner ruling of 2026-09-12 15:36 Taipei
+(`/home/u24/papers/mcrl-leo-handover/MCRL-v3-owner-ruling-updated-20260912-1536.md`), with the modifications below. This
+file replaces the earlier proposal text of the same name (commit `a0585c21`) wherever they conflict; the earlier text is
+kept in git history. Nothing here is a result: no v3 learner run existed when this was written.
 
-## 1. Why this channel and not another patch of the old one
+## 1. Why this channel (stated within what the evidence supports)
 
-ep-100 measured (`CONTROLLER-EP100-DECISION-2026-09-12.md`): replacing the anchor's label costs about as much as the
-replacement rate and is indifferent to the replacement's content — `D3-T0` 112.98 at 0 % override, `v1 B-null` 110.33 at
-17.6 % (content-free proposals), `v1 FULL` 109.85 at 30.3 % (`T_NEXT`'s proposals), with FULL-vs-its-own-null at
-−0.43 % seed-mean, i.e. inside seed noise. Meanwhile the same judge arbitrating the same two specialists as a **rule**
-is +6.13 % over T0 (24/24 paired, non-learned), and `B-only` alone is +7.6 % over `D0`. Read together: the source has
-information, the arbitration is a better rule, and the **label** is the wrong pipe.
+At ep 100 and at the ep-300 depth diagnostic (`CONTROLLER-EP100-DECISION-2026-09-12.md`,
+`CONTROLLER-EP300-DEPTH-READOUT-2026-09-12.md`), every judge-gated **relabelling** of the anchor's margin target sat
+below the unconditional anchor (`D3-T0` 113.41 M bit/J at ep 300; v1 FULL −2.51 %, v2 FULL −4.94 %), and on identical
+states the relabelled learner drifted toward the challenger by about the same amount on gate-approved and gate-rejected
+rows. That **supports** poor transfer of the gate's condition to a 113-dim student; it does **not** prove the gated policy
+is unrepresentable, and three points that differ in both dose and source do **not** prove the cost is independent of the
+proposal's content.
 
-The channel below never touches the anchor's label. `A`'s loss term stays the frozen unconditional `D3-T0` margin, so the
-only difference from `D3-T0` is **which transitions are in the replay**, and the measured damage mechanism is absent by
-construction.
+v3 changes the pipe, not the sources: the anchor's loss term stays the frozen unconditional `D3-T0` margin, and the
+second specialist enters through **executed experience** instead of a label. What that does and does not buy:
+- it does not introduce the label-conflict mechanism measured at ep 100 — the label is T0 on the pre-step raw state, a
+  deterministic function of the state, and is never overwritten;
+- an unchanged anchor loss does **not** guarantee EE cannot fall — the replay distribution and the trajectory change;
+- real transitions do **not** by themselves remove data-selection bias — the judge now decides which experiences are
+  collected, and that is disclosed, not solved.
 
-**The sharper argument, now that the output-change measurement is in** (decision record §3b): on identical states the
-ep-100 `v1 FULL` learner follows the challenger 2.1–2.4 × as often as `D3-T0` does — so the intervention landed — but by
-the *same* amount on the rows the gate approved (20.2 / 25.7 %) and on the rows it rejected (18.0 / 21.2 %). The learner
-did not learn the condition, because the condition is a function of the step's fading draw and the other users' actions,
-which its 113-dim observation does not contain. A per-row hard constraint on an unobservable-conditioned target is
-therefore **ill-posed for this student**: two identical observations carry different demands and the hinge can only
-satisfy the majority, which is an unconditional drift of about the override rate.
+## 2. The mechanism (owner ruling §2 and §3, exact)
 
-An experience channel does not ask the student to represent that condition at all. TD regression on executed transitions
-estimates `E[value | observation, action]` — an expectation over exactly the unobservables the gate conditions on — which
-is a well-posed target for a 113-dim student, and the greedy policy then deviates from `a^A` only where that expectation
-supports it. The judge's privileged information is spent on *choosing which experiences to collect*, which is a data
-question, not on *asserting a per-row truth the student cannot condition on*. That is the design-level reason to expect a
-different outcome, rather than a hope that the same idea works better through another pipe.
-
-## 2. The mechanism
-
-Roles unchanged (contract §1): `π^A` = T0 anchor, `π^F` = T_NEXT foresight challenger, both scripted, neither an RL agent.
-Judge unchanged (§2): `κ_u(a) = (n_served, B − η₀E)` on `evaluate_actions((a, x_{-u}), deepcopy(env_rng))`, strict
-lexicographic, ties to the incumbent, fixed `η₀`, training-only, ≤ 3 proposals.
+Roles unchanged: `π^A` = T0 anchor, `π^F` = T_NEXT foresight challenger, both scripted, neither an RL agent. Code
+letter `B` = `π^F`.
 
 ```
-for each decision step t, after x = ε-greedy(S) and before env.step:
-    a^F = π^F(s_u, ctx)  if t < T−1  else ABSTAIN          # challenger source (a^R for the null cell)
-    for each user u with a legal action:
-        if challenger enabled and a^F ≠ x_u and κ_u(a^F) ≻ κ_u(x_u):
-            x_u ← a^F                                       # EXECUTED, not a label
-            mark row as B-executed
-    env.step(x)                                             # one step, the real joint action
-    push (s_u, x_u, r_u, s'_u, …) + the anchor's label a^A   # the transition is the executed one
-update: L = Σ_heads TD_k + λ_E · (1/|batch|) Σ_rows [ max_a(S + m·1(a ≠ a^A)) − S(s, a^A) ]      # unchanged D3-T0
+per decision step t, after x = ε-greedy(S) (the learner's joint action):
+    z = copy(x)                                         # x is kept unchanged for accounting
+    a^F = π^F(s, ctx) for ALL users, once, at the pre-step state      (B/R abstain at t = T−1)
+    g   = one planning draw for this step from the registered PLANNING stream
+          (independent of the execution RNG; never previews the step's fading/shadowing)
+    for u in the fixed user order recorded in the mechanism identity:           # one pass, no iteration
+        if a^F[u] ≠ z[u] and κ_g((a^F[u], z_{-u})) ≻ κ_g(z):   z[u] ← a^F[u]   # vs the CURRENT z, strict
+    z is now immutable
+    env.step(z, execution_rng)                          # the only execution draw; all rewards / next states from z
+    push (s_u, z_u, r_u, s'_u, …) with label a^A = T0(s_u)   # every outcome kept; no redraw / reselection / dropping
+    (execution parity of z may be checked here, after immutability; nothing from it feeds back; planning scores are
+     NOT asserted equal to execution scores)
+update: L = Σ_heads TD_k + λ_E · mean_rows [ max_a (S + m·1(a ≠ a^A)) − S(s, a^A) ]     # frozen D3-T0, unchanged
 ```
 
-Dose: **every judge-approved substitution is executed** (ρ = 1). Reason, so that no new constant enters: the gate already
-restricts to the states where the challenger strictly beats what the learner was about to do on the same state and the
-same other-user actions — that *is* CDRL's "high-value stimulus" selection; throttling it would add an unjustified
-coefficient. The realised substitution rate is then a measured quantity (≈ 30 % of decision rows at a trained anchor
-background, ≈ 39 % under ε ≈ 1, from the controller probe), not a tuned one.
+`κ_g(z) = (n_served, B − η₀E)` evaluated with the planning draw `g` (common random numbers across the step's trials),
+`η₀` fixed, strict lexicographic, ties to the incumbent. This is a **training-only sequential intervention**, not a
+deployment-side coordinator; deployment is the main learner's masked argmax only. The order and the rule are part of
+the mechanism identity. The planning stream uses named, deterministic domain separation, is kept separate from the
+null-proposal stream, has a fixed advance-and-resume rule, and is tested for distinctness from every declared stream,
+including the `default_rng((B, 0)) == default_rng(B)` alias.
 
-Two properties worth stating because they are structural, not hoped for:
-- **Service cannot be damaged by a substitution at the step level**: `κ`'s first component is the system served count and
-  the comparison is strict, so a substitution never takes a candidate that serves fewer users than the action it replaces.
-- **The label-noise mechanism measured at ep 100 cannot appear**: the target is always `a^A`, a deterministic function of
-  the raw state, so two identical observations always carry the same label.
+## 3. Cells
 
-What replaces it as the risk, declared now: the judge's privileged information (step-`t` fading, the other users'
-executed actions) now selects **which experiences are collected** instead of what the label says. Label noise is gone; a
-**data-selection bias** takes its place, and the comparison against `D3-T0` is no longer a same-trajectory comparison —
-the executed joint action, and therefore the env RNG path and the state distribution, differ. That is inherent to any
-exploration intervention and is why the two nulls below exist.
+Core five (the selection and confirmation matrix): `D0`; `A-only` = arm 4 `D3-T0` (unchanged); `B-only-v3` (real
+substitution, **no** A loss and no dependence on A's comparison); `FULL-v3`; gated uniform-legal `B-null-v3` (same
+judge, same rule, content replaced — not strictly dose-matched, and reported as such).
 
-## 3. Cells (6 × 2 selection seeds = 12 runs, ep 100)
+**`R-ungated` is a secondary mechanism analysis, not a gate** for selection, confirmation or S1 (owner ruling §5,
+recorded before any v3 counted outcome). It does not block the core five. If it is ever run, its rate rule is declared
+first, and matching a marginal probability is not per-state or per-step dose matching.
 
-| cell | anchor label | what is executed | what it answers |
-|---|---|---|---|
-| `D0` | none | learner's ε-greedy | the no-Catfish floor, rerun under the new code identity |
-| `A-only` = `D3-T0` | unconditional | learner's ε-greedy | the strong single Catfish; **identical to arm 4 by construction** |
-| `FULL-v3` | unconditional | ε-greedy + every judge-approved `a^F` | the round's claim |
-| `B-null-v3` | unconditional | ε-greedy + every judge-approved **uniform legal** proposal | is it `π^F`'s content, or any judge-approved deviation? |
-| `B-only-v3` | **none** | ε-greedy + every judge-approved `a^F` | the retrained drop-one of A |
-| `R-ungated` | unconditional | ε-greedy + a uniform legal action at the **measured substitution rate of `FULL-v3`**, no judge | is it the judge's selection, or just more exploration at that rate? |
+## 4. Seeds and readings (owner ruling §6)
 
-`R-ungated`'s rate is frozen from `FULL-v3`'s realised rate before `R-ungated` runs (one number, declared, exactly as the
-k = 8 Bernoulli null froze `p_singleton`), and it is the first dose-matched null this round would have.
+- **Selection: DEV k = 18, 19**, ep 100, always `--episodes 300 --stop-after 100`, the five cells queued together.
+- **Confirmation: DEV k = 12, 13, 14**, three fresh training seeds never used for selection, ep 300 fixed (no best
+  checkpoint). They go to v3 because neither old version qualified at the ep-300 depth diagnostic.
+- ep-100 continuation: seed-mean FULL/A-only ≥ +0.5 %; FULL/B-only and FULL/gated-null seed-means > 0; QoS floors on
+  every seed; realised F substitution rate ≥ 1 % per seed, denominator = all legal user-steps including the last step.
+- ep-300 confirmation: FULL vs each drop-one and vs strong T0 (here the same cell, `D3-T0`) seed-mean ≥ +1.0 % with
+  ≥ 2/3 seeds positive; gated-null seed-mean > 0 with ≥ 2/3 positive; per seed served drop ≤ 0.5 pp, p10 ≥ 0.5 × D0,
+  bits ≥ 0.95 × D0. A DEV screen, not a significance guarantee. No v4, no weight sweep.
 
-## 4. Readings (same shape as r2 §7, so nothing is chosen after the fact)
+## 5. Tested / untested (updated by the controller as lanes report)
 
-Estimand unchanged: seed-wise relative pooled EE on the 24 DEVVAL episodes. Qualification at ep 100 on the selection
-seeds k = 10, 11: (i) seed-mean `FULL-v3` vs `A-only` ≥ +0.5 % — which for v3 is also the comparison against `D3-T0`,
-so r2's clause (ii) collapses into (i); (iii) vs `B-only-v3` > 0; (iv) vs `B-null-v3` > 0; (iv-b) vs `R-ungated` > 0;
-(v) per-seed QoS floors against same-seed `D0`; (vi) substitution rate ≥ 1 % of decision rows per seed. Confirmation at
-ep 300 on the **fresh** seeds k = 12, 13, 14 under the owner's unrelaxed gate (≥ +1.0 % with ≥ 2/3 seeds positive on each
-drop-one, nulls positive, QoS floors per seed). Reported beside: substitution counts and rates, the realised reward of
-substituted steps, the share of sampled batch rows that are B-executed, bits / joules / served / p10 against `D3-T0`,
-and the DEVVAL greedy agreement with `a^A` and `a^F`.
-
-## 5. Cost
-
-Implementation ≈ 1 h (the judge, the sources, the logging and the launcher all exist; this adds a substitution point in
-the collection loop, one tag, one null and one ungated null). ep 100: 12 runs, the judge-bearing ones ≈ 17–25 min each,
-so ≈ 40 min wall at the 8-worker cap. ep 300 confirmation on three fresh seeds: 15–18 runs, ≈ 1.5–2 h. Formal S1 after
-that is unchanged in shape (lane E's port is already built for a parameterised mechanism id).
-
-## 6. What would make me withdraw this proposal
-
-If the depth diagnostic shows the ep-100 shortfall against `D3-T0` **inverting** by ep 300 on both selection seeds, then
-the label channel is not closed after all and the right next step is a fresh-seed confirmation of v2 (or v1), not a third
-version. That reading is fixed in `CONTROLLER-EP100-DECISION-2026-09-12.md` §5 and is due ≈ 08:00Z.
+| item | status |
+|---|---|
+| sequential single-pass substitution (lane A) | implementation in progress, uncommitted WIP being moved to its own worktree |
+| planning / execution RNG separation (lane A) | required change, not yet implemented at the time of writing |
+| replay format + executed-action pairing (lane A) | in the WIP; tests pending |
+| owner's required tests (§4 of the ruling) | pending, to run on sat |
+| lane B seam check | pending lane A's commit |
+| formal-driver wiring (lane E) | pending lane A's commit |
+| any v3 learner result | **none** |

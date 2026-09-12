@@ -40,8 +40,10 @@ Per r2 §7 this goes to the owner. **No relaxation, no third version on my autho
 
 ## 3. The smallest blocking reason, stated as narrowly as the data allows
 
-**The label channel is already saturated by the anchor, and replacing any of its labels costs about as much as the
-replacement rate — independently of what the replacement says.**
+**The label channel looks saturated by the anchor: replacing its labels cost roughly in proportion to the replacement
+rate, and at two seeds the content of the replacement made no detectable difference.** *(Wording corrected per the owner
+ruling of 2026-09-12 15:36 §8: three points that differ in both dose and source cannot prove the effect is independent
+of content; the original sentence here said "independently of what the replacement says".)*
 
 | challenger-override rate in the v1 family (anchor dose 1.0 in all three) | seed-mean EE | vs `D3-T0` |
 |---|---:|---:|
@@ -95,17 +97,16 @@ side-effect would have aborted the run); all four checkpoints reproduce their DE
    approved (20.17 / 25.74 %) and on the rows it would have rejected (18.02 / 21.16 %). If the learner had absorbed
    "follow `a^F` where the judge approves", those two columns would separate; they do not.
 
-That is direct evidence for the first declared explanation and against a benign reading of the first: the gate's
-condition is a function of the step's fading draw and the other users' executed actions, which the 113-dim observation
-does not contain, so **the conditional policy the judge defines is not representable by the student**, and what the
-student actually learns is an unconditional drift toward the challenger of roughly the override rate. That single
-mechanism also explains why the *content* of the proposal barely matters: a drift of the same size toward a
-content-free proposal costs nearly the same as a drift toward `T_NEXT`'s, because the cost comes from leaving the
-anchor, not from where it lands.
+That **supports** the first declared explanation: the gate's condition is a function of the step's fading draw and the
+other users' executed actions, which the 113-dim observation does not contain, and at this budget the student
+**transferred the condition poorly** — what it learned looks like a roughly unconditional drift toward the challenger of
+about the override rate. It is consistent with, but does not prove, the reading that the cost comes from leaving the
+anchor rather than from where the learner lands. *(Wording corrected per the owner ruling of 2026-09-12 15:36 §8: the
+original text said the gated policy "is not representable by the student" and that the mechanism "is now measured rather
+than hypothesised"; poor conditional transfer at one budget and two seeds is not a proof of unrepresentability.)*
 
 What this does **not** settle: whether the rule-level composite gain would also have required coordinated adoption
-(explanation two). It no longer needs to be settled to act, because explanation one is sufficient to predict the measured
-dose-response and is now measured rather than hypothesised.
+(explanation two), and whether a larger budget or a different student would carry the condition.
 
 What **is** established, and worth keeping regardless of what happens next:
 1. A judge-arbitrated composition of two specialists is a genuinely better **rule** (+6.13 % over T0, non-learned) and a
@@ -125,9 +126,11 @@ Falsified in this channel: *"a per-decision better target, by a fixed-price one-
 The evidence points at the channel the owner's ruling listed **first** and which I chose not to build first: leave the
 anchor's label untouched and let the second specialist intervene through **experience / exploration** — its action
 *executed*, with the real reward and the real next state, gated by the same judge against the learner's own action, with
-a declared dose and full source accounting. Three reasons, each from the table above: the damage measured here is caused
-by label replacement, which that channel never does; the anchor's label channel stays exactly `D3-T0`, so the floor is
-the strong single Catfish by construction; and `B-only`'s +7.6 % over `D0` says the source has information to inject.
+a declared dose and full source accounting. Three reasons, each from the table above: the cost measured here came with
+label replacement, which that channel never does; the anchor's loss term stays exactly `D3-T0`'s (which does **not**
+guarantee EE cannot fall — the replay distribution and trajectory change; wording corrected per the owner ruling of
+15:36 §8, the original said "the floor is the strong single Catfish by construction"); and `B-only`'s +7.6 % over `D0`
+says the source has information to inject.
 This is also the CDRL intervention shape (catfish-collected experiences entering the main learner's training) rather
 than a relabelling, so it is closer to the original method, not further from it.
 
