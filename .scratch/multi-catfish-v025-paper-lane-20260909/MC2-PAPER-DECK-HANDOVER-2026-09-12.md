@@ -52,8 +52,36 @@ qualification clauses, identifiability labels, formal table), `SYMBOL-DELTA.md` 
 `fig_deployment` — each as `.py` + `.svg` + `.png`), `renders/`, `PROGRESS-D.md` (**read this first** — which pages are
 real, which are placeholders, what was visually checked).
 
-Known pending on both: the notation ruling (`π^A` / `π^F`, actions `a^A` / `a^F`) and the physics wording ruling may not
-be applied everywhere yet; the deck's page 4 should carry the one-line judge definition.
+**Exact state at handover (lane C's own report; `PROGRESS-C.md` §2 lists every pending change with its location):**
+- *final as written*: `SEC-METHOD-MC2-DELTA.md` (all rulings applied — `S`, `π^A`/`π^F`, `a^A`/`a^F`, `κ` only as the
+  judge key, the three k8 specialty numbers labelled "對 D0，一個訓練種子，ep 100" with their `LANE-M-K8-RESULT.json`
+  source, §4.1.1 rule-level motivation, v1/v2 in one frame, corrected CDRL table) and `CITATION-DELTA.md`;
+- *still need the rulings applied*: `SEC-PROBLEM-SETUP-DELTA.md` (drop the `【需裁定】` on physics, state it as the
+  current model, correct the legacy list, `Q`→`S`), `SYMBOL-DELTA.md` (rewrite: `S` not bare `Q`, add `π^A`/`π^F`/`a^F`,
+  `κ` reserved for the judge key, §10.7 112→113 is ruled not asked), `TAB-BASELINE-ABLATION-SKELETON.md`
+  (`a^B`→`a^F`, drop the §1.3 pending note), `CLAIM-BOUNDARY.md` (one guardrail bullet: physics settled, nothing
+  regenerates);
+- *open items*, collected in `PROGRESS-C.md` §4: three code-level `【待核】` (P-03 exclusions, (3.27) re-entry rules, the
+  TD loss form), two owner items (the §10.14.7 energy-boundary sentence, the formal S1 floors verbatim), the citation
+  `待核` ([29] DAgger string, [28] author order/pages, CDRL page numbers second-hand), opening §10.15, and the formal
+  manifest (owned by lane E / the controller).
+
+**One notation decision is still open and it propagates**: because `κ` is reserved for the judge key, the normalised
+output scale (code `s_B`) has no ruled glyph. The method delta currently writes it `β`, and the frozen margin `m = 0.15`
+is expressed in those units, so whatever glyph is chosen appears in every loss and settings line. That one is for the
+new session (and ultimately the owner's symbol table).
+
+**Deck state at handover (lane D's own report; `PROGRESS-D.md` has the resume detail):** `build_mc2_pages.py` builds all
+8 pages and is syntax-valid; the 5 figure scripts and their PNG/SVG are current, including a new
+`fig_complementarity.py` drawn from the real P0 rollout numbers and a shared v1/v2 flow figure with a swappable rule
+box. **`mc2-pages-r1.pptx` / `.pdf` / `renders/*.png` are STALE** — built before the page-2 chart and the notation fix,
+so rebuild and re-render before trusting them. Open items: (1) rebuild + re-render; (2) page 6's native `deploy` formula
+(argmax with a nested sub+sup inside a subscript) renders broken in LibreOffice — diagnosed, not fixed; (3) the
+`π^A`/`π^F`, `a^A`/`a^F` ruling is applied in the flow figure but **not** at three named lines of
+`build_mc2_pages.py` (page 4 footer, page 5 table, page 5 note — exact old/new text in `PROGRESS-D.md` §5); (4) the
+one-time "code letter B = `π^F`" clarification was drafted but never inserted (candidate: page 7 caption); (5) pages 7
+and 8 have never been visually inspected, only character-budget checked; (6) the probe evidence was added to page 2 only,
+not to page 4; (7) `NOTES.md` (page-by-page claim status) was never written.
 
 ## 4. Numbers that exist, with the labels they must carry
 
