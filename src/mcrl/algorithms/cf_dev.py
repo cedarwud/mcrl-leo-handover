@@ -15,7 +15,13 @@ edited):
 * the teacher labels of :mod:`mcrl.algorithms.cf_teacher` (T0 action + the 28-score
   vector), computed from the RAW user state at collection time and stored with the
   transition in :class:`TeacherReplayBuffer`;
-* the mechanisms ``D0`` / ``D2-T0`` / ``D2-null`` / ``D3-T0``;
+* the mechanisms ``D0`` / ``D2-T0`` / ``D2-null`` / ``D3-T0`` / ``D3-null``, and the
+  generic N-teacher set-valued ``D3-multi`` with its matched ``D3-multi-null``
+  (Amendment 15 section 6; see :class:`MultiD3Spec` and
+  :func:`mcrl.algorithms.cf_teacher.d3_set_margin_loss`).  With one teacher the
+  multi path is bit-identical to ``D3-T0`` -- loss tensor AND gradient -- and it
+  changes no inference or deployment path: a deployed policy is still the three Q
+  networks and ``eta``, and no teacher source has to exist to run it;
 * DEVVAL evaluation (24 episodes, fresh env per episode, greedy, no training RNG);
 * a training loop that never calls ``quarter_update`` / ``measure_on_calibration``
   (in E0 ``eta`` is fixed at ``eta_0`` and ``lambda = 0``; an eta update would need
@@ -94,6 +100,44 @@ MAX_DEV_SEED_INDEX: int = 9
 """DEV triples are declared for k = 0..9, so a DEV-NULL key's index is one of those."""
 
 
+def _null_generator(key) -> np.random.Generator:
+    """A FRESH DEV-NULL generator at the declared composite identity ``(base, k)``.
+
+    One arm, one stream: nothing is cached and no state is shared between arms, so
+    an arm's null draws are a function of its own declared key alone.  (Pattern
+    taken from the closed ``TDELTA-CANARY-PREP`` lane, commit ``ef8c866f``.)
+    """
+    return np.random.default_rng(key)
+
+
+D3_MECHANISMS: tuple[str, ...] = ("D3-T0", "D3-null")
+"""Every mechanism carried by the SAME single-action unconditional large-margin
+loss.  Adding a teacher identity here must never change the loss, the margin or
+the weight -- only which legal action ``a_T`` points at.  (Pattern taken from the
+closed ``TDELTA-CANARY-PREP`` lane; ``D3-T_DELTA`` is not carried over, T_DELTA
+being closed by adjudication ``f747de86``.)"""
+
+EXPECTED_TEACHER: dict[str, str] = {
+    "D0": "none",
+    "D3-null": "random",
+    "D3-multi": "multi",
+    "D3-multi-null": "random-set",
+}
+"""Mechanism -> the only teacher label it may carry (default: ``T0``)."""
+
+NULL_BASE_FOR: dict[str, int] = {
+    "D2-null": 9_231_000,
+    "D3-null": 9_241_000,
+    "D3-multi-null": 9_241_000,
+}
+"""Mechanism -> its declared DEV-NULL namespace (Amendment 6 section 3).
+
+The set-valued null draws from the same declared D3/D4 random-action namespace as
+the one-action ``D3-null``; the two are told apart by the mechanism identity and by
+``MultiD3Spec.null_id``, both of which are in the configuration hash.
+"""
+
+
 def assert_dev_null_key(key: Any, what: str = "") -> tuple[int, int]:
     """Validate a COMPOSITE DEV-NULL generator identity ``(base, k)``.
 
@@ -163,6 +207,149 @@ def assert_dev_seed_pairs(seeds: Sequence[tuple[int, int]], what: str = "") -> N
         assert_dev_seed(mob_seed, f"{what} mobility")
 
 
+# ------------------------------------------------------------------ MULTI-D3
+@dataclass(frozen=True)
+class MultiD3Spec:
+    """Identity of a generic N-teacher set-valued MULTI-D3 arm or its matched null.
+
+    Amendment 15 section 6.  Everything the mechanism's identity depends on lives
+    here and nowhere else, so that :func:`dev_e0_common.arm_config_payload` can put
+    all of it in the configuration hash: the versioned mechanism identity, the
+    CANONICAL teacher set (sorted, duplicate-free -- ``{T0,Ti}`` and ``{Ti,T0}`` are
+    the same configuration), and, for the matched null, the null's own rule identity
+    and its cardinality.  The margin ``m`` and the weight ``lambda_E`` are NOT here:
+    they stay in :class:`DevSettings`, frozen and unchanged at ``0.15`` and ``1.0``.
+
+    A ``FULL`` arm names its teachers.  A matched ``2-null`` names no teacher at all
+    -- it is matched to a CARDINALITY, not to an identity, which is exactly why one
+    physical ``n = 2`` null run is shared by every two-teacher candidate
+    (Amendment 15 section 7, "shared arms are physically run once").
+    """
+
+    mechanism_id: str = cft.MULTI_MECHANISM_ID
+    teachers: tuple[str, ...] = ()
+    n_proposals: int = 0
+    null_id: str | None = None
+    p_singleton: float | None = None
+    p_singleton_numerator: int | None = None
+    p_singleton_denominator: int | None = None
+    p_singleton_rational: str | None = None
+    p_singleton_source: str | None = None
+    """Provenance of the frozen marginal: the source identity and the P0 artefact
+    digest it was counted on.  It is in the configuration hash so that a run can
+    never be re-read as though a different collection had produced the number."""
+
+    def __post_init__(self) -> None:
+        if self.mechanism_id != cft.MULTI_MECHANISM_ID:
+            raise MCRLContractError(
+                f"unknown MULTI-D3 mechanism identity {self.mechanism_id!r}; the "
+                f"declared mechanism is {cft.MULTI_MECHANISM_ID!r}"
+            )
+        if self.null_id is None:
+            if not self.teachers:
+                raise MCRLContractError("a FULL MULTI-D3 arm must name its teachers")
+            if tuple(self.teachers) != cft.canonical_teacher_set(self.teachers):
+                raise MCRLContractError(
+                    f"teacher set {tuple(self.teachers)} is not canonical; use "
+                    "cft.canonical_teacher_set()"
+                )
+            if int(self.n_proposals) != 0:
+                raise MCRLContractError("only the matched null carries n_proposals")
+            if any(x is not None for x in (self.p_singleton,
+                                           self.p_singleton_numerator,
+                                           self.p_singleton_denominator,
+                                           self.p_singleton_rational,
+                                           self.p_singleton_source)):
+                raise MCRLContractError("only a matched null carries p_singleton")
+        else:
+            if self.null_id not in (cft.MULTI_NULL_ID, cft.MULTI_NULL_BERNOULLI_ID):
+                raise MCRLContractError(
+                    f"unknown matched-null identity {self.null_id!r}; the declared "
+                    f"rule is {cft.MULTI_NULL_ID!r}"
+                )
+            if (self.p_singleton is None) != (self.null_id == cft.MULTI_NULL_ID):
+                raise MCRLContractError(
+                    f"{cft.MULTI_NULL_BERNOULLI_ID!r} needs its declared p_singleton "
+                    f"and {cft.MULTI_NULL_ID!r} must not carry one"
+                )
+            if self.p_singleton is not None:
+                if not 0.0 <= float(self.p_singleton) <= 1.0:
+                    raise MCRLContractError("p_singleton must be a probability")
+                num, den = self.p_singleton_numerator, self.p_singleton_denominator
+                if num is None or den is None or int(den) <= 0:
+                    raise MCRLContractError(
+                        "the Bernoulli-matched null's p_singleton must be frozen as an "
+                        "exact numerator / denominator, not only as a float"
+                    )
+                if float(self.p_singleton) != int(num) / int(den):
+                    raise MCRLContractError(
+                        f"p_singleton {self.p_singleton!r} is not {num}/{den}"
+                    )
+                if self.p_singleton_rational != f"{int(num)}/{int(den)}":
+                    raise MCRLContractError(
+                        f"p_singleton_rational must be '{int(num)}/{int(den)}'"
+                    )
+                if not self.p_singleton_source:
+                    raise MCRLContractError(
+                        "p_singleton must carry the source identity and the P0 "
+                        "artefact digest it was counted on"
+                    )
+            elif any(x is not None for x in (self.p_singleton_numerator,
+                                             self.p_singleton_denominator,
+                                             self.p_singleton_rational,
+                                             self.p_singleton_source)):
+                raise MCRLContractError(
+                    "p_singleton provenance without a p_singleton"
+                )
+            if self.teachers:
+                raise MCRLContractError(
+                    "the matched set-valued null names no teacher: it is matched to a "
+                    "CARDINALITY, so that one null run is shared across candidates"
+                )
+            if int(self.n_proposals) < 1:
+                raise MCRLContractError("the matched null needs n_proposals >= 1")
+
+    @property
+    def is_null(self) -> bool:
+        return self.null_id is not None
+
+    @property
+    def n_slots(self) -> int:
+        """Proposals per state: one per teacher, or the null's declared cardinality."""
+        return int(self.n_proposals) if self.is_null else len(self.teachers)
+
+    @property
+    def mechanism(self) -> str:
+        return "D3-multi-null" if self.is_null else "D3-multi"
+
+    @property
+    def is_bernoulli_null(self) -> bool:
+        return self.null_id == cft.MULTI_NULL_BERNOULLI_ID
+
+    def label(self) -> str:
+        """Short run-directory tag: the teacher set, or the null's identity.
+
+        The two nulls MUST NOT collide: the Bernoulli-matched null carries its
+        exact frozen ``p_singleton`` in the tag as well as in the hash, so its
+        run directory, manifest key and config hash are all distinct from the
+        rejected fixed two-proposal null's (controller record ``716f104e`` section 4).
+        """
+        if not self.is_null:
+            return "+".join(self.teachers)
+        if self.is_bernoulli_null:
+            return (f"n{self.n_proposals}-bernoulli-"
+                    f"p{self.p_singleton_numerator}_{self.p_singleton_denominator}")
+        return f"n{self.n_proposals}"
+
+
+def multi_spec_from_payload(payload: Mapping[str, Any] | None) -> MultiD3Spec | None:
+    if payload is None:
+        return None
+    raw = dict(payload)
+    raw["teachers"] = tuple(str(x) for x in raw.get("teachers", ()))
+    return MultiD3Spec(**raw)
+
+
 # ------------------------------------------------------------------ settings
 @dataclass(frozen=True)
 class DevSettings:
@@ -185,12 +372,12 @@ class DevSettings:
             raise MCRLContractError(f"mechanism must be one of {cft.MECHANISMS}")
         if self.teacher not in cft.TEACHERS:
             raise MCRLContractError(f"teacher must be one of {cft.TEACHERS}")
-        expected_teacher = {"D0": "none", "D3-null": "random"}.get(self.mechanism, "T0")
+        expected_teacher = EXPECTED_TEACHER.get(self.mechanism, "T0")
         if self.teacher != expected_teacher:
             raise MCRLContractError(
                 f"mechanism {self.mechanism!r} requires teacher {expected_teacher!r}"
             )
-        null_base = {"D2-null": 9_231_000, "D3-null": 9_241_000}.get(self.mechanism)
+        null_base = NULL_BASE_FOR.get(self.mechanism)
         if null_base is None and self.null_key is not None:
             raise MCRLContractError("only the matched nulls may carry a DEV-NULL key")
         if null_base is not None:
@@ -225,9 +412,13 @@ class DevSettings:
         """The weight actually multiplying this mechanism's teacher loss."""
         if self.mechanism in ("D2-T0", "D2-null"):
             return float(self.alpha)
-        if self.mechanism in ("D3-T0", "D3-null"):
+        if self.mechanism in D3_MECHANISMS + cft.MULTI_MECHANISMS:
             return float(self.lambda_e)
         return 0.0
+
+    @property
+    def is_multi(self) -> bool:
+        return self.mechanism in cft.MULTI_MECHANISMS
 
 
 # ------------------------------------------------------------------ replay
@@ -241,11 +432,13 @@ class TeacherReplayBuffer(ReplayBuffer):
     FIFO positions as the transitions and are sampled at the same indices.
     """
 
-    _TEACHER_STATE_FORMAT_VERSION = 1
+    _TEACHER_STATE_FORMAT_VERSION = 2
 
     def __init__(self, capacity: int) -> None:
         super().__init__(capacity)
-        self._labels: deque[tuple[int, int, np.ndarray]] = deque(maxlen=capacity)
+        self._labels: deque[tuple[int, int, np.ndarray, np.ndarray | None]] = deque(
+            maxlen=capacity
+        )
         self._last: dict[str, np.ndarray] | None = None
 
     # -- writing --------------------------------------------------------
@@ -257,6 +450,7 @@ class TeacherReplayBuffer(ReplayBuffer):
     def push_labeled(
         self, state, action, reward_3, next_state, mask, next_mask, done,
         *, t0_action: int, teacher_action: int, teacher_scores: np.ndarray,
+        teacher_member: np.ndarray | None = None,
     ) -> None:
         mask = np.asarray(mask, dtype=bool)
         if not (0 <= int(teacher_action) < mask.size and bool(mask[int(teacher_action)])):
@@ -266,8 +460,18 @@ class TeacherReplayBuffer(ReplayBuffer):
         scores = np.asarray(teacher_scores, dtype=np.float64)
         if scores.shape != (mask.size,):
             raise MCRLContractError("teacher scores must be one value per action")
+        member: np.ndarray | None = None
+        if teacher_member is not None:
+            member = np.asarray(teacher_member, dtype=bool)
+            if member.shape != (mask.size,):
+                raise MCRLContractError("A_CF must be one flag per action")
+            if not bool(member.any()):
+                raise MCRLContractError("A_CF is empty in the stored state")
+            if bool((member & ~mask).any()):
+                raise MCRLContractError("A_CF holds an action illegal in the stored state")
+            member = member.copy()
         super().push(state, action, reward_3, next_state, mask, next_mask, done)
-        self._labels.append((int(t0_action), int(teacher_action), scores.copy()))
+        self._labels.append((int(t0_action), int(teacher_action), scores.copy(), member))
 
     # -- reading --------------------------------------------------------
     def sample(self, batch_size: int, rng: np.random.Generator):
@@ -295,6 +499,12 @@ class TeacherReplayBuffer(ReplayBuffer):
             "teacher_scores": np.array([x[2] for x in labels], dtype=np.float64),
             "masks": masks,
         }
+        if any(x[3] is not None for x in labels):
+            if any(x[3] is None for x in labels):
+                raise MCRLContractError("some sampled transitions carry no A_CF")
+            self._last["teacher_member"] = np.array(
+                [x[3] for x in labels], dtype=bool
+            )
         return states, actions, rewards, next_states, masks, next_masks, dones
 
     def last_teacher(self) -> dict[str, np.ndarray]:
@@ -307,7 +517,9 @@ class TeacherReplayBuffer(ReplayBuffer):
         state = super().state_dict()
         state["teacher_format_version"] = self._TEACHER_STATE_FORMAT_VERSION
         state["teacher_labels"] = [
-            (int(a0), int(a1), np.array(s, copy=True)) for a0, a1, s in self._labels
+            (int(a0), int(a1), np.array(s, copy=True),
+             None if m is None else np.array(m, dtype=bool, copy=True))
+            for a0, a1, s, m in self._labels
         ]
         return state
 
@@ -324,10 +536,15 @@ class TeacherReplayBuffer(ReplayBuffer):
             raise MCRLContractError(
                 f"{len(labels)} teacher labels for {len(self._buf)} transitions"
             )
-        restored: deque[tuple[int, int, np.ndarray]] = deque(maxlen=self._capacity)
+        restored: deque[tuple[int, int, np.ndarray, np.ndarray | None]] = deque(
+            maxlen=self._capacity
+        )
         for item in labels:
-            a0, a1, scores = item
-            restored.append((int(a0), int(a1), np.array(scores, copy=True)))
+            a0, a1, scores, member = item
+            restored.append((
+                int(a0), int(a1), np.array(scores, copy=True),
+                None if member is None else np.array(member, dtype=bool, copy=True),
+            ))
         self._labels = restored
         self._last = None
 
@@ -446,6 +663,7 @@ class CFDevTrainer(CFRatioTrainer):
     """The E0 development learner: the CF-ratio learner plus a teacher mechanism."""
 
     def __init__(self, env, config, settings, dev: DevSettings, *,
+                 multi: MultiD3Spec | None = None,
                  env_factory=None, train_seed: int = 9_201_000,
                  env_seed: int = 9_202_000, mobility_seed: int = 9_203_000,
                  device: str = "cpu") -> None:
@@ -458,11 +676,35 @@ class CFDevTrainer(CFRatioTrainer):
         if self.sources:
             raise MCRLContractError("the E0 surface runs without source pools")
         self.dev = dev
+        if dev.is_multi:
+            if multi is None:
+                raise MCRLContractError(
+                    f"{dev.mechanism} needs its MultiD3Spec (teacher identities / "
+                    "null identity go into the configuration hash)"
+                )
+            if multi.mechanism != dev.mechanism:
+                raise MCRLContractError(
+                    f"MultiD3Spec describes {multi.mechanism!r}, not {dev.mechanism!r}"
+                )
+        elif multi is not None:
+            raise MCRLContractError(
+                f"mechanism {dev.mechanism!r} is not a MULTI-D3 arm but carries a spec"
+            )
+        self.multi = multi
+        # TRAINING-ONLY teacher-context seam.  It is built at all only when a
+        # declared teacher actually asks for it, so every existing arm -- D0, D2,
+        # D3-T0, D3-null and any multi arm over context-free sources -- runs the
+        # historical path untouched.
+        self._needs_teacher_context: bool = bool(
+            multi is not None and not multi.is_null
+            and cft.any_teacher_needs_context(multi.teachers)
+        )
+        self._teacher_context: cft.TeacherContext | None = None
         # Replace the inherited replay with the label-carrying one (same capacity,
         # same sampling arithmetic, same generator).
         self.replay = TeacherReplayBuffer(config.replay_capacity)
         self._null_rng = (
-            np.random.default_rng(dev.null_key) if dev.null_key is not None else None
+            _null_generator(dev.null_key) if dev.null_key is not None else None
         )
         self._last_teacher_loss: float = 0.0
         self._teacher_updates: int = 0
@@ -489,19 +731,60 @@ class CFDevTrainer(CFRatioTrainer):
         survives in anything the null's loss reads.  ``t0_scores`` is returned for
         the episode diagnostics only (never stored in the loss inputs).
         """
+        return self.teacher_labels_ext(states, masks)[:5]
+
+    def teacher_labels_ext(self, states, masks):
+        """:meth:`teacher_labels` plus ``(A_CF membership, teacher slot actions)``.
+
+        The last two are ``None`` for every single-teacher mechanism, so the
+        single-teacher path through this method is the frozen one statement for
+        statement.  For a MULTI-D3 arm:
+
+        * ``D3-multi`` asks each declared teacher source for its action on THIS raw
+          state and builds ``A_CF = unique(...)`` restricted to the currently legal
+          actions.  T0's column, when T0 is in the set, is the same array the
+          diagnostics already computed -- a source is never evaluated twice.
+        * ``D3-multi-null`` draws ``n_proposals`` DISTINCT legal actions without
+          replacement from its own declared DEV-NULL stream and reads no teacher at
+          all; the scores it carries are zeros, as for ``D3-null``.
+
+        ``teacher_action`` for a MULTI-D3 arm is the LOWEST-index member of the set
+        -- an order-free representative kept only so the stored label stays a legal
+        action and the inherited diagnostics keep their meaning.  **No loss reads
+        it**: the multi loss reads the membership mask alone.
+        """
         scores, t0_acts, legal = cft.t0_scores(states, masks)
-        if self.dev.mechanism == "D2-null":
+        mech = self.dev.mechanism
+        if mech == "D2-null":
             used = cft.permute_scores_among_legal(scores, legal, self._null_rng)
             used_acts = cft.masked_argmax_rows(used, legal)
-        elif self.dev.mechanism == "D3-null":
+        elif mech == "D3-null":
             # The margin loss reads ONLY the action, so the null replaces the action
             # with a seeded uniform legal draw and stores NO T0 quantity at all: the
             # scores it carries are zeros.
             used = np.zeros_like(scores)
             used_acts = cft.random_legal_actions(legal, self._null_rng)
+        elif mech == "D3-multi":
+            slots = cft.teacher_action_slots(
+                self.multi.teachers, states, masks, cache={"T0": t0_acts},
+                context=self._teacher_context,
+            )
+            member = cft.membership_from_slots(slots, legal)
+            used = scores if "T0" in self.multi.teachers else np.zeros_like(scores)
+            used_acts = cft.masked_argmax_rows(member.astype(np.float64), legal)
+            return t0_acts, used_acts, used, legal, scores, member, slots
+        elif mech == "D3-multi-null":
+            slots = cft.random_legal_action_slots(
+                legal, self._null_rng, self.multi.n_proposals,
+                p_singleton=self.multi.p_singleton,
+            )
+            member = cft.membership_from_slots(slots, legal)
+            used = np.zeros_like(scores)
+            used_acts = cft.masked_argmax_rows(member.astype(np.float64), legal)
+            return t0_acts, used_acts, used, legal, scores, member, slots
         else:
             used, used_acts = scores, t0_acts
-        return t0_acts, used_acts, used, legal, scores
+        return t0_acts, used_acts, used, legal, scores, None, None
 
     def _assemble_batch(self):
         batch = super()._assemble_batch()
@@ -513,6 +796,8 @@ class CFDevTrainer(CFRatioTrainer):
         batch.update(masks=labels["masks"], t0_action=labels["t0_action"],
                      teacher_action=labels["teacher_action"],
                      teacher_scores=labels["teacher_scores"])
+        if "teacher_member" in labels:
+            batch["teacher_member"] = labels["teacher_member"]
         return batch
 
     def _teacher_loss(self, batch, q_all) -> torch.Tensor | None:
@@ -528,10 +813,19 @@ class CFDevTrainer(CFRatioTrainer):
             target = cft.soft_targets(batch["teacher_scores"], batch["masks"], d.tau)
             p = torch.tensor(target, dtype=torch.float32, device=self.device)
             return d.alpha * cft.d2_ce_loss(scores, mask, p, d.tau_s)
-        if d.mechanism in ("D3-T0", "D3-null"):
+        if d.mechanism in D3_MECHANISMS:
             a_t = torch.tensor(np.asarray(batch["teacher_action"], dtype=np.int64),
                                dtype=torch.long, device=self.device)
             return d.lambda_e * cft.d3_margin_loss(scores, mask, a_t, d.margin)
+        if d.mechanism in cft.MULTI_MECHANISMS:
+            # The SAME frozen weight (lambda_E = 1) and the SAME frozen margin
+            # (m = 0.15) as the single-teacher D3.  The set carries no per-teacher
+            # weight of any kind.
+            if "teacher_member" not in batch:
+                raise MCRLContractError("MULTI-D3 batch carries no A_CF")
+            member = torch.tensor(np.asarray(batch["teacher_member"], dtype=bool),
+                                  dtype=torch.bool, device=self.device)
+            return d.lambda_e * cft.d3_set_margin_loss(scores, mask, member, d.margin)
         raise MCRLContractError(f"no teacher loss for mechanism {d.mechanism!r}")
 
     def update(self) -> tuple[float, float, float]:
@@ -607,7 +901,9 @@ class CFDevTrainer(CFRatioTrainer):
         for ep in range(start_episode, cfg.episodes):
             eps = self.epsilon(ep)
             eta_ep, lam_ep = self.eta, self.lam
-            states, masks, _ = self.env.reset(self._env_rng, self._mobility_rng)
+            states, masks, observation = self.env.reset(
+                self._env_rng, self._mobility_rng
+            )
             t = 0
             encoded = self.encode_at(states, t)
             tot = np.zeros(3)
@@ -622,10 +918,40 @@ class CFDevTrainer(CFRatioTrainer):
             t0_greedy_regret = 0.0
             used_agree_t0 = 0.0
             t0_decisions = 0
-            for _t in range(self.env.config.steps_per_episode):
+            n_slots = 0 if self.multi is None else self.multi.n_slots
+            card_hist = [0] * (n_slots + 1)
+            dup_rows = card_rows = 0
+            # Controller record 716f104e section 3: the realised |A_CF| = 1 rate is
+            # reported PER STEP, not only as a marginal, because T_NEXT's mandatory
+            # final-step T0 fallback makes the last step singleton by construction.
+            step_rows = [0] * int(self.env.config.steps_per_episode)
+            step_singletons = [0] * int(self.env.config.steps_per_episode)
+            n_ep_steps = self.env.config.steps_per_episode
+            for _t in range(n_ep_steps):
+                if self._needs_teacher_context:
+                    # Training-only, read-only, additive.  The observation is the
+                    # one TrainerEnvironment already produced and the loop already
+                    # had; nothing is stepped, drawn or written to build this.
+                    self._teacher_context = cft.TeacherContext(
+                        driver=self.env.environment.driver,
+                        candidates=observation.candidates,
+                        step_index=_t,
+                        is_final_step=(_t >= n_ep_steps - 1),
+                    )
                 actions = self.select_actions(encoded, masks, eps)
-                (t0_acts, used_acts, used_scores, legal,
-                 t0_scores_raw) = self.teacher_labels(states, masks)
+                (t0_acts, used_acts, used_scores, legal, t0_scores_raw,
+                 member, slots) = self.teacher_labels_ext(states, masks)
+                if member is not None:
+                    hist = cft.cardinality_histogram(member, n_slots)
+                    card_hist = [a + b for a, b in zip(card_hist, hist)]
+                    live = int(sum(hist[1:]))
+                    card_rows += live
+                    dup_rows += int(round(
+                        cft.duplicate_slot_fraction(slots, member) * live
+                    ))
+                    if _t < len(step_rows):
+                        step_rows[_t] += live
+                        step_singletons[_t] += int(hist[1])
                 greedy = self.greedy_actions(encoded, masks)   # diagnostic, no RNG
                 for u in range(users):
                     if not bool(legal[u].any()):
@@ -677,6 +1003,7 @@ class CFDevTrainer(CFRatioTrainer):
                         t0_action=int(t0_acts[uid]),
                         teacher_action=int(used_acts[uid]),
                         teacher_scores=used_scores[uid],
+                        teacher_member=(None if member is None else member[uid]),
                     )
                 step_losses = self.update()
                 if self._last_batch is not None:
@@ -686,6 +1013,8 @@ class CFDevTrainer(CFRatioTrainer):
                 states, masks, encoded = (
                     result.user_states, result.action_masks, next_encoded
                 )
+                if self._needs_teacher_context:
+                    observation = self.env.last_outcome.observation
                 if result.done:
                     break
             if (ep + 1) % cfg.target_update_every_episodes == 0:
@@ -723,6 +1052,32 @@ class CFDevTrainer(CFRatioTrainer):
                 "teacher_action_agrees_with_t0": float(used_agree_t0 / max(t0_decisions, 1)),
                 "t0_decisions": t0_decisions,
             }
+            if self.multi is not None:
+                # Amendment 15 section 7 report fields.  Diagnostics only: no loss,
+                # no gradient and no target reads any of them.
+                log.update(
+                    multi_mechanism_id=self.multi.mechanism_id,
+                    multi_teachers=list(self.multi.teachers),
+                    multi_null_id=self.multi.null_id,
+                    multi_set_cardinality_hist=list(card_hist),
+                    multi_set_cardinality_mean=float(
+                        sum(c * n for c, n in enumerate(card_hist)) / max(card_rows, 1)
+                    ),
+                    multi_duplicate_fraction=float(dup_rows / max(card_rows, 1)),
+                    multi_set_rows=int(card_rows),
+                    multi_singleton_rate=float(card_hist[1] / max(card_rows, 1)),
+                    multi_decisions_per_step=list(step_rows),
+                    multi_singletons_per_step=list(step_singletons),
+                    multi_singleton_rate_per_step=[
+                        (float(a / b) if b else None)
+                        for a, b in zip(step_singletons, step_rows)
+                    ],
+                    multi_p_singleton_declared=(
+                        None if self.multi.p_singleton is None
+                        else float(self.multi.p_singleton)
+                    ),
+                    multi_p_singleton_rational=self.multi.p_singleton_rational,
+                )
             if s.credit_mode != DEFAULT_CREDIT_MODE:
                 log.update(bits=sys_bits, joules=sys_joules,
                            ee_behaviour=sys_bits / sys_joules,
@@ -750,6 +1105,7 @@ class CFDevTrainer(CFRatioTrainer):
         state = super().training_state_dict()
         state["dev"] = {
             "settings": dataclasses.asdict(self.dev),
+            "multi": (None if self.multi is None else dataclasses.asdict(self.multi)),
             "null_rng": (None if self._null_rng is None
                          else copy.deepcopy(self._null_rng.bit_generator.state)),
             "teacher_updates": int(self._teacher_updates),
@@ -762,6 +1118,13 @@ class CFDevTrainer(CFRatioTrainer):
             raise MCRLContractError("resume state carries no development block")
         if dev["settings"] != dataclasses.asdict(self.dev):
             raise MCRLContractError("resume state development settings do not match")
+        want_multi = None if self.multi is None else dataclasses.asdict(self.multi)
+        have_multi = dev.get("multi")
+        if have_multi is not None:
+            have_multi = dict(have_multi)
+            have_multi["teachers"] = tuple(str(x) for x in have_multi["teachers"])
+        if have_multi != want_multi:
+            raise MCRLContractError("resume state MULTI-D3 spec does not match")
         super().load_training_state_dict(state)
         if (dev["null_rng"] is None) != (self._null_rng is None):
             raise MCRLContractError("resume state DEV-NULL generator does not match")
@@ -773,6 +1136,11 @@ class CFDevTrainer(CFRatioTrainer):
         payload = super().policy_payload(episode)
         payload["schema"] = "cf-dev-policy-v1"
         payload["dev_settings"] = dataclasses.asdict(self.dev)
+        if self.multi is not None:
+            # Provenance only.  A deployed checkpoint is the three Q networks and
+            # eta; NOTHING in the inference path reads this block, and no teacher
+            # source has to exist to load or run the policy.
+            payload["multi_spec"] = dataclasses.asdict(self.multi)
         return payload
 
     def load_policy(self, path):  # noqa: D102

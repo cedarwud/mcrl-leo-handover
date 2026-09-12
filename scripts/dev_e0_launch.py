@@ -19,7 +19,10 @@ Usage::
     dev_e0_launch.py --root DIR --calibration FILE [--init-manifest] [--smoke]
                      [--episodes 300] [--stop-after N] [--expect N]
                      [--memory-max 5G] [--dry-run] [--verify] [SPEC ...]
-    SPEC = ARM:K  (1:0 .. 6:0);  default = arms 1-4 on DEV triple k = 0.
+    SPEC = ARM:K            for the single-teacher arms 1-7
+         = ARM:K:T0+Ti      for the MULTI-D3 FULL arm 8 (order irrelevant)
+         = ARM:K:nN         for the MULTI-D3 matched null arm 9 (N = cardinality)
+    default = arms 1-4 on DEV triple k = 0.
 """
 
 from __future__ import annotations
@@ -95,11 +98,38 @@ def main() -> int:
         raise SystemExit(f"{len(specs)} runs exceeds --max-processes {a.max_processes}")
     parsed = []
     for s in specs:
-        arm_s, k_s = s.split(":")
-        arm, k = int(arm_s), int(k_s)
+        parts = s.split(":")
+        if not 2 <= len(parts) <= 3:
+            raise SystemExit(f"bad spec {s}")
+        arm, k = int(parts[0]), int(parts[1])
         if arm not in D.ARMS or not 0 <= k <= 9:
             raise SystemExit(f"bad spec {s}")
-        parsed.append((arm, k))
+        teachers, n_proposals, bernoulli = None, None, False
+        if len(parts) == 3:
+            if arm not in D.MULTI_ARMS:
+                raise SystemExit(f"arm {arm} takes no teacher set: {s}")
+            tail = parts[2]
+            if D.MULTI_ARMS[arm] == "NULL":
+                head = tail[:-1] if tail.endswith("b") else tail
+                if not (head.startswith("n") and head[1:].isdigit()):
+                    raise SystemExit(
+                        f"the matched null is matched to a CARDINALITY: use "
+                        f"{arm}:{k}:n2b (Bernoulli-matched, the SELECTED k = 8 "
+                        f"null) or {arm}:{k}:n2 (rejected fixed null), not {s}"
+                    )
+                n_proposals = int(head[1:])
+                bernoulli = tail.endswith("b")
+            else:
+                teachers = tuple(tail.split("+"))
+                if D.MULTI_ARMS[arm] == "FULL" and "T_NEXT" in teachers:
+                    from mcrl.algorithms import cf_multi_sources as cfmulti
+                    cfmulti.register_candidate_sources(replace=True)
+        elif arm in D.MULTI_ARMS:
+            raise SystemExit(
+                f"arm {arm} is a MULTI-D3 arm: spec it as {arm}:{k}:T0+Ti (FULL) "
+                f"or {arm}:{k}:n2 (matched null)"
+            )
+        parsed.append((arm, k, teachers, n_proposals, bernoulli))
 
     from mcrl.runtime import training_pipeline as tp
     episodes = 3 if a.smoke else int(a.episodes)
@@ -110,12 +140,18 @@ def main() -> int:
     code = D.code_manifest()
     arm_configs = {}
     arm_payloads = {}
-    for arm, k in parsed:
+    for arm, k, teachers, n_proposals, bernoulli in parsed:
         payload = D.arm_config_payload(record, calib, arm, k, episodes=episodes,
                                        devval_episodes=n_devval,
-                                       calibration_sha256=calib_sha, tau=a.tau)
-        arm_payloads[f"{arm}:{k}"] = payload
-        arm_configs[f"{arm}:{k}"] = D.config_hash(payload)
+                                       calibration_sha256=calib_sha, tau=a.tau,
+                                       teachers=teachers, n_proposals=n_proposals,
+                                       bernoulli=bernoulli)
+        key = D.spec_key(arm, k, teachers, n_proposals=n_proposals,
+                         bernoulli=bernoulli)
+        if key in arm_configs:
+            raise SystemExit(f"duplicate run identity {key}")
+        arm_payloads[key] = payload
+        arm_configs[key] = D.config_hash(payload)
 
     root.mkdir(parents=True, exist_ok=True)
     mpath = root / "RUN-MANIFEST.json"
@@ -151,9 +187,17 @@ def main() -> int:
         raise SystemExit(f"no {mpath}; pass --init-manifest for a fresh root")
 
     plan = []
-    for arm, k in parsed:
-        d = root / f"{D.arm_name(arm)}-k{k}"
-        pidf = root / f"E0-{arm}-k{k}.pid"
+    for arm, k, teachers, n_proposals, bernoulli in parsed:
+        key = D.spec_key(arm, k, teachers, n_proposals=n_proposals,
+                         bernoulli=bernoulli)
+        name = D.arm_name(arm, teachers, n_proposals=n_proposals,
+                          bernoulli=bernoulli)
+        d = root / f"{name}-k{k}"
+        # pid / log tag: unchanged "E0-<arm>-k<k>" for arms 1-7, plus the MULTI-D3
+        # label so two FULL arms with different teacher sets never share a pid file.
+        tag = (f"E0-{arm}-k{k}" if arm not in D.MULTI_ARMS
+               else f"E0-{arm}-{D.multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli).label()}-k{k}")
+        pidf = root / f"{tag}.pid"
         st = json.loads((d / "status.json").read_text()) if (d / "status.json").is_file() else {}
         live = is_live(pidf, arm, k, root)
         if st.get("status") == "complete":
@@ -162,10 +206,10 @@ def main() -> int:
             state = f"live pid {live}"
         else:
             state = "resume" if (d / "resume.pt").is_file() else "fresh"
-        plan.append((arm, k, d, pidf, state))
+        plan.append((arm, k, teachers, n_proposals, bernoulli, key, name, tag, d, pidf, state))
     print(f"[{utc()}] plan for {root} (commit {code['commit']}):")
-    for arm, k, _d, _p, state in plan:
-        print(f"  {D.arm_name(arm)} k{k} [cfg {arm_configs[f'{arm}:{k}'][:12]}]: {state}")
+    for arm, k, _t, _n, _b, key, name, _tag, _d, _p, state in plan:
+        print(f"  {name} k{k} [cfg {arm_configs[key][:12]}]: {state}")
     if a.dry_run:
         return 0
 
@@ -174,7 +218,7 @@ def main() -> int:
     if not env.get("MCRL_TLE_ROOT"):
         raise SystemExit("MCRL_TLE_ROOT must point at the pinned archive copy")
     launched = []
-    for arm, k, d, pidf, state in plan:
+    for arm, k, teachers, n_proposals, bernoulli, _key, name, tag, d, pidf, state in plan:
         if state not in ("fresh", "resume"):
             continue
         cmd = ["systemd-run", "--user", "--scope", "-p", f"MemoryMax={a.memory_max}",
@@ -183,41 +227,47 @@ def main() -> int:
                "--calibration", str(a.calibration.resolve()),
                "--episodes", str(episodes), "--devval-episodes", str(n_devval),
                "--rss-cap-gb", str(a.rss_cap_gb)]
+        if teachers is not None:
+            cmd += ["--teachers", "+".join(teachers)]
+        if n_proposals is not None:
+            cmd += ["--n-proposals", str(n_proposals)]
+        if bernoulli:
+            cmd.append("--bernoulli-null")
         if a.tau is not None:
             cmd += ["--tau", repr(float(a.tau))]
         if a.smoke:
             cmd.append("--smoke")
         if a.stop_after is not None:
             cmd += ["--stop-after", str(a.stop_after)]
-        log = open(root / f"E0-{arm}-k{k}.log", "ab")
+        log = open(root / f"{tag}.log", "ab")
         p = subprocess.Popen(cmd, cwd=C.REPO, env=env, stdin=subprocess.DEVNULL,
                              stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         pidf.write_text(str(p.pid))
-        launched.append((arm, k, p.pid))
-        print(f"  launched {D.arm_name(arm)} k{k} pid {p.pid} MemoryMax={a.memory_max}")
+        launched.append((arm, k, name, tag, p.pid))
+        print(f"  launched {name} k{k} pid {p.pid} MemoryMax={a.memory_max}")
     time.sleep(10)
-    dead = [(arm, k, pid) for arm, k, pid in launched
-            if is_live(root / f"E0-{arm}-k{k}.pid", arm, k, root) != pid]
+    dead = [(name, k, pid) for arm, k, name, tag, pid in launched
+            if is_live(root / f"{tag}.pid", arm, k, root) != pid]
     if dead:
         raise SystemExit(f"FAILED TO START (or died within 10 s): {dead}")
     print(f"[{utc()}] all {len(launched)} launched processes alive")
     if a.verify:
         deadline = time.time() + 900
         want_digest = D.manifest_digest(code)
-        pending = [(arm, k) for arm, k, *_ in plan]
+        pending = [(arm, k, key, name) for arm, k, _t, _n, _b, key, name, *_r in plan]
         while pending and time.time() < deadline:
             nxt = []
-            for arm, k in pending:
-                sp = root / f"{D.arm_name(arm)}-k{k}" / "status.json"
+            for arm, k, key, name in pending:
+                sp = root / f"{name}-k{k}" / "status.json"
                 try:
                     fp = json.loads(sp.read_text())["fingerprint"]
                 except (OSError, KeyError, ValueError):
-                    nxt.append((arm, k))
+                    nxt.append((arm, k, key, name))
                     continue
                 if fp.get("code_digest") != want_digest:
-                    raise SystemExit(f"arm {arm} k{k} fingerprint code digest differs")
-                if fp.get("config_hash") != arm_configs[f"{arm}:{k}"]:
-                    raise SystemExit(f"arm {arm} k{k} fingerprint config hash differs")
+                    raise SystemExit(f"{name} k{k} fingerprint code digest differs")
+                if fp.get("config_hash") != arm_configs[key]:
+                    raise SystemExit(f"{name} k{k} fingerprint config hash differs")
             pending = nxt
             if pending:
                 time.sleep(10)

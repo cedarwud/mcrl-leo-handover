@@ -33,6 +33,7 @@ import dev_e0_common as D
 import torch
 
 from mcrl.algorithms import cf_dev as cfd
+from mcrl.algorithms import cf_multi_sources as cfmulti
 from mcrl.runtime import training_pipeline as tp
 
 
@@ -64,6 +65,19 @@ def main() -> int:
     ap.add_argument("--tau", type=float, default=None,
                     help="teacher temperature override (E0b tau sweep); a different "
                          "tau is a different version and a different config hash")
+    ap.add_argument("--teachers", default=None,
+                    help="MULTI-D3 FULL arm only: the '+'-separated canonical teacher "
+                         "set, e.g. T0+T_DELTA.  Order is irrelevant (the set is "
+                         "canonicalised); the identities are in the config hash.")
+    ap.add_argument("--n-proposals", type=int, default=None,
+                    help="MULTI-D3 matched null only: the set cardinality it is "
+                         "matched to (2 for a two-teacher FULL arm)")
+    ap.add_argument("--bernoulli-null", action="store_true",
+                    help="MULTI-D3 matched null only: use the SELECTED Bernoulli "
+                         "cardinality-matched null at the frozen p_singleton "
+                         "9395/24000 (controller record 716f104e).  Without it the "
+                         "rejected fixed two-proposal null is used, which is "
+                         "engineering history and not a k = 8 comparator.")
     ap.add_argument("--smoke", action="store_true",
                     help="SMOKE ONLY: 3 episodes, 2 DEVVAL episodes, read at episode 1")
     ap.add_argument("--rss-cap-gb", type=float, default=4.5)
@@ -73,14 +87,21 @@ def main() -> int:
     tle_sha = D.assert_environment()
     arm, k = int(a.arm), int(a.seed_index)
     mech, credit = D.ARMS[arm]
-    out = a.root / f"{D.arm_name(arm)}-k{k}"
+    teachers = None if a.teachers is None else tuple(a.teachers.split("+"))
+    if teachers is not None and cfmulti.T_NEXT_ID in teachers:
+        cfmulti.register_candidate_sources(replace=True)
+    spec = D.multi_spec(arm, teachers, n_proposals=a.n_proposals,
+                        bernoulli=a.bernoulli_null)
+    name = D.arm_name(arm, teachers, n_proposals=a.n_proposals,
+                      bernoulli=a.bernoulli_null)
+    out = a.root / f"{name}-k{k}"
     out.mkdir(parents=True, exist_ok=True)
     status_path, logs_path = out / "status.json", out / "episode-logs.json"
     resume_path, devval_path = out / "resume.pt", out / "devval.jsonl"
     if status_path.is_file():
         prev = json.loads(status_path.read_text())
         if prev.get("status") == "complete":
-            print(f"[{D.arm_name(arm)} k{k}] already complete; nothing to do")
+            print(f"[{name} k{k}] already complete; nothing to do")
             return 0
 
     calib = json.loads(a.calibration.read_text())
@@ -92,7 +113,9 @@ def main() -> int:
     record = tp.read_prereg(tp.CANONICAL_PREREG)
     cfg_payload = D.arm_config_payload(record, calib, arm, k, episodes=episodes,
                                        devval_episodes=n_devval,
-                                       calibration_sha256=calib_sha, tau=a.tau)
+                                       calibration_sha256=calib_sha, tau=a.tau,
+                                       teachers=teachers, n_proposals=a.n_proposals,
+                                       bernoulli=a.bernoulli_null)
     cfg_hash = D.config_hash(cfg_payload)
 
     run_manifest_path = a.root / "RUN-MANIFEST.json"
@@ -102,7 +125,9 @@ def main() -> int:
     if (run_manifest.get("code") != code
             or run_manifest.get("calibration_sha256") != calib_sha
             or bool(run_manifest.get("smoke")) != bool(a.smoke)
-            or run_manifest.get("arm_configs", {}).get(f"{arm}:{k}") != cfg_hash):
+            or run_manifest.get("arm_configs", {}).get(
+                D.spec_key(arm, k, teachers, n_proposals=a.n_proposals,
+                           bernoulli=a.bernoulli_null)) != cfg_hash):
         raise SystemExit("RUN-MANIFEST.json does not match this code / calibration / "
                          "config; refusing to run (fail closed)")
 
@@ -115,12 +140,16 @@ def main() -> int:
     factory = C.env_factory()
     env = factory()
     env.assert_ready_to_train()
-    trainer = cfd.CFDevTrainer(env, config, settings, dev, env_factory=factory,
+    trainer = cfd.CFDevTrainer(env, config, settings, dev, multi=spec,
+                               env_factory=factory,
                                train_seed=train_seed, env_seed=env_seed,
                                mobility_seed=mob_seed)
 
     fingerprint = {
-        "arm": arm, "arm_name": D.arm_name(arm), "mechanism": mech,
+        "arm": arm,
+        "arm_name": name,
+        "multi_spec": (None if spec is None else asdict(spec)),
+        "mechanism": mech,
         "credit_mode": credit, "seed_index": k,
         "seeds": [train_seed, env_seed, mob_seed],
         "config": asdict(config), "settings": asdict(settings),
@@ -131,7 +160,7 @@ def main() -> int:
         "lane": "E0-development (Amendment 6): not formal evidence",
     }
     status = {
-        "status": "running", "arm": arm, "arm_name": D.arm_name(arm),
+        "status": "running", "arm": arm, "arm_name": name,
         "mechanism": mech, "credit_mode": credit, "seed_index": k,
         "episodes_target": episodes, "pid": os.getpid(), "started_utc": utc(),
         "fingerprint": fingerprint, "tle_root": str(tp.resolve_tle_root()),
@@ -150,7 +179,7 @@ def main() -> int:
         if status_path.is_file():
             status["checkpoints"] = json.loads(status_path.read_text()).get("checkpoints", {})
         status["resumed_from_episode"] = start
-        print(f"[{D.arm_name(arm)} k{k}] resuming at episode {start}", flush=True)
+        print(f"[{name} k{k}] resuming at episode {start}", flush=True)
     C.write_json(status_path, status)
     t0 = time.time()
 
@@ -174,7 +203,7 @@ def main() -> int:
     def devval_reading(episode_done: int) -> None:
         """DEVVAL (greedy, fresh env per episode, no training RNG consumed)."""
         res = trainer.devval()
-        full = dict(res, episode=episode_done, arm=arm, arm_name=D.arm_name(arm),
+        full = dict(res, episode=episode_done, arm=arm, arm_name=name,
                     mechanism=mech, credit_mode=credit, seed_index=k,
                     eta=trainer.eta, lam=trainer.lam, config_hash=cfg_hash,
                     devval_seeds=[list(x) for x in trainer.devval_seeds()],
@@ -184,7 +213,7 @@ def main() -> int:
                if kk not in ("episodes", "ee_ep", "devval_seeds")}
         with open(devval_path, "a") as f:
             f.write(json.dumps(row, default=str) + "\n")
-        print(f"[{D.arm_name(arm)} k{k}] DEVVAL ep {episode_done}: ee={res['ee']:.6e} "
+        print(f"[{name} k{k}] DEVVAL ep {episode_done}: ee={res['ee']:.6e} "
               f"served={res['served']:.5f} beams={res['beams']:.3f} "
               f"agreeT0={res['t0_agreement']:.4f}", flush=True)
 
@@ -200,7 +229,7 @@ def main() -> int:
         if (episode_done % every == 0 or episode_done == episodes
                 or episode_done == a.stop_after):
             save(episode_done)
-            print(f"[{D.arm_name(arm)} k{k}] ep {episode_done} saved; "
+            print(f"[{name} k{k}] ep {episode_done} saved; "
                   f"rss {rss_gb():.2f} GB; wall {time.time() - t0:.0f}s", flush=True)
         if a.stop_after is not None and episode_done >= a.stop_after:
             raise StopAfter
@@ -217,7 +246,7 @@ def main() -> int:
     except StopAfter:
         status.update(status="stopped-at", stopped_at=a.stop_after, stopped_utc=utc())
         C.write_json(status_path, status)
-        print(f"[{D.arm_name(arm)} k{k}] stopped cleanly at {a.stop_after}", flush=True)
+        print(f"[{name} k{k}] stopped cleanly at {a.stop_after}", flush=True)
         return 0
     except Exception as err:
         status.update(status="failed", error_type=type(err).__name__, error=str(err),
@@ -231,7 +260,7 @@ def main() -> int:
                   final_policy=str(out / f"policy-ep{episodes:05d}.pt"),
                   masking_diagnostics=trainer.get_masking_diagnostics())
     C.write_json(status_path, status)
-    print(f"[{D.arm_name(arm)} k{k}] complete: {len(logs)} episodes", flush=True)
+    print(f"[{name} k{k}] complete: {len(logs)} episodes", flush=True)
     return 0
 
 

@@ -1,0 +1,51 @@
+{
+  "lane": "CF2S-LANE-M source-identity receipt (development lane)",
+  "governing": "CONTROLLER-K8-NULL-AND-READY-2026-09-12.md section 7 (716f104e)",
+  "episodes": 24,
+  "seeds": {
+    "env_base": 9202500,
+    "mobility_base": 9203500
+  },
+  "steps_per_episode": 10,
+  "users": 100,
+  "source": {
+    "source_id": "T_NEXT",
+    "source_version": "assoc-persistence-lookahead-v1",
+    "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+    "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+    "association": "(norad_id, cell_id) via SlotTable.association",
+    "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+    "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+    "visibility_thresholds_deg": {
+      "cell": 0.0,
+      "user": "ScenarioConfig.screen_min_elevation_deg"
+    },
+    "final_step": "deterministic T0 fallback, counted separately"
+  },
+  "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+  "decisions_total": 24000,
+  "decisions_t1_t9": 21600,
+  "decisions_per_step": [
+    2400,
+    2400,
+    2400,
+    2400,
+    2400,
+    2400,
+    2400,
+    2400,
+    2400,
+    2400
+  ],
+  "final_step_decisions": 2400,
+  "action_mismatches": [],
+  "action_mismatch_count": 0,
+  "legal_violations": 0,
+  "seam_rng_mutations": 0,
+  "seam_env_mutations": 0,
+  "action_trace_sha256": "0568b2220a02898527e2a3d4dbc609da0c0aaf2f24dca81a282f9d555fbd9bee",
+  "lane_n_action_trace_sha256": "0568b2220a02898527e2a3d4dbc609da0c0aaf2f24dca81a282f9d555fbd9bee",
+  "trace_matches_lane_n": true,
+  "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+  "wall_s": 110.87131023406982
+}

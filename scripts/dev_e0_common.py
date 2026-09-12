@@ -25,6 +25,7 @@ import cf3_common as C
 import numpy as np
 
 from mcrl.algorithms import cf_dev as cfd
+from mcrl.algorithms import cf_multi_sources as cfmulti
 from mcrl.algorithms import cf_teacher as cft
 from mcrl.algorithms.cf_ratio import CFRatioSettings, episode_seeds
 
@@ -50,7 +51,61 @@ ARMS: dict[int, tuple[str, str]] = {
     5: ("D0", "lighting_price"),
     6: ("D2-T0", "lighting_price"),
     7: ("D3-null", "equal_share"),
+    # ---- Amendment 15 section 7, the k = 8 pairwise causal matrix -------------
+    # 8 is PARAMETERISED over the teacher set: FULL{T0,Ti} for any candidate Ti,
+    # and the singleton FULL{T0} which is the frozen D3-T0 (arm 4) by construction.
+    # 9 is the MATCHED set-valued null, parameterised over the CARDINALITY only,
+    # so one n = 2 null run is shared by every two-teacher candidate.
+    8: ("D3-multi", "equal_share"),
+    9: ("D3-multi-null", "equal_share"),
 }
+MULTI_ARMS: dict[int, str] = {8: "FULL", 9: "NULL"}
+"""The MULTI-D3 arms of :data:`ARMS`, and which side of the matrix each one is."""
+
+MATCHED_NULL_ARM: dict[int, int] = {4: 7, 8: 9}
+"""Which arm is the declared matched null of a teacher arm.
+
+The single-action ``D3-T0`` (4) is matched by the single-action ``D3-null`` (7); the
+SET-VALUED ``FULL`` arm (8) is matched by the SET-VALUED null (9) and **never by arm
+7** -- a set of size two is mechanically easier to satisfy than a set of size one, so
+comparing a two-teacher set-valued loss against the one-action null would flatter the
+FULL arm (Amendment 14 section 8).  (Pattern taken from the closed
+``TDELTA-CANARY-PREP`` lane, commit ``ef8c866f``, whose arm 8 was the now-closed
+``D3-T_DELTA`` and mapped to arm 7; that entry is REPLACED here, not extended.)
+"""
+
+TEACHER_OF = cfd.EXPECTED_TEACHER
+"""Mechanism -> teacher IDENTITY.  Anything unlisted is T0.  (Alias of the library's
+table, which :class:`~mcrl.algorithms.cf_dev.DevSettings` validates against; the name
+matches the closed ``TDELTA-CANARY-PREP`` lane's so the two merge cleanly.)"""
+
+# ---------------------------------------------------------------- k = 8 null
+# Controller record CONTROLLER-K8-NULL-AND-READY-2026-09-12.md, commit 716f104e.
+# The fixed two-proposal null is REJECTED as the k = 8 scientific comparator (Lane M
+# demonstrated the cardinality-matching defect prospectively); the Bernoulli
+# cardinality-matched null is selected, with p_singleton frozen and re-derived by the
+# controller from the raw P0 artefact, not from a report.
+P_SINGLETON_TNEXT_NUM: int = 9395
+P_SINGLETON_TNEXT_DEN: int = 24000
+P_SINGLETON_TNEXT: float = P_SINGLETON_TNEXT_NUM / P_SINGLETON_TNEXT_DEN
+"""0.39145833333333335 -- the marginal |A_CF| = 1 rate of FULL{T0, T_NEXT} on the
+frozen P0 collection.  A marginal, NOT a per-step rate: the controller's own
+decomposition is t = 0 -> 0.2825, t = 1..8 -> 0.3290, t = 9 -> 1.0000 (T_NEXT's
+mandatory final-step T0 fallback, singleton by construction, not agreement).  The
+marginal is what the owner froze and it is implemented exactly; the divergence is
+MEASURED and reported per step, never pre-empted."""
+
+P0_DATASET_SHA256: str = (
+    "881ed281f14f2233585f3ec50ec6f75b4caba4956ada427f36bbfadd9f3d6a0a"
+)
+"""Lane N ``results-lane-n/P0-DATASET.npz`` (21,600 rows, t = 1..9)."""
+
+TNEXT_ACTION_TRACE_SHA256: str = (
+    "0568b2220a02898527e2a3d4dbc609da0c0aaf2f24dca81a282f9d555fbd9bee"
+)
+"""The authoritative Lane N shared-trajectory action trace; the Lane M seam must
+reproduce it exactly or the SEAM is repaired -- never T_NEXT."""
+
 ALPHA0, TAU0, TAU_S0, MARGIN0, LAMBDA_E0 = 1.0, 3.0, 1.0, 0.15, 1.0
 ETA0_EXPECTED = 110_507_234.83444457
 TLE_FILE_SET_SHA256 = "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9"
@@ -61,9 +116,73 @@ def epsilon_decay_episodes(episodes: int) -> int:
     return max(1, round(2000 * int(episodes) / 9000))
 
 
-def arm_name(arm: int) -> str:
+def p_singleton_source_identity() -> str:
+    """Where the frozen marginal came from, for the configuration hash."""
+    src = cfmulti.tnext_identity()
+    return (f"{src['source_id']}:{src['source_version']}"
+            f"@P0-DATASET.npz:{P0_DATASET_SHA256}")
+
+
+def bernoulli_null_kwargs() -> dict:
+    """The SELECTED k = 8 matched null's frozen identity, in one place."""
+    return {
+        "null_id": cft.MULTI_NULL_BERNOULLI_ID,
+        "p_singleton": P_SINGLETON_TNEXT,
+        "p_singleton_numerator": P_SINGLETON_TNEXT_NUM,
+        "p_singleton_denominator": P_SINGLETON_TNEXT_DEN,
+        "p_singleton_rational": f"{P_SINGLETON_TNEXT_NUM}/{P_SINGLETON_TNEXT_DEN}",
+        "p_singleton_source": p_singleton_source_identity(),
+    }
+
+
+def multi_spec(arm: int, teachers=None, *, n_proposals: int | None = None,
+               bernoulli: bool = False):
+    """The :class:`~mcrl.algorithms.cf_dev.MultiD3Spec` of a MULTI-D3 arm, or None.
+
+    ``teachers`` names the FULL arm's teacher set (any iterable; it is canonicalised,
+    so order never reaches the identity).  For the matched null pass either the
+    cardinality ``n_proposals`` directly, or the FULL teacher set it is matched to
+    and let the cardinality be read off it -- the null's identity keeps only the
+    number, never the names.
+    """
+    a = int(arm)
+    if a not in MULTI_ARMS:
+        if teachers is not None or n_proposals is not None or bernoulli:
+            raise SystemExit(f"arm {a} is not a MULTI-D3 arm; it takes no teacher set")
+        return None
+    if MULTI_ARMS[a] == "FULL":
+        if n_proposals is not None or bernoulli:
+            raise SystemExit("a FULL MULTI-D3 arm takes a teacher set, not a count")
+        if teachers is None:
+            raise SystemExit(f"arm {a} (FULL MULTI-D3) needs --teachers")
+        return cfd.MultiD3Spec(teachers=cft.canonical_teacher_set(teachers))
+    n = int(n_proposals) if n_proposals is not None else len(
+        cft.canonical_teacher_set(teachers if teachers is not None else ())
+    )
+    if bernoulli:
+        return cfd.MultiD3Spec(n_proposals=n, **bernoulli_null_kwargs())
+    return cfd.MultiD3Spec(n_proposals=n, null_id=cft.MULTI_NULL_ID)
+
+
+def spec_key(arm: int, k: int, teachers=None, *, n_proposals: int | None = None,
+             bernoulli: bool = False) -> str:
+    """The RUN-MANIFEST key of one run.  Arms 1-7 keep the historical ``ARM:K``."""
+    a = int(arm)
+    if a not in MULTI_ARMS:
+        if teachers is not None or n_proposals is not None or bernoulli:
+            raise SystemExit(f"arm {a} is not a MULTI-D3 arm; it takes no teacher set")
+        return f"{a}:{int(k)}"
+    spec = multi_spec(a, teachers, n_proposals=n_proposals, bernoulli=bernoulli)
+    return f"{a}:{int(k)}:{spec.label()}"
+
+
+def arm_name(arm: int, teachers=None, *, n_proposals: int | None = None,
+             bernoulli: bool = False) -> str:
     mech, credit = ARMS[int(arm)]
-    return f"E0-{int(arm)}-{mech}-{credit}"
+    spec = multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli)
+    if spec is None:
+        return f"E0-{int(arm)}-{mech}-{credit}"
+    return f"E0-{int(arm)}-{mech}-{spec.label()}-{credit}"
 
 
 def dev_triple(k: int) -> tuple[int, int, int]:
@@ -121,7 +240,7 @@ def e0_cf_settings(calib: dict, credit_mode: str) -> CFRatioSettings:
 
 def _null_key_for(mechanism: str, k: int):
     """The declared DEV-NULL generator identity of a matched null, or None."""
-    base = {"D2-null": DEV_NULL_D2_BASE, "D3-null": DEV_NULL_D3_BASE}.get(mechanism)
+    base = cfd.NULL_BASE_FOR.get(mechanism)
     return None if base is None else (base, int(k))
 
 
@@ -135,7 +254,7 @@ def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
         raise SystemExit(f"unknown mechanism {mechanism!r}")
     return cfd.DevSettings(
         mechanism=mechanism,
-        teacher={"D0": "none", "D3-null": "random"}.get(mechanism, "T0"),
+        teacher=cfd.EXPECTED_TEACHER.get(mechanism, "T0"),
         alpha=ALPHA0, tau=(TAU0 if tau is None else float(tau)),
         tau_s=TAU_S0, margin=MARGIN0, lambda_e=LAMBDA_E0,
         null_key=_null_key_for(mechanism, k),
@@ -146,12 +265,35 @@ def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
 
 def arm_config_payload(record, calib: dict, arm: int, k: int, *, episodes: int,
                        devval_episodes: int, calibration_sha256: str,
-                       tau: float | None = None) -> dict:
-    """Everything that defines one arm's run, for its configuration hash."""
+                       tau: float | None = None, teachers=None,
+                       n_proposals: int | None = None,
+                       bernoulli: bool = False) -> dict:
+    """Everything that defines one arm's run, for its configuration hash.
+
+    For a MULTI-D3 arm the payload additionally carries ``multi_spec``: the
+    versioned MECHANISM identity, the CANONICAL TEACHER identities of a FULL arm,
+    and the NULL identity plus cardinality of a matched null (Amendment 15 section
+    6, requirement 9).  Arms 1-7 take no teacher set and their payload -- and so
+    their configuration hash -- is byte-for-byte what it was before MULTI-D3
+    existed (``tests/test_cf_multid3.py`` checks that against the base commit).
+    """
     mech, credit = ARMS[int(arm)]
+    spec = multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli)
     train_seed, env_seed, mob_seed = dev_triple(k)
+    extra: dict = {}
+    if spec is not None:
+        extra["multi_spec"] = dataclasses.asdict(spec)
+        extra["multi_source_identities"] = {
+            name: (cfmulti.tnext_identity() if name == cfmulti.T_NEXT_ID
+                   else {"source_id": name})
+            for name in spec.teachers
+        }
     return {
-        "arm": int(arm), "arm_name": arm_name(arm), "mechanism": mech,
+        **extra,
+        "arm": int(arm),
+        "arm_name": arm_name(arm, teachers, n_proposals=n_proposals,
+                             bernoulli=bernoulli),
+        "mechanism": mech,
         "credit_mode": credit, "seed_index": int(k),
         "seeds": {"train": train_seed, "env": env_seed, "mobility": mob_seed},
         "devval_seeds": [list(x) for x in devval_seeds(devval_episodes)],

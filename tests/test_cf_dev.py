@@ -690,14 +690,14 @@ def test_stored_labels_are_the_collection_time_labels_of_their_own_state():
     """Every stored transition carries the labels computed at its own step."""
     tr = _trainer("D2-T0", users=6, cfg_kw={"episodes": 1})
     seen = []
-    real = tr.teacher_labels
+    real = tr.teacher_labels_ext
 
     def record(states, masks):
         out = real(states, masks)
         seen.append((np.array(out[0]), np.array(out[2]), np.array(out[3])))
         return out
 
-    tr.teacher_labels = record
+    tr.teacher_labels_ext = record
     tr.train_cf(progress_every=0)
     labels = list(tr.replay._labels)
     assert labels, "no transition was stored"
@@ -707,7 +707,8 @@ def test_stored_labels_are_the_collection_time_labels_of_their_own_state():
             flat.append((int(t0_acts[u]), used_scores[u], legal[u]))
     # every stored label must appear among the step labels, in order
     j = 0
-    for a0, a1, scores in labels:
+    for a0, a1, scores, member in labels:
+        assert member is None, "a single-teacher arm stored an A_CF"
         while j < len(flat) and not (flat[j][0] == a0
                                      and np.array_equal(flat[j][1], scores)):
             j += 1
