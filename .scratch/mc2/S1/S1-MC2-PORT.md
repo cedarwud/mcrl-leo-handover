@@ -73,6 +73,12 @@ Two consequences worth stating, because they are the cost of this choice:
 `dev_e0_launch.py`, `run_dev_e0.py` and `tests/test_cf_dev.py` are **not** modified by this lane at
 all — which is why the merge with lane A's mechanism commit had exactly one trivial conflict.
 
+Check it directly: `git diff --stat 11466998 HEAD -- src scripts tests artifacts docs` lists
+`cf_dev.py` and nothing else that is not a new file, and
+`git diff 11466998 HEAD -- src/mcrl/algorithms/cf_dev.py | grep -c '^@@'` reports **10 regions** =
+the nine logical hunks below (`dev_rollout`'s signature and its guard, and `devval_seeds` and
+`devval`, each land as two separate regions).
+
 ### Phase 1 (six hunks, lane plumbing only)
 
 | # | location | hunk | why it cannot live in an S1 file |
