@@ -1,0 +1,151 @@
+{
+  "arm": 1,
+  "arm_name": "E0-1-D0-equal_share",
+  "checkpoints": {
+    "100": {
+      "path": "/home/sat/mcrl-v025-mc2-ws/runs-ep100/E0-1-D0-equal_share-k10/policy-ep00100.pt",
+      "sha256": "2eeb5ca5034957a259cb7cd4a3f87f8d176ca51d08a6f6e6110ece89a83178e9"
+    }
+  },
+  "credit_mode": "equal_share",
+  "devval_at": [
+    100,
+    200,
+    300
+  ],
+  "episodes_completed": 100,
+  "episodes_target": 300,
+  "eta": 110507234.83444457,
+  "fingerprint": {
+    "arm": 1,
+    "arm_name": "E0-1-D0-equal_share",
+    "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+    "code": {
+      "commit": "11466998843d94424298d3a6dac0cb3eb5d38279",
+      "files": {
+        "docs/dev-e0/V025-CONTROLLER-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md": "4cc3f9e05669885f8f7369e93db423037aa1c814d72d30502337872f0d196f15",
+        "scripts/dev_e0_common.py": "bcfdee185d7bf396f9a5a0155027f124a64fc1624c3bf58d1dd35e71c59f8dd9",
+        "scripts/dev_e0_launch.py": "a108240f04e30b73577860d80ab1227f78ce8294d7fe456ccfacbdf3aab3a8cd",
+        "scripts/dev_e0_refs.py": "f7e4f75feb94a695fa16157f0d2b1012e26a52b2b0cf36e65a9efa792ebfd213",
+        "scripts/run_dev_e0.py": "66b0955bba7b63aaac0f40753e08bc22fcc0e6d5f7be72eb14ddec3ef6d1924c",
+        "src/mcrl/algorithms/cf_credit.py": "f5692eb4f2fa758c5cea98e61102cc77e087b48f5be8023307c3630292f0279e",
+        "src/mcrl/algorithms/cf_dev.py": "85dda740430a8a7c304f2c80218063f114735ed620f07b7fc82c5c415b5029d2",
+        "src/mcrl/algorithms/cf_judge.py": "3de970b2bad0d73600a351f361f0a533b317204710851b0611f93bbad5ccc1c1",
+        "src/mcrl/algorithms/cf_multi_sources.py": "3430bb954ca012f6ab8f3f7b95df663d08f12c2371238eeb73bdcc297414295c",
+        "src/mcrl/algorithms/cf_ratio.py": "c15305c76b5d5c6f8f78102df853b0e129ca44966d3704e8204581d953d1ca0e",
+        "src/mcrl/algorithms/cf_sources.py": "c4906a7d899d0f5d3d2f6bd7750362857746c5d030f563d2e043dc7585e7869d",
+        "src/mcrl/algorithms/cf_teacher.py": "fed47ea3aa6a77122687a5ca23c2b2b67d6909b5ece7cbd83ca65f44919f73f1",
+        "src/mcrl/algorithms/cf_tnext.py": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+        "src/mcrl/algorithms/modqn.py": "e10796b40825add68a2fea9c8275e9fddb851a566ef025e9b8bae0ee15dcde86"
+      },
+      "src_tree_sha256": "6125f22ee2c8ce0e4cc3df723f684f22791e5b614fb4a6b2e2549f17dc877fb9"
+    },
+    "code_digest": "ede2c580aaa9c16e2ffc66479be995a4f1fed8955e1d5b644251b7f40cdaadaf",
+    "config": {
+      "activation": "tanh",
+      "batch_size": 128,
+      "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+      "checkpoint_primary_report": "final-episode-policy",
+      "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+      "comparison_role": "not-applicable",
+      "device": "cpu",
+      "discount_factor": 1.0,
+      "episodes": 300,
+      "epsilon_decay_episodes": 67,
+      "epsilon_end": 0.01,
+      "epsilon_start": 1.0,
+      "hidden_layers": [
+        100,
+        50,
+        50
+      ],
+      "learning_rate": 0.001,
+      "load_balance_calibration_mode": "baseline-paper-weight",
+      "load_normalization": "divide_by_num_users",
+      "method_family": "MODQN-baseline",
+      "objective_weights": [
+        0.5,
+        0.3,
+        0.2
+      ],
+      "offset_scale_km": 100.0,
+      "phase": "baseline",
+      "policy_sharing_mode": "shared",
+      "r1_reward_label": "system-energy-efficiency",
+      "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+      "replay_capacity": 50000,
+      "reward_calibration_enabled": true,
+      "reward_calibration_mode": "divide-by-fixed-scales",
+      "reward_calibration_scales": [
+        2029238.4328742754,
+        1.0,
+        6.0
+      ],
+      "reward_calibration_source": "probe-P3-and-analytic-bound",
+      "reward_normalization_mode": "raw-unscaled",
+      "snr_encoding": "log1p",
+      "target_update_every_episodes": 50,
+      "td_bootstrap_mode": "shared-continuation-argmax",
+      "theta_encoding": "raw_radians",
+      "training_experiment_id": "",
+      "training_experiment_kind": "baseline"
+    },
+    "config_hash": "6af44774fd3a32c4fb048c04f95875bffa57f0c0d9de9e009b1dcc3118e37c58",
+    "credit_mode": "equal_share",
+    "dev_settings": {
+      "alpha": 1.0,
+      "devval_env_base": 9211000,
+      "devval_episodes": 24,
+      "devval_mobility_base": 9212000,
+      "lambda_e": 1.0,
+      "margin": 0.15,
+      "mechanism": "D0",
+      "null_key": null,
+      "tau": 3.0,
+      "tau_s": 1.0,
+      "teacher": "none"
+    },
+    "lane": "E0-development (Amendment 6): not formal evidence",
+    "mechanism": "D0",
+    "multi_spec": null,
+    "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+    "seed_index": 10,
+    "seeds": [
+      9201010,
+      9202010,
+      9203010
+    ],
+    "settings": {
+      "alpha": 1.0,
+      "bits_scale": 13329082278.45065,
+      "calibration_env_seed_base": 0,
+      "calibration_episodes": 0,
+      "calibration_mobility_seed_base": 0,
+      "catfish_buffer_capacity": 50000,
+      "credit_mode": "equal_share",
+      "dual_ascent": false,
+      "eta0": 110507234.83444457,
+      "eta_first_update_episode": 1000000000,
+      "h_cap_inter": 0.6016,
+      "joules_scale": 120.61728174105066,
+      "lambda0": 0.0,
+      "quarter_episodes": 1000000000,
+      "rho": 0.1111111111111111,
+      "source_kind": "none"
+    },
+    "smoke": false,
+    "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9"
+  },
+  "lam": 0.0,
+  "mechanism": "D0",
+  "pid": 3810486,
+  "rss_gb": 1.9482574462890625,
+  "seed_index": 10,
+  "started_utc": "2026-09-12T06:21:05Z",
+  "status": "stopped-at",
+  "stopped_at": 100,
+  "stopped_utc": "2026-09-12T06:24:43Z",
+  "tle_root": "/home/sat/mcrl-v025-cf3-pilot-ws/tle-pinned-427e6a91",
+  "updated_utc": "2026-09-12T06:24:43Z",
+  "wall_s": 218.8437762260437
+}

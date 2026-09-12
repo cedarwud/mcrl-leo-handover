@@ -1,0 +1,3642 @@
+{
+  "arm_configs": {
+    "10:10:B": "312332b3ca1e8f97fa734d745c3d21b03c91a82adc0678599f05839e741ac149",
+    "10:10:v1-A+B": "a201a9e44cb4842bfcbdf1520b058dcfea4226b6d613bee7668355986953f777",
+    "10:10:v1-A+R": "1ba3f9020ddc96b8501af4c3de459b0a3b56727224dc5895be2165c70aeb7794",
+    "10:10:v2-A": "393d21220ebd0219f0bb778d3d68c3ba316e3988f9824051df783dc7701ee838",
+    "10:10:v2-A+B": "5d685d6336b24f717f6a30f50b3daf24dc6639a85b0f094ad06807be96c18468",
+    "10:10:v2-A+R": "7f0401b7ed8d3a6a8f0a510b8c7c86c9a1aa44cf13d899ebe3e5747eff29d830",
+    "10:11:B": "1177c18d954f02ead7915fe768ba02a78eba92a56dbd8ec8f98dfd2752eeef80",
+    "10:11:v1-A+B": "169f13453e4fefe5e2788b368ef0999ee9dfc8a74dc0f3aba4d9c697815f7e17",
+    "10:11:v1-A+R": "b9d8aadd44081612c6e364848ba456358fb5adfeff9769ef6461bcfb0c3f4c44",
+    "10:11:v2-A": "c9193432fdaab02b112538871df0f4175672944872d2ea2c3bb1478b3c8c4c94",
+    "10:11:v2-A+B": "24accd3dc029c724e5a0fb922f8df034fce025a0e3085f365d9353f8274d0e29",
+    "10:11:v2-A+R": "4f7db0743fb4fb31cc4de55cbaf7dd59142f64b1042ed61837eb1689b6e2699b",
+    "1:10": "6af44774fd3a32c4fb048c04f95875bffa57f0c0d9de9e009b1dcc3118e37c58",
+    "1:11": "84b6fbbb701ad1875329ab4bb5789c6104812f74caf4686a50af855a3eff7f15",
+    "4:10": "37c20ed54cdb2ffdba0c464b2d28a99081eb0143f9c3bb030112f3a2ce763337",
+    "4:11": "e36d3360775518592cf7ff6909b075ae43d73bb90a65a31ebab0892931cb0cf1"
+  },
+  "arm_payloads": {
+    "10:10:B": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-B-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "shared B-only (rule-independent): a^B is the target iff kappa(a^B) > kappa(x_u) strictly, else no target; no call when a^B == x_u; B absent at t = T-1",
+      "judge_source_identities": {
+        "B": {
+          "association": "(norad_id, cell_id) via SlotTable.association",
+          "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+          "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+          "final_step": "deterministic T0 fallback, counted separately",
+          "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+          "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+          "source_id": "T_NEXT",
+          "source_version": "assoc-persistence-lookahead-v1",
+          "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+          "visibility_thresholds_deg": {
+            "cell": 0.0,
+            "user": "ScenarioConfig.screen_min_elevation_deg"
+          }
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-B-ONLY-SHARED-v1",
+        "null_id": null,
+        "null_key": null,
+        "source_a": null,
+        "source_b": "T_NEXT",
+        "sources": [
+          "B"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:10:v1-A+B": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v1-A+B-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "judge-gated override: incumbent = target = a^A (unconditional anchor); the challenger c (a^B or a^R) becomes the target iff kappa(c) > kappa(a^A) strictly; no call when c == a^A; challenger absent at t = T-1",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "B": {
+          "association": "(norad_id, cell_id) via SlotTable.association",
+          "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+          "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+          "final_step": "deterministic T0 fallback, counted separately",
+          "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+          "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+          "source_id": "T_NEXT",
+          "source_version": "assoc-persistence-lookahead-v1",
+          "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+          "visibility_thresholds_deg": {
+            "cell": 0.0,
+            "user": "ScenarioConfig.screen_min_elevation_deg"
+          }
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-JGO-v1",
+        "null_id": null,
+        "null_key": null,
+        "source_a": "T0",
+        "source_b": "T_NEXT",
+        "sources": [
+          "A",
+          "B"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:10:v1-A+R": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v1-A+R-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "judge-gated override: incumbent = target = a^A (unconditional anchor); the challenger c (a^B or a^R) becomes the target iff kappa(c) > kappa(a^A) strictly; no call when c == a^A; challenger absent at t = T-1",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "R": {
+          "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+          "null_key": [
+            9243000,
+            10
+          ],
+          "rule": "one uniform legal action per user with a legal action at t < T-1 (cf_teacher.random_legal_actions), abstains at T-1, reads no T_NEXT quantity"
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-JGO-v1",
+        "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+        "null_key": [
+          9243000,
+          10
+        ],
+        "source_a": "T0",
+        "source_b": null,
+        "sources": [
+          "A",
+          "R"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:10:v2-A": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v2-A-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "arbitration: candidates {x_u, a^A, c} (c = a^B or a^R, absent at t = T-1); w = x_u, then a^A, then c each replace w only if kappa > kappa(w) strictly (max kappa, ties x_u > A > c); margin toward w only if w != x_u",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-ARB-v2",
+        "null_id": null,
+        "null_key": null,
+        "source_a": "T0",
+        "source_b": null,
+        "sources": [
+          "A"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:10:v2-A+B": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v2-A+B-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "arbitration: candidates {x_u, a^A, c} (c = a^B or a^R, absent at t = T-1); w = x_u, then a^A, then c each replace w only if kappa > kappa(w) strictly (max kappa, ties x_u > A > c); margin toward w only if w != x_u",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "B": {
+          "association": "(norad_id, cell_id) via SlotTable.association",
+          "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+          "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+          "final_step": "deterministic T0 fallback, counted separately",
+          "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+          "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+          "source_id": "T_NEXT",
+          "source_version": "assoc-persistence-lookahead-v1",
+          "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+          "visibility_thresholds_deg": {
+            "cell": 0.0,
+            "user": "ScenarioConfig.screen_min_elevation_deg"
+          }
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-ARB-v2",
+        "null_id": null,
+        "null_key": null,
+        "source_a": "T0",
+        "source_b": "T_NEXT",
+        "sources": [
+          "A",
+          "B"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:10:v2-A+R": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v2-A+R-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "arbitration: candidates {x_u, a^A, c} (c = a^B or a^R, absent at t = T-1); w = x_u, then a^A, then c each replace w only if kappa > kappa(w) strictly (max kappa, ties x_u > A > c); margin toward w only if w != x_u",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "R": {
+          "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+          "null_key": [
+            9243000,
+            10
+          ],
+          "rule": "one uniform legal action per user with a legal action at t < T-1 (cf_teacher.random_legal_actions), abstains at T-1, reads no T_NEXT quantity"
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-ARB-v2",
+        "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+        "null_key": [
+          9243000,
+          10
+        ],
+        "source_a": "T0",
+        "source_b": null,
+        "sources": [
+          "A",
+          "R"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:11:B": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-B-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "shared B-only (rule-independent): a^B is the target iff kappa(a^B) > kappa(x_u) strictly, else no target; no call when a^B == x_u; B absent at t = T-1",
+      "judge_source_identities": {
+        "B": {
+          "association": "(norad_id, cell_id) via SlotTable.association",
+          "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+          "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+          "final_step": "deterministic T0 fallback, counted separately",
+          "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+          "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+          "source_id": "T_NEXT",
+          "source_version": "assoc-persistence-lookahead-v1",
+          "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+          "visibility_thresholds_deg": {
+            "cell": 0.0,
+            "user": "ScenarioConfig.screen_min_elevation_deg"
+          }
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-B-ONLY-SHARED-v1",
+        "null_id": null,
+        "null_key": null,
+        "source_a": null,
+        "source_b": "T_NEXT",
+        "sources": [
+          "B"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:11:v1-A+B": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v1-A+B-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "judge-gated override: incumbent = target = a^A (unconditional anchor); the challenger c (a^B or a^R) becomes the target iff kappa(c) > kappa(a^A) strictly; no call when c == a^A; challenger absent at t = T-1",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "B": {
+          "association": "(norad_id, cell_id) via SlotTable.association",
+          "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+          "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+          "final_step": "deterministic T0 fallback, counted separately",
+          "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+          "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+          "source_id": "T_NEXT",
+          "source_version": "assoc-persistence-lookahead-v1",
+          "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+          "visibility_thresholds_deg": {
+            "cell": 0.0,
+            "user": "ScenarioConfig.screen_min_elevation_deg"
+          }
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-JGO-v1",
+        "null_id": null,
+        "null_key": null,
+        "source_a": "T0",
+        "source_b": "T_NEXT",
+        "sources": [
+          "A",
+          "B"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:11:v1-A+R": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v1-A+R-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "judge-gated override: incumbent = target = a^A (unconditional anchor); the challenger c (a^B or a^R) becomes the target iff kappa(c) > kappa(a^A) strictly; no call when c == a^A; challenger absent at t = T-1",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "R": {
+          "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+          "null_key": [
+            9243000,
+            11
+          ],
+          "rule": "one uniform legal action per user with a legal action at t < T-1 (cf_teacher.random_legal_actions), abstains at T-1, reads no T_NEXT quantity"
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-JGO-v1",
+        "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+        "null_key": [
+          9243000,
+          11
+        ],
+        "source_a": "T0",
+        "source_b": null,
+        "sources": [
+          "A",
+          "R"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:11:v2-A": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v2-A-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "arbitration: candidates {x_u, a^A, c} (c = a^B or a^R, absent at t = T-1); w = x_u, then a^A, then c each replace w only if kappa > kappa(w) strictly (max kappa, ties x_u > A > c); margin toward w only if w != x_u",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-ARB-v2",
+        "null_id": null,
+        "null_key": null,
+        "source_a": "T0",
+        "source_b": null,
+        "sources": [
+          "A"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:11:v2-A+B": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v2-A+B-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "arbitration: candidates {x_u, a^A, c} (c = a^B or a^R, absent at t = T-1); w = x_u, then a^A, then c each replace w only if kappa > kappa(w) strictly (max kappa, ties x_u > A > c); margin toward w only if w != x_u",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "B": {
+          "association": "(norad_id, cell_id) via SlotTable.association",
+          "cf_tnext_sha256": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+          "criteria": "lexicographic(same_physical_association_legal_or_visible_at_t_plus_1, nominal_next_step_link_gain, current_T0_score, -action_index)",
+          "final_step": "deterministic T0 fallback, counted separately",
+          "gain": "transmit_gain_linear(theta) * link_power_factor(slant, elev, G_R) with fading_gain=None and shadow_fading_db=0",
+          "lookahead": "ScenarioDriver.satellite_ecef_at(+1); users held at t",
+          "source_id": "T_NEXT",
+          "source_version": "assoc-persistence-lookahead-v1",
+          "spec": "V025-CONTROLLER-AMENDMENT-15 section 2A",
+          "visibility_thresholds_deg": {
+            "cell": 0.0,
+            "user": "ScenarioConfig.screen_min_elevation_deg"
+          }
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-ARB-v2",
+        "null_id": null,
+        "null_key": null,
+        "source_a": "T0",
+        "source_b": "T_NEXT",
+        "sources": [
+          "A",
+          "B"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "10:11:v2-A+R": {
+      "arm": 10,
+      "arm_name": "E0-10-MC2-v2-A+R-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "MC2",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "judge"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "judge_rule_definition": "arbitration: candidates {x_u, a^A, c} (c = a^B or a^R, absent at t = T-1); w = x_u, then a^A, then c each replace w only if kappa > kappa(w) strictly (max kappa, ties x_u > A > c); margin toward w only if w != x_u",
+      "judge_source_identities": {
+        "A": {
+          "rule": "LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) - 1[N_a=0], first index on ties (cf_teacher.t0_scores)",
+          "source_id": "T0"
+        },
+        "R": {
+          "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+          "null_key": [
+            9243000,
+            11
+          ],
+          "rule": "one uniform legal action per user with a legal action at t < T-1 (cf_teacher.random_legal_actions), abstains at T-1, reads no T_NEXT quantity"
+        }
+      },
+      "judge_spec": {
+        "judge_definition": "kappa_u(a) = (n_served, B - eta0*E) of StepEnvironment.evaluate_actions((a, x_-u), deepcopy(env_rng)) under cf_credit.frozen_driver_positions; B, E = cf_credit.evaluation_bits_joules (system totals of the step); strict lexicographic; ties -> incumbent; proposals restricted to {x_u, a^A, a^B}",
+        "judge_eta0": 110507234.83444457,
+        "judge_id": "MC2-KAPPA-LEX-v1",
+        "mechanism_id": "MC2-ARB-v2",
+        "null_id": "MC2-UNIFORM-LEGAL-PROPOSAL-REPLACEMENT-v1",
+        "null_key": [
+          9243000,
+          11
+        ],
+        "source_a": "T0",
+        "source_b": null,
+        "sources": [
+          "A",
+          "R"
+        ]
+      },
+      "mechanism": "MC2",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "1:10": {
+      "arm": 1,
+      "arm_name": "E0-1-D0-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "D0",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "none"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "mechanism": "D0",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "1:11": {
+      "arm": 1,
+      "arm_name": "E0-1-D0-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "D0",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "none"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "mechanism": "D0",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "4:10": {
+      "arm": 4,
+      "arm_name": "E0-4-D3-T0-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "D3-T0",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "T0"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "mechanism": "D3-T0",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 10,
+      "seeds": {
+        "env": 9202010,
+        "mobility": 9203010,
+        "train": 9201010
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    },
+    "4:11": {
+      "arm": 4,
+      "arm_name": "E0-4-D3-T0-equal_share",
+      "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+      "cf_settings": {
+        "alpha": 1.0,
+        "bits_scale": 13329082278.45065,
+        "calibration_env_seed_base": 0,
+        "calibration_episodes": 0,
+        "calibration_mobility_seed_base": 0,
+        "catfish_buffer_capacity": 50000,
+        "credit_mode": "equal_share",
+        "dual_ascent": false,
+        "eta0": 110507234.83444457,
+        "eta_first_update_episode": 1000000000,
+        "h_cap_inter": 0.6016,
+        "joules_scale": 120.61728174105066,
+        "lambda0": 0.0,
+        "quarter_episodes": 1000000000,
+        "rho": 0.1111111111111111,
+        "source_kind": "none"
+      },
+      "credit_mode": "equal_share",
+      "dev_settings": {
+        "alpha": 1.0,
+        "devval_env_base": 9211000,
+        "devval_episodes": 24,
+        "devval_mobility_base": 9212000,
+        "lambda_e": 1.0,
+        "margin": 0.15,
+        "mechanism": "D3-T0",
+        "null_key": null,
+        "tau": 3.0,
+        "tau_s": 1.0,
+        "teacher": "T0"
+      },
+      "devval_at": [
+        100,
+        200,
+        300
+      ],
+      "devval_seeds": [
+        [
+          9211000,
+          9212000
+        ],
+        [
+          9211001,
+          9212001
+        ],
+        [
+          9211002,
+          9212002
+        ],
+        [
+          9211003,
+          9212003
+        ],
+        [
+          9211004,
+          9212004
+        ],
+        [
+          9211005,
+          9212005
+        ],
+        [
+          9211006,
+          9212006
+        ],
+        [
+          9211007,
+          9212007
+        ],
+        [
+          9211008,
+          9212008
+        ],
+        [
+          9211009,
+          9212009
+        ],
+        [
+          9211010,
+          9212010
+        ],
+        [
+          9211011,
+          9212011
+        ],
+        [
+          9211012,
+          9212012
+        ],
+        [
+          9211013,
+          9212013
+        ],
+        [
+          9211014,
+          9212014
+        ],
+        [
+          9211015,
+          9212015
+        ],
+        [
+          9211016,
+          9212016
+        ],
+        [
+          9211017,
+          9212017
+        ],
+        [
+          9211018,
+          9212018
+        ],
+        [
+          9211019,
+          9212019
+        ],
+        [
+          9211020,
+          9212020
+        ],
+        [
+          9211021,
+          9212021
+        ],
+        [
+          9211022,
+          9212022
+        ],
+        [
+          9211023,
+          9212023
+        ]
+      ],
+      "episodes": 300,
+      "mechanism": "D3-T0",
+      "prereg_digest": "3a920671dcce62075b1a21362d392b6c370c99979cba70d72a513da9ae9773f4",
+      "seed_index": 11,
+      "seeds": {
+        "env": 9202011,
+        "mobility": 9203011,
+        "train": 9201011
+      },
+      "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+      "trainer_config": {
+        "activation": "tanh",
+        "batch_size": 128,
+        "checkpoint_assumption_id": "ASSUME-MODQN-REP-015",
+        "checkpoint_primary_report": "final-episode-policy",
+        "checkpoint_secondary_report": "best-weighted-reward-on-eval",
+        "comparison_role": "not-applicable",
+        "device": "cpu",
+        "discount_factor": 1.0,
+        "episodes": 300,
+        "epsilon_decay_episodes": 67,
+        "epsilon_end": 0.01,
+        "epsilon_start": 1.0,
+        "hidden_layers": [
+          100,
+          50,
+          50
+        ],
+        "learning_rate": 0.001,
+        "load_balance_calibration_mode": "baseline-paper-weight",
+        "load_normalization": "divide_by_num_users",
+        "method_family": "MODQN-baseline",
+        "objective_weights": [
+          0.5,
+          0.3,
+          0.2
+        ],
+        "offset_scale_km": 100.0,
+        "phase": "baseline",
+        "policy_sharing_mode": "shared",
+        "r1_reward_label": "system-energy-efficiency",
+        "r1_reward_provenance": "paper eq. (3.25): r1 = sum_{s,v} x * eta",
+        "replay_capacity": 50000,
+        "reward_calibration_enabled": true,
+        "reward_calibration_mode": "divide-by-fixed-scales",
+        "reward_calibration_scales": [
+          2029238.4328742754,
+          1.0,
+          6.0
+        ],
+        "reward_calibration_source": "probe-P3-and-analytic-bound",
+        "reward_normalization_mode": "raw-unscaled",
+        "snr_encoding": "log1p",
+        "target_update_every_episodes": 50,
+        "td_bootstrap_mode": "shared-continuation-argmax",
+        "theta_encoding": "raw_radians",
+        "training_experiment_id": "",
+        "training_experiment_kind": "baseline"
+      }
+    }
+  },
+  "calibration": "/home/sat/mcrl-v025-cf3-pilot-ws/premeasure/calibration.json",
+  "calibration_sha256": "59952214a68469d9eccef292fa0eadf41e897ff74abd4b6cbff0635ee1a4562d",
+  "code": {
+    "commit": "11466998843d94424298d3a6dac0cb3eb5d38279",
+    "files": {
+      "docs/dev-e0/V025-CONTROLLER-AMENDMENT-6-DEVELOPMENT-FIRST-TRAINING-2026-09-12.md": "4cc3f9e05669885f8f7369e93db423037aa1c814d72d30502337872f0d196f15",
+      "scripts/dev_e0_common.py": "bcfdee185d7bf396f9a5a0155027f124a64fc1624c3bf58d1dd35e71c59f8dd9",
+      "scripts/dev_e0_launch.py": "a108240f04e30b73577860d80ab1227f78ce8294d7fe456ccfacbdf3aab3a8cd",
+      "scripts/dev_e0_refs.py": "f7e4f75feb94a695fa16157f0d2b1012e26a52b2b0cf36e65a9efa792ebfd213",
+      "scripts/run_dev_e0.py": "66b0955bba7b63aaac0f40753e08bc22fcc0e6d5f7be72eb14ddec3ef6d1924c",
+      "src/mcrl/algorithms/cf_credit.py": "f5692eb4f2fa758c5cea98e61102cc77e087b48f5be8023307c3630292f0279e",
+      "src/mcrl/algorithms/cf_dev.py": "85dda740430a8a7c304f2c80218063f114735ed620f07b7fc82c5c415b5029d2",
+      "src/mcrl/algorithms/cf_judge.py": "3de970b2bad0d73600a351f361f0a533b317204710851b0611f93bbad5ccc1c1",
+      "src/mcrl/algorithms/cf_multi_sources.py": "3430bb954ca012f6ab8f3f7b95df663d08f12c2371238eeb73bdcc297414295c",
+      "src/mcrl/algorithms/cf_ratio.py": "c15305c76b5d5c6f8f78102df853b0e129ca44966d3704e8204581d953d1ca0e",
+      "src/mcrl/algorithms/cf_sources.py": "c4906a7d899d0f5d3d2f6bd7750362857746c5d030f563d2e043dc7585e7869d",
+      "src/mcrl/algorithms/cf_teacher.py": "fed47ea3aa6a77122687a5ca23c2b2b67d6909b5ece7cbd83ca65f44919f73f1",
+      "src/mcrl/algorithms/cf_tnext.py": "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f",
+      "src/mcrl/algorithms/modqn.py": "e10796b40825add68a2fea9c8275e9fddb851a566ef025e9b8bae0ee15dcde86"
+    },
+    "src_tree_sha256": "6125f22ee2c8ce0e4cc3df723f684f22791e5b614fb4a6b2e2549f17dc877fb9"
+  },
+  "code_digest": "ede2c580aaa9c16e2ffc66479be995a4f1fed8955e1d5b644251b7f40cdaadaf",
+  "created_utc": "2026-09-12T05:58:44Z",
+  "dev_seed_namespaces": {
+    "DEV": [
+      9201000,
+      9202000,
+      9203000
+    ],
+    "DEVVAL": [
+      9211000,
+      9212000
+    ],
+    "DEVVAL_RANDOM": 9221000,
+    "DEV_NULL_D2": 9231000,
+    "DEV_NULL_MC2": 9243000
+  },
+  "devval_episodes": 24,
+  "episodes": 300,
+  "lane": "E0-development (Amendment 6): not formal evidence",
+  "smoke": false,
+  "specs": [
+    "10:10:B",
+    "10:10:v1-A+B",
+    "10:10:v1-A+R",
+    "10:10:v2-A",
+    "10:10:v2-A+B",
+    "10:10:v2-A+R",
+    "10:11:B",
+    "10:11:v1-A+B",
+    "10:11:v1-A+R",
+    "10:11:v2-A",
+    "10:11:v2-A+B",
+    "10:11:v2-A+R",
+    "1:10",
+    "1:11",
+    "4:10",
+    "4:11"
+  ],
+  "tle_file_set_sha256": "427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9",
+  "tle_root": "/home/sat/mcrl-v025-cf3-pilot-ws/tle-pinned-427e6a91"
+}
