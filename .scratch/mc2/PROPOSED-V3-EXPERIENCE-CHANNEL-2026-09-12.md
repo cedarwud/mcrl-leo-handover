@@ -17,6 +17,21 @@ The channel below never touches the anchor's label. `A`'s loss term stays the fr
 only difference from `D3-T0` is **which transitions are in the replay**, and the measured damage mechanism is absent by
 construction.
 
+**The sharper argument, now that the output-change measurement is in** (decision record §3b): on identical states the
+ep-100 `v1 FULL` learner follows the challenger 2.1–2.4 × as often as `D3-T0` does — so the intervention landed — but by
+the *same* amount on the rows the gate approved (20.2 / 25.7 %) and on the rows it rejected (18.0 / 21.2 %). The learner
+did not learn the condition, because the condition is a function of the step's fading draw and the other users' actions,
+which its 113-dim observation does not contain. A per-row hard constraint on an unobservable-conditioned target is
+therefore **ill-posed for this student**: two identical observations carry different demands and the hinge can only
+satisfy the majority, which is an unconditional drift of about the override rate.
+
+An experience channel does not ask the student to represent that condition at all. TD regression on executed transitions
+estimates `E[value | observation, action]` — an expectation over exactly the unobservables the gate conditions on — which
+is a well-posed target for a 113-dim student, and the greedy policy then deviates from `a^A` only where that expectation
+supports it. The judge's privileged information is spent on *choosing which experiences to collect*, which is a data
+question, not on *asserting a per-row truth the student cannot condition on*. That is the design-level reason to expect a
+different outcome, rather than a hope that the same idea works better through another pipe.
+
 ## 2. The mechanism
 
 Roles unchanged (contract §1): `π^A` = T0 anchor, `π^F` = T_NEXT foresight challenger, both scripted, neither an RL agent.

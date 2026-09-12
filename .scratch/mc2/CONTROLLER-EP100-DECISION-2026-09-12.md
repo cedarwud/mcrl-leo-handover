@@ -73,6 +73,40 @@ rule's rule-level advantage (+6.13 % over T0, 24/24 paired) appeared when *every
 a learner that follows them on part of the states gets a mixture that need not inherit the gain. This matrix does not
 separate those two.
 
+### 3b. The output-change measurement separates the two explanations — and it points at the first one
+
+Lane B rolled the ep-100 checkpoints of `D3-T0` and `v1 FULL` (k = 10 and 11) on the 24 DEVVAL episodes, scored both
+policies on one host trajectory so the states are literally identical, and reconstructed the v1 gate on those states with
+the env generator state compared before and after every judge block and the committed-step parity asserted (so a
+side-effect would have aborted the run); all four checkpoints reproduce their DEVVAL file exactly. Tool and artefacts:
+`.scratch/mc2/B/b_output_change.py`, `.scratch/mc2/B/out/host-*.json`.
+
+| on identical states (host = `D3-T0`'s trajectory) | follows `a^A` | follows `a^F` | neither | on gate-APPROVED rows: follows `a^F` | on gate-REJECTED rows: follows `a^F` |
+|---|---:|---:|---:|---:|---:|
+| `D3-T0` k10 | 62.81 % | 7.80 % | 29.39 % | 8.69 % | 7.02 % |
+| `v1 FULL` k10 | 48.94 % | **19.02 %** | 32.03 % | **20.17 %** | **18.02 %** |
+| `D3-T0` k11 | 62.87 % | 10.93 % | 26.20 % | 12.67 % | 9.47 % |
+| `v1 FULL` k11 | 47.47 % | **23.25 %** | 29.28 % | **25.74 %** | **21.16 %** |
+
+1. **The overrides did land.** `v1 FULL` follows the challenger 2.1–2.4 × as often as `D3-T0` does on the same states, and
+   the anchor's share falls by almost exactly what the challenger gains (the "neither" share moves only 2–3 pp). This was
+   not a case of an ignored intervention.
+2. **But the learner did not learn the *condition*.** The increase is the same size on the rows the gate would have
+   approved (20.17 / 25.74 %) and on the rows it would have rejected (18.02 / 21.16 %). If the learner had absorbed
+   "follow `a^F` where the judge approves", those two columns would separate; they do not.
+
+That is direct evidence for the first declared explanation and against a benign reading of the first: the gate's
+condition is a function of the step's fading draw and the other users' executed actions, which the 113-dim observation
+does not contain, so **the conditional policy the judge defines is not representable by the student**, and what the
+student actually learns is an unconditional drift toward the challenger of roughly the override rate. That single
+mechanism also explains why the *content* of the proposal barely matters: a drift of the same size toward a
+content-free proposal costs nearly the same as a drift toward `T_NEXT`'s, because the cost comes from leaving the
+anchor, not from where it lands.
+
+What this does **not** settle: whether the rule-level composite gain would also have required coordinated adoption
+(explanation two). It no longer needs to be settled to act, because explanation one is sufficient to predict the measured
+dose-response and is now measured rather than hypothesised.
+
 What **is** established, and worth keeping regardless of what happens next:
 1. A judge-arbitrated composition of two specialists is a genuinely better **rule** (+6.13 % over T0, non-learned) and a
    genuinely worse **supervised target** than the anchor alone (−2.8 %, 2/24 and 2/24 paired). Those are not the same
