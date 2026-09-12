@@ -520,3 +520,10 @@ Checked against `T_NEXT` after the fact: +0.168 over its own baseline, so the ad
 reads. Deleting it while tidying silently swaps the recorded configuration identity for the `uncommitted-worktree`
 fallback. Lane Q's `COMMIT` holds `27f69edf…` and must not be removed. Same class as `scp` writing empty files,
 dropped `ssh until` loops, and unanchored `pgrep -f` matching its own command line.
+
+**Why that baseline was free, and the design rule that follows (Lane Q's closing note, adopted).** The
+pure-T0-imitation baseline required **no extra compute**: it is exactly `1 − disagreement`, a number the distinctness
+screen already produces. It was only *available* because the distinctness number and the `A_repr` number were read on
+the **same state collection** — a collection decision taken before either existed. **Rule for any future source
+screen: keep the gate and its null on one collection.** That is what makes the null free, and a null that costs
+nothing is a null that actually gets run.
