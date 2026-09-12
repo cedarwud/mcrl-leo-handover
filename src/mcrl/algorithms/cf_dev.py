@@ -53,6 +53,7 @@ from ..runtime.finiteness import (
     assert_finite_parameters,
 )
 from ..runtime.replay_buffer import ReplayBuffer
+from . import cf_s1_lane as s1l
 from . import cf_teacher as cft
 from .cf_credit import DEFAULT_CREDIT_MODE, PowerModel, credit_matrix, difference_context
 from .cf_ratio import (
@@ -205,6 +206,38 @@ def assert_dev_seed_pairs(seeds: Sequence[tuple[int, int]], what: str = "") -> N
     for env_seed, mob_seed in seeds:
         assert_dev_seed(env_seed, f"{what} env")
         assert_dev_seed(mob_seed, f"{what} mobility")
+
+
+# ------------------------------------------------------------------ lanes
+DEV_LANE: str = s1l.DEV_LANE
+"""This kernel's own lane.  A settings object without a ``lane`` attribute IS the
+development lane: :class:`DevSettings` has no such field, so adding the S1 lane
+(:mod:`mcrl.algorithms.cf_s1`) changed no development configuration hash."""
+
+
+def lane_of(dev: Any) -> str:
+    """The seed contract a settings object runs under (default: development)."""
+    return str(getattr(dev, "lane", DEV_LANE))
+
+
+def assert_lane_seed(seed: Any, what: str = "", *, lane: str = DEV_LANE) -> int:
+    """Dispatch to the lane's seed guard, fail closed on an unknown lane.
+
+    ``assert_dev_seed`` stays the DEVELOPMENT entry point (so a test or mutant that
+    neutralises it still neutralises the development path); every other lane is
+    guarded by :mod:`mcrl.algorithms.cf_s1_lane`.
+    """
+    if lane == DEV_LANE:
+        return assert_dev_seed(seed, what)
+    return s1l.assert_lane_seed(seed, what, lane=lane)
+
+
+def assert_lane_seed_pairs(seeds: Sequence[tuple[int, int]], what: str = "", *,
+                           lane: str = DEV_LANE) -> None:
+    if lane == DEV_LANE:
+        assert_dev_seed_pairs(seeds, what)
+        return
+    s1l.assert_lane_seed_pairs(seeds, what, lane=lane)
 
 
 # ------------------------------------------------------------------ MULTI-D3
@@ -569,7 +602,8 @@ LP_GRID_DT_S = 30.08
 
 
 def dev_rollout(
-    policy_factory, *, env_factory, encode, seeds, t0_agreement: bool = False
+    policy_factory, *, env_factory, encode, seeds, t0_agreement: bool = False,
+    lane: str = DEV_LANE,
 ) -> dict[str, Any]:
     """``cf_ratio.pooled_rollout`` (seeds mode) + per-user rates and T0 agreement.
 
@@ -579,7 +613,7 @@ def dev_rollout(
     the rolled policy's action against T0's on the same raw states (observation
     only; it never touches the environment or a generator).
     """
-    assert_dev_seed_pairs(seeds, "dev_rollout")
+    assert_lane_seed_pairs(seeds, "dev_rollout", lane=lane)
     rows: list[dict[str, Any]] = []
     rates: list[float] = []
     agree = regret = 0.0
@@ -667,9 +701,10 @@ class CFDevTrainer(CFRatioTrainer):
                  env_factory=None, train_seed: int = 9_201_000,
                  env_seed: int = 9_202_000, mobility_seed: int = 9_203_000,
                  device: str = "cpu") -> None:
-        assert_dev_seed(train_seed, "DEV train seed")
-        assert_dev_seed(env_seed, "DEV env seed")
-        assert_dev_seed(mobility_seed, "DEV mobility seed")
+        lane = lane_of(dev)
+        assert_lane_seed(train_seed, f"{lane} train seed", lane=lane)
+        assert_lane_seed(env_seed, f"{lane} env seed", lane=lane)
+        assert_lane_seed(mobility_seed, f"{lane} mobility seed", lane=lane)
         super().__init__(env, config, settings, env_factory=env_factory, pools=None,
                          train_seed=train_seed, env_seed=env_seed,
                          mobility_seed=mobility_seed, device=device)
@@ -868,7 +903,7 @@ class CFDevTrainer(CFRatioTrainer):
         d = self.dev
         seeds = episode_seeds(d.devval_env_base, d.devval_mobility_base,
                               d.devval_episodes)
-        assert_dev_seed_pairs(seeds, "DEVVAL")
+        assert_lane_seed_pairs(seeds, f"{lane_of(d)} evaluation", lane=lane_of(d))
         return seeds
 
     def devval(self) -> dict[str, Any]:
@@ -878,7 +913,7 @@ class CFDevTrainer(CFRatioTrainer):
         greedy = lambda enc, masks, states: self.greedy_actions(enc, masks)  # noqa: E731
         return dev_rollout(lambda i: greedy, env_factory=self._env_factory,
                            encode=self.encode_at, seeds=self.devval_seeds(),
-                           t0_agreement=True)
+                           t0_agreement=True, lane=lane_of(self.dev))
 
     # -- training loop ---------------------------------------------------
     def train_cf(self, *, start_episode: int = 0, initial_logs: list[dict] | None = None,
