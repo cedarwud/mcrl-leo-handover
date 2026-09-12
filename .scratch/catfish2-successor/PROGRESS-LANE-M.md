@@ -76,3 +76,23 @@ Implemented, all in worktree `mcrl-leo-handover-cf2s-multi`:
 - Five prospective k = 8 manifests built and checked; all hashes/keys/dirs distinct,
   shared identities shared, 300 / stop-after 100 / read depth 100 asserted.
 - Tests: 67/67 green (test_cf_multid3 20, test_cf_dev 22, test_cf_tnext 25).
+
+## S7 k = 8 LAUNCHED, READ, AND STOPPED (2026-09-12)
+Commit synced to sat: f129e34057f7533ee1aca763503732356ebbef9d
+Workspace: /home/sat/mcrl-v025-cf2s-multi-ws (tree/, run.sh, runs-k8/)
+PIDs 3722120-3722124, all /proc-verified, all stopped-at ep100 in 222-231 s.
+
+READING (DEVVAL ep100, k = 8, development lane, no verdict):
+  FULL - T0-only      = -4.120 %   (needs >= +1.0 %)  FAIL   0/24 paired
+  FULL - T_NEXT-only  = -1.131 %   (needs >= +1.0 %)  FAIL   8/24 paired
+  FULL >  matched null            +35.244 %  pass    24/24 paired
+  served -0.0583 pp / p10 x1.3274 / bits x1.0136      pass
+  |A_CF|=1: FULL 0.392740, null 0.388480, frozen 0.391458
+
+k = 9 NOT sealed and NOT launched: two frozen gates fail, so the auto-advance
+condition (unambiguous pass) is not met. No gate reinterpreted, no threshold moved.
+The Amendment 15 section 9 failure rule is the owner's to apply.
+
+Mutants: full sweep 11/11 red individually + CLEAN green (mutants-lane-m.log; it
+spanned the integration edits). Targeted subset re-run on the FINAL tree, 5/5 red
+(mutants-lane-m-subset.log). Clean suite on the final tree: 67/67 green.

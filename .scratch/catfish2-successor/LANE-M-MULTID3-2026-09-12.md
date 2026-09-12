@@ -162,7 +162,32 @@ multi-only `A_CF` diagnostics, which no loss reads.
 `bash .scratch/catfish2-successor/run_mutants_lane_m.sh` — each mutant is applied
 with `monkeypatch` (no source file is edited) and must turn the suite red on its own.
 
-MUTANT_TABLE_PLACEHOLDER
+| mutant | what it breaks | tests it turns red |
+|---|---|---|
+| `teacher_weights_reintroduced` | equal per-teacher weights instead of the set | 1, 2, 6, 7, no-weights |
+| `acf_summed_over_members` | sums the singleton loss over the members | 1, 2, 4, 6, 7, no-weights |
+| `acf_cardinality_counts_duplicates` | `A_CF` reported as a multiset | 4, null-cardinality |
+| `illegal_teacher_actions_admitted` | no legality filter when building `A_CF` | 5, null-cardinality |
+| `margin_applied_to_members` | margin not zeroed on the set | 1, 2, 4, 6, no-weights, null-cardinality |
+| `loss_admits_illegal_members` | the loss silently clips instead of refusing | 6, null-cardinality |
+| `order_dependence_introduced` | last legal slot wins instead of the union | 3, 5, null-set, null-cardinality |
+| `teacher_identity_dropped_from_hash` | `multi_spec` removed from the payload | 9, null-cardinality |
+| `deployment_path_touched` | `greedy_actions` consults a teacher | 1, 8, 10, 11, 12 |
+| `null_drawn_with_replacement` | the null may draw one action twice | 8, 10, 15, null-set, null-cardinality |
+| `null_single_proposal` | the null forces cardinality one | 8, 10, 15, null-set, null-cardinality |
+
+CLEAN: `rc=0`, no test red. Every mutant: `rc=1`, red on its own.
+
+Receipt integrity, stated plainly: the full sweep
+(`.scratch/catfish2-successor/mutants-lane-m.log`) was in flight while the k = 8
+integration edits (the teacher-context seam, the frozen `p_singleton` fields, the
+per-step reporting) were being made, so its earlier entries were produced on the
+pre-integration tree and its later ones on the final tree. Per the controller's
+execution delta it stands as the full receipt and no second full sweep was run;
+instead the five mutants directly affected by those edits were re-run on the final
+tree (`mutants-lane-m-subset.log`) and the clean suite was re-run in full on the
+final tree (67/67 green across `test_cf_multid3.py`, `test_cf_dev.py` and
+`test_cf_tnext.py`).
 
 One honest note on `A_CF` deduplication. With `A_CF` as a boolean mask, a
 *non-deduplicated set* is **unrepresentable in the loss** — `max_{a∈A_CF} S` and
@@ -318,3 +343,157 @@ bash .scratch/catfish2-successor/run_mutants_lane_m.sh
 
 Pinned TLE file set `427e6a91774b0ebf3d9b5a13dd783fdaa3f107666f9e9a6cb2a08d5c92b38fe9`.
 All work local; `sat` was not used and Phase B0's four J shards were not disturbed.
+
+---
+
+# Part II — the k = 8 pairwise causal matrix (controller record `716f104e`)
+
+Added 2026-09-12 after the owner execution deltas. `T_DELTA` closed (`f747de86`),
+`T_TAIL` closed at `A_repr` 0.4635, so `T_NEXT` was the sole surviving candidate and
+this matrix was the only remaining path to a second Catfish in the portfolio.
+
+## 8. What was integrated
+
+- **The exact committed `T_NEXT`** — `src/mcrl/algorithms/cf_tnext.py` copied from
+  Lane N `25448632`, sha256
+  `86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f`, byte-identical
+  (asserted in test 14). The `A_repr` clone was not substituted and `T_NEXT` was
+  never inferred from the 113-dim observation.
+- **A training-only teacher-context seam.** `cft.TeacherContext(driver, candidates,
+  step_index, is_final_step)`; a source registered with `needs_context=True` is
+  handed it, every other source keeps the historical two-argument call. The trainer
+  keeps the `StepObservation` that `TrainerEnvironment.reset()` already returned and
+  that the loop already discarded, and refreshes it from
+  `env.last_outcome.observation`. `self._needs_teacher_context` is False unless a
+  declared teacher asks, so no existing arm builds the seam at all. Nothing in the
+  113-dim observation, replay state, network, inference path, deployment path,
+  environment physics or RNG schedule changed; `trainer_env.py` and `cf_ratio.py`
+  are byte-identical to `27f69edf` (test 13), and a `D3-T0` run with the source
+  registered has the same parameter sha256 as one without.
+- **The Bernoulli cardinality-matched null selected** as the k = 8 comparator, with
+  `p_singleton = 9395/24000 = 0.39145833333333335` frozen, and numerator,
+  denominator, rational, decimal, `T_NEXT` source identity and P0 artefact digest
+  `881ed281…` all in the configuration hash. The rejected fixed two-proposal null
+  keeps a different identity, manifest key, run directory and hash and cannot be
+  selected by accident (test 15, and asserted again in the k = 8 plan).
+- **`T_NEXT-only` is the generic singleton `{T_NEXT}` on arm 8** — no redundant
+  `D3-T_NEXT` mechanism was invented (test 14).
+
+## 9. Source-identity receipt — the seam reproduces the admitted source
+
+`.scratch/catfish2-successor/results/LANE-M-SOURCE-RECEIPT.json`, run on the frozen
+P0 environment (24 episodes, env `9_202_500+i`, mobility `9_203_500+i`, T0-rolled
+trajectory, 100 users):
+
+| quantity | value |
+|---|---|
+| decisions compared | **24,000** (21,600 at `t = 1…9`) |
+| action mismatches, Lane N path vs Lane M seam | **0** |
+| legal violations | **0** |
+| final-step T0 fallback identity | **2,400 / 2,400** |
+| seam RNG mutations | **0** |
+| seam environment mutations | **0** |
+| action-trace sha256 | `0568b2220a02898527e2a3d4dbc609da0c0aaf2f24dca81a282f9d555fbd9bee` |
+| authoritative Lane N digest | `0568b2220a02898527e2a3d4dbc609da0c0aaf2f24dca81a282f9d555fbd9bee` |
+| **match** | **yes** |
+
+## 10. The five k = 8 cells, as launched
+
+Commit **`f129e34057f7533ee1aca763503732356ebbef9d`** (read back from git), synced to
+`/home/sat/mcrl-v025-cf2s-multi-ws/tree` (`COMMIT` file, tar sha256 verified both
+ends), pinned TLE `427e6a91…`, calibration `59952214…`, prereg digest shared,
+`--episodes 300 --stop-after 100`, DEVVAL read at 100. Never `--episodes 100`:
+`epsilon_decay_episodes(300) = 67` and `(100) = 22`, so shortening the configured
+budget would silently change the learner.
+
+| cell | arm | manifest key | config hash | run directory |
+|---|---|---|---|---|
+| `D0` | 1 | `1:8` | `ed4e507eb5b0…` | `E0-1-D0-equal_share-k8` |
+| `T0-only` | 4 | `4:8` | `0cf6f6a11cec…` | `E0-4-D3-T0-equal_share-k8` |
+| `T_NEXT-only` | 8 | `8:8:T_NEXT` | `1737d1235427…` | `E0-8-D3-multi-T_NEXT-equal_share-k8` |
+| `FULL{T0,T_NEXT}` | 8 | `8:8:T0+T_NEXT` | `c46546611d25…` | `E0-8-D3-multi-T0+T_NEXT-equal_share-k8` |
+| `2-null` (Bernoulli) | 9 | `9:8:n2b` | `17b048b2b8ff…` | `E0-9-D3-multi-null-n2-bernoulli-p9395_24000-equal_share-k8` |
+
+Launched concurrently, PIDs 3722120–3722124, each verified from `/proc` (exe, cwd
+`…/tree`, full argv, RSS ≈ 1.9 GB against a 4.5 GB cap and a 5 G `MemoryMax`). All
+five reached the episode-100 boundary and stopped cleanly in 222–231 s.
+
+## 11. The reading — flat, no verdict
+
+DEVVAL, 24 episodes, greedy, episode 100, seed k = 8. **Development lane.**
+
+| cell | pooled EE (bit/J) | bits | served | p10 (bit/s) | ho/user/min | agree T0 |
+|---|---:|---:|---:|---:|---:|---:|
+| `D0` | 1.007892e8 | 2.8870e14 | 0.99671 | 8.3986e7 | 1.3915 | 0.3459 |
+| `T0-only` | 1.124866e8 | 3.1891e14 | 0.99762 | 1.1323e8 | 1.2072 | 0.7143 |
+| `T_NEXT-only` | 1.090862e8 | 2.6745e14 | 0.99504 | 9.9330e7 | 0.8757 | 0.4587 |
+| `FULL{T0,T_NEXT}` | 1.078520e8 | 2.9263e14 | 0.99613 | 1.1148e8 | 1.0383 | 0.6081 |
+| `2-null` Bernoulli | 7.974621e7 | 1.5795e14 | 0.98938 | 2.3734e7 | 0.9190 | 0.2275 |
+
+**The frozen gates.**
+
+| gate | required | observed | |
+|---|---|---:|---|
+| `FULL − T0-only`, relative pooled EE | ≥ +1.0 % | **−4.120 %** | **FAIL** |
+| `FULL − T_NEXT-only`, relative pooled EE | ≥ +1.0 % | **−1.131 %** | **FAIL** |
+| `FULL >` matched null | > | +35.244 % | pass |
+| served vs `D0` | ≥ −0.5 pp | −0.0583 pp | pass |
+| p10 vs `D0` | ≥ 0.5 × | ×1.3274 | pass |
+| bits vs `D0` | ≥ 0.95 × | ×1.0136 | pass |
+
+**Paired per-episode DEVVAL outcomes for `FULL`** (24 episodes):
+0/24 against `T0-only` (mean −4.10 %); 8/24 against `T_NEXT-only` (mean −1.11 %);
+**24/24** against the matched null (mean +36.07 %); **24/24** against `D0`
+(mean +7.09 %).
+
+So the mechanism works — the set-valued FULL arm beats its matched null on every
+paired episode and beats `D0` on every paired episode — and the *drop-one* result is
+negative: adding `T_NEXT` to `T0` costs 4.1 % relative pooled EE against `T0` alone,
+losing on every one of the 24 paired episodes.
+
+## 12. The cardinality reading, and why the declared caveat does not move it
+
+Amendment 15 §7 as extended by `716f104e` §3, measured over the 100 training
+episodes of each arm:
+
+| | marginal `|A_CF| = 1` |
+|---|---:|
+| frozen `p_singleton` (P0, T0-committed states) | 0.391458 |
+| `FULL{T0,T_NEXT}` realised (learner's own states) | **0.392740** |
+| Bernoulli matched null realised | **0.388480** |
+
+The marginal matched to 0.13 pp between FULL and the frozen constant, and to 0.43 pp
+between FULL and the null — on the learner's own state distribution, which is not
+the distribution `p_singleton` was estimated on. Cardinality histograms
+(`[card0, card1, card2]`): FULL `[0, 39274, 60726]`, null `[0, 38848, 61152]`.
+FULL's duplicate-teacher frequency is 0.39274, identical to its singleton rate, as it
+must be for a two-teacher set.
+
+**Per step**, the controller's predicted structure appears exactly:
+
+| step | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `FULL` | .2841 | .2853 | .3681 | .2521 | .3407 | .3275 | .4137 | .3040 | .3519 | **1.0000** |
+| null | .3914 | .4016 | .3826 | .3813 | .3934 | .3888 | .3877 | .3809 | .3884 | .3887 |
+
+The uniform Bernoulli over-produces singletons at `t = 0…8` and under-produces at
+`t = 9`, where `T_NEXT`'s mandatory final-step T0 fallback makes FULL singleton by
+construction — the divergence the controller declared before any result existed.
+
+**It does not move this reading.** The two failing gates, `FULL − T0-only` and
+`FULL − T_NEXT-only`, do not involve the null at all; the only gate the null enters,
+`FULL >` null, passes by +35 % on 24/24 paired episodes. A better-matched null could
+only make that gate harder, never rescue the two that failed.
+
+## 13. No k = 9
+
+Controller record `716f104e` §6 as amended: auto-advance only on an unambiguous
+pass. Two frozen numeric gates fail, so **k = 9 was not sealed and no replication
+arm was launched.** No gate was reinterpreted, no threshold was moved and no
+alternative reading was constructed. Amendment 15 §9's failure rule is the owner's
+to apply, not mine.
+
+No identity or provenance defect was found: all five cells carry commit
+`f129e34057f7…`, their declared config hashes, the shared prereg digest,
+calibration `59952214…` and TLE `427e6a91…`; the source receipt is exact; the
+matched null's marginal reproduced to 0.13 pp. No implementation anomaly was found.
