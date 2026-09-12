@@ -59,3 +59,44 @@ the section header already exists before re-appending).
 - UNKNOWN blocks: the CF3-pilot MDP modifiers (cap / segment anchor / interruption) across
   H4-/LP-/OR-/T0R-/TSQ-/B1C-, and the entire provenance of the E0 lane including the DEVVAL
   episode seeds.
+
+## Follow-up pass after the controller adjudication
+
+Trigger: `.scratch/curation/CONTROLLER-Q9B-ADJUDICATION-2026-09-12.md` (read first; the citation for
+every change below). Four assigned edits plus the OR-17 correction. Still read-only on measurements;
+`sat` never contacted.
+
+- [DONE] F1 — MDP modifiers resolved (ruling §4). Re-ran the two git facts read-only in the main
+  worktree: `git merge-base --is-ancestor 102b2d4d 05aadf1b` → **true**;
+  `git diff --name-only 102b2d4d 05aadf1b -- src/` → `algorithms/cf_credit.py`, `cf_dev.py`,
+  `cf_ratio.py`, `cf_teacher.py` only, **no `env/`**. Added **§5 condition 5**; rewrote **63 row
+  cells** and **7 section preambles** (5a–5g). Idempotent: the strings
+  `modifiers UNKNOWN` / `cap / segment anchor / interruption UNKNOWN` no longer occur in a row cell.
+- [DONE] F2 — PROVENANCE block written into `.scratch/dev-training/E0-BATCH-1-2026-09-12.md` under
+  the title, banner-marked as retro-fitted; all **27 `E0-` rows** repointed (physics, estimand,
+  power, n, source columns) and §5h's provenance paragraph plus §5 condition 3 rewritten. Two fields
+  deliberately left UNKNOWN (D-2/D-3/cap/z-score/penalty flags; DEVVAL-vs-DEV disjointness check).
+  Idempotent: re-running would find the block already present (`grep -c 'PROVENANCE \[A\]'`).
+- [DONE] F3 — §0 trap 1 corrected ("host does not imply archive", local pinned copy
+  `/home/u24/mcrl-runtime/tle-pinned-427e6a91`, only `file_set_sha256` decides); §5 condition 2
+  aligned; **new §0 trap 7** (no pre-S1 `e6b063ef…` value is citable as the baseline); §0 heading
+  count corrected five → seven.
+- [DONE] F4 — permanent annotations: sweep-order caveat on **OR-02, OR-05, OR-18, TSQ-04, TSQ-16,
+  TSQ-17**; `NOT CITABLE AS THE BASELINE (pre-S1)` on **FF-04, FF-05, DR-03, CS-02, CS-16, SV-MZ-01,
+  EC-01, EC-02, E0-02**. Idempotent: both passes skip a row that already carries the marker.
+- [DONE] F5 — **OR-17 rewritten** to the controller's measured ranges (unfloored 65–100 / mean 82.6;
+  floored 58–100 / mean 79.9), status `CORRECTED 2026-09-12`, citing the adjudication with the three
+  superseded citations listed beside it. **OR-19 left as `CONFLICT`** per ruling §2.
+- [DONE] F6 — `CURATE2-2026-09-12.md` extended with a "Follow-up edits applied" section (the original
+  Q9b report left standing above it, with a pointer at the top).
+- [DONE] F7 — validated and committed named paths only.
+
+### Follow-up receipts
+
+- Whole-file table validation after every edit: **726 data rows, 0 malformed**, all exactly 12 columns.
+- §5 row count unchanged (178); no row added, deleted or renumbered by the follow-up.
+- **Flagged upward, not fixed:** ruling §6's enumeration counts `SV-MZ-01`'s 90,866,329.62 among five
+  values "for the same frozen checkpoint", but that row's own source calls it a from-scratch
+  MODQN_RAW retrain with the checkpoint only hashed. Trap 7 records six *measured* values plus
+  SV-MZ-01 separately, and names three further values under non-default accountings / ablated
+  physics (BP-02, BP-03, CS-14) that the trap also covers.
