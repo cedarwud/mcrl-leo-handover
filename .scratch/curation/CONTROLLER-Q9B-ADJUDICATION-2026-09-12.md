@@ -76,9 +76,20 @@ Left as is, a future reader will mis-classify the B1 numbers by host alone.
 
 ## 6. Five circulating values for checkpoint `e6b063ef…`. **RULED, and this one constrains S1.**
 
-The registry now carries **90,866,329.62 / 93,110,907.97 / 93,137,893.02 / 93,787,980.20 / 94,413,179** bit/J for the
-same frozen 9,000-episode checkpoint, across different episode sets, archives and harness variants. **None of them is
-comparable to another, and none of them is the S1 baseline.**
+The registry now carries multiple mutually incomparable values for the same frozen 9,000-episode checkpoint, across
+different episode sets, archives and harness variants. **None of them is comparable to another, and none of them is
+the S1 baseline.**
+
+> **Correction to my own enumeration, 2026-09-12**, raised by CURATE-2 while executing this ruling and verified by me.
+> My original list of "five values" was wrong in two ways, and the ruling below is unaffected — in fact strengthened.
+> (a) I wrongly included `SV-MZ-01`'s **90,866,329.62**: its own source calls it a **from-scratch `MODQN_RAW` retrain**
+> with the checkpoint merely hashed, so it is **not a measurement of `e6b063ef…` at all**. It stays marked not-citable,
+> but for a different reason, and the distinction is recorded rather than blurred.
+> (b) I missed two that I had no way to see from my grep: `EC-01` **89,911,720** and `EC-02` **93,902,816.57**.
+> The correct count is **six measured values** of this checkpoint — `EC-01` 89,911,720; `FF-04` = `CS-16` = `BP-01`
+> 93,110,907.97; `DR-03` = `CS-02` 93,137,893.02; `FF-05` 93,787,980.20; `EC-02` 93,902,816.57; `E0-02` 94,413,179 —
+> **spanning 4.5 %**, plus three further figures under non-default accountings or ablated physics that the same trap
+> covers: `BP-02` 94,111,458.32 (TDM), `BP-03` 80,465,428.82 (ADDITIVE), `CS-14` 92,130,894.38 (`ablate_anchor`).
 
 **Ruling, binding on the paper:** Amendment 13 §2 makes the S1 rollout of `e6b063ef…` on the **formal evaluation set,
 under the same protocol as the six trained arms**, the *only* authoritative figure for the published 9,000-episode
