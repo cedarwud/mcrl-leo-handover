@@ -1,0 +1,311 @@
+=== MUTANT gate_ge ===
+....F
+=================================== FAILURES ===================================
+______ test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains _______
+
+    def test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains():
+        """(4) Strict lexicographic (served first), ties -> incumbent, no call when
+        c == incumbent, B abstains at T-1 -- as a table, and in a real B-only run."""
+        assert cfj.strictly_better(K(3, 1.0), K(2, 99.0))
+        assert not cfj.strictly_better(K(2, 99.0), K(3, 1.0))
+>       assert not cfj.strictly_better(K(3, 1.0), K(3, 1.0)), "a tie must go to the incumbent"
+E       AssertionError: a tie must go to the incumbent
+E       assert not True
+E        +  where True = <function mutant.<locals>.<lambda> at 0x71cdf62d0ea0>(Kappa(served=3, surrogate=1.0, bits=0.0, joules=0.0), Kappa(served=3, surrogate=1.0, bits=0.0, joules=0.0))
+E        +    where <function mutant.<locals>.<lambda> at 0x71cdf62d0ea0> = cfj.strictly_better
+E        +    and   Kappa(served=3, surrogate=1.0, bits=0.0, joules=0.0) = K(3, 1.0)
+E        +    and   Kappa(served=3, surrogate=1.0, bits=0.0, joules=0.0) = K(3, 1.0)
+
+tests/test_mc2_judge.py:425: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+MUTANT gate_ge rc=1 RED
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+=== MUTANT judge_advances_rng ===
+.F
+=================================== FAILURES ===================================
+______________ test_02_v1_full_with_the_gate_forced_shut_is_d3_t0 ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x746f95ab0620>
+
+    def test_02_v1_full_with_the_gate_forced_shut_is_d3_t0(monkeypatch):
+        """(2) FULL-v1 with the gate forced shut IS the frozen D3-T0, parameter sha256
+        for sha256, on the real environment: the judge (and T_NEXT) ran every step and
+        moved nothing -- not the environment, not env_rng, not the driver, not the
+        trainer's generators, not the loss."""
+        frozen = _trainer("D3-T0")
+        logs_f = frozen.train_cf(progress_every=0)
+        calls = {"n": 0}
+    
+        def shut(a, b):
+            calls["n"] += 1
+            return False
+    
+        monkeypatch.setattr(cfj, "strictly_better", shut)
+        full = _judge("v1-A+B")
+>       logs_j = full.train_cf(progress_every=0)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_mc2_judge.py:315: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/mcrl/algorithms/cf_dev.py:1204: in train_cf
+    step_judge.assert_committed_parity(outcome)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <mcrl.algorithms.cf_judge.StepJudge object at 0x746f9360aab0>
+outcome = StepOutcome(step_index=0, done=False, observation=StepObservation(step_index=1, candidates=StepCandidates(slot_tables=...before the link is infeasible; at p0 = p_max/2 that is the 3 dB cell edge, so outage means the user left their cell'}})
+
+    def assert_committed_parity(self, outcome) -> None:
+        """The base evaluation must BE the committed step (bits, joules, served)."""
+        if self._base is None:
+            raise MCRLContractError("the judge's base evaluation was never taken")
+        bits, joules = cc.evaluation_bits_joules(outcome, self.dt)
+        served = np.asarray(outcome.resolution.served, dtype=bool)
+        if ((bits, joules) != (self._base.bits, self._base.joules)
+                or not np.array_equal(served, self._base_served)):
+>           raise MCRLContractError(
+                "judge parity broken: the evaluated behaviour vector is not the "
+                "committed step (the judge advanced a generator or the environment)"
+            )
+E           mcrl.errors.MCRLContractError: judge parity broken: the evaluated behaviour vector is not the committed step (the judge advanced a generator or the environment)
+
+src/mcrl/algorithms/cf_judge.py:245: MCRLContractError
+=========================== short test summary info ============================
+FAILED tests/test_mc2_judge.py::test_02_v1_full_with_the_gate_forced_shut_is_d3_t0
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+MUTANT judge_advances_rng rc=1 RED
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+FAILED tests/test_mc2_judge.py::test_02_v1_full_with_the_gate_forced_shut_is_d3_t0
+=== MUTANT b_no_abstain_final ===
+....F
+=================================== FAILURES ===================================
+______ test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains _______
+
+    def test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains():
+        """(4) Strict lexicographic (served first), ties -> incumbent, no call when
+        c == incumbent, B abstains at T-1 -- as a table, and in a real B-only run."""
+        assert cfj.strictly_better(K(3, 1.0), K(2, 99.0))
+        assert not cfj.strictly_better(K(2, 99.0), K(3, 1.0))
+        assert not cfj.strictly_better(K(3, 1.0), K(3, 1.0)), "a tie must go to the incumbent"
+        assert cfj.strictly_better(K(3, 1.0 + 1e-6), K(3, 1.0))
+    
+        legal = np.zeros((6, NA), dtype=bool)
+        legal[:5, :4] = True                                   # user 5: no legal action
+        x = np.array([0, 1, 2, 3, 0, -1])
+        a_a = np.array([0, 0, 1, 1, 2, -1])
+        c = np.array([0, 2, 3, 2, 3, -1])
+        table = {
+            (1, 2): K(5, 0.0), (1, 0): K(5, -1.0),      # c wins on the surrogate
+            (2, 3): K(5, 2.0), (2, 1): K(5, 2.0),       # exact tie -> incumbent
+            (3, 2): K(4, 100.0), (3, 1): K(5, 0.0),     # c sheds a user -> loses
+            (4, 3): K(6, -50.0), (4, 2): K(5, 0.0),     # c wins on the served count
+        }
+        calls: list[tuple[int, int]] = []
+    
+        def kappa(u, a):
+            calls.append((int(u), int(a)))
+            return table[(int(u), int(a))]
+    
+        lab = cfj.jgo_labels(use_a=True, challenger_tag=cfj.TAG_B, legal=legal, x=x,
+                             a_a=a_a, challenger=c, kappa=kappa)
+        assert lab.target.tolist() == [0, 2, 1, 1, 3, cfj.NO_TARGET]
+        assert lab.tag.tolist() == [cfj.TAG_A, cfj.TAG_B, cfj.TAG_A, cfj.TAG_A, cfj.TAG_B,
+                                    cfj.TAG_NONE]
+        assert lab.override.tolist() == [False, True, False, False, True, False]
+        assert lab.compared.tolist() == [False, True, True, True, True, False]
+        assert (lab.lead_served[4], lab.lead_served[3]) == (1, -1)
+        assert sorted(set(calls)) == sorted(table), "the judge is asked about {c, inc} only"
+        assert not any(u == 0 for u, _a in calls), "no call when c == incumbent"
+    
+        # B-only (the shared cell): the incumbent is x_u and a row the challenger does
+        # not win has NO target.
+        table_b = {(1, 2): K(5, 0.0), (1, 1): K(5, 0.0),        # tie -> none
+                   (2, 3): K(5, 1.0), (2, 2): K(5, 0.0),        # override
+                   (3, 2): K(5, 0.0), (3, 3): K(5, 3.0),        # loses -> none
+                   (4, 3): K(5, 0.0), (4, 0): K(5, 0.0)}
+        calls.clear()
+        lab_b = cfj.jgo_labels(use_a=False, challenger_tag=cfj.TAG_B, legal=legal, x=x,
+                               a_a=a_a, challenger=c,
+                               kappa=lambda u, a: (calls.append((u, a)), table_b[(u, a)])[1])
+        assert lab_b.target.tolist() == [cfj.NO_TARGET, cfj.NO_TARGET, 3, cfj.NO_TARGET,
+                                         cfj.NO_TARGET, cfj.NO_TARGET]
+        assert lab_b.tag.tolist() == [0, 0, cfj.TAG_B, 0, 0, 0]
+        assert not any(u == 0 for u, _a in calls)                # c == x_0: no call
+    
+        # the final step: the challenger abstains -> no judge call at all under v1
+        calls.clear()
+        fin = cfj.jgo_labels(use_a=True, challenger_tag=cfj.TAG_B, legal=legal, x=x, a_a=a_a,
+                             challenger=None, kappa=lambda u, a: calls.append((u, a)))
+        assert calls == [] and fin.target.tolist()[:5] == a_a.tolist()[:5]
+        assert not fin.override.any()
+    
+        # ... and in a real B-only run: T_NEXT is never asked at T-1, and nothing is
+        # compared or overridden there.
+        seen_final: list[bool] = []
+    
+        def spy(states, masks, *, context):
+            seen_final.append(bool(context.is_final_step))
+            return cfmulti._tnext_source(states, masks, context=context)
+    
+        cft.register_teacher_source(cfmulti.T_NEXT_ID, spy, replace=True, needs_context=True)
+        try:
+            tr = _judge("B")
+            logs = tr.train_cf(progress_every=0)
+        finally:
+            cfmulti.register_candidate_sources(replace=True)
+>       assert seen_final and not any(seen_final), "T_NEXT was asked at the final step"
+E       AssertionError: T_NEXT was asked at the final step
+E       assert ([False, False, False, False, False, False, ...] and not True)
+E        +  where True = any([False, False, False, False, False, False, ...])
+
+tests/test_mc2_judge.py:492: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+MUTANT b_no_abstain_final rc=1 RED
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+FAILED tests/test_mc2_judge.py::test_02_v1_full_with_the_gate_forced_shut_is_d3_t0
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+=== MUTANT null_reads_tnext ===
+.......F
+=================================== FAILURES ===================================
+____ test_05_the_b_null_reads_no_tnext_and_draws_once_per_legal_row[v1-A+R] ____
+
+cell = 'v1-A+R'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7952a6a81dc0>
+
+    @pytest.mark.parametrize("cell", ["v1-A+R", "v2-A+R"])
+    def test_05_the_b_null_reads_no_tnext_and_draws_once_per_legal_row(cell, monkeypatch):
+        """(5) The B-null reads no T_NEXT, draws exactly one uniform legal action per
+        user with a legal action at t < T-1 and nothing at T-1, and only from its own
+        fresh stream at the declared key (9_243_000, k)."""
+        def forbidden(states, masks, **kw):
+            raise AssertionError("the B-null asked T_NEXT for an action")
+    
+        keys: list[tuple] = []
+        real_rng = np.random.default_rng
+    
+        def recorder(seed=None, *a, **kw):
+            if isinstance(seed, (tuple, list)):
+                keys.append(tuple(int(v) for v in seed))
+            return real_rng(seed, *a, **kw)
+    
+        draws: list[tuple[np.ndarray, np.ndarray, object]] = []
+        real_draw = cft.random_legal_actions
+    
+        def spy(mask, rng):
+            out = real_draw(mask, rng)
+            draws.append((np.array(mask, dtype=bool, copy=True), out.copy(), rng))
+            return out
+    
+        monkeypatch.setattr(np.random, "default_rng", recorder)
+        monkeypatch.setattr(cft, "random_legal_actions", spy)
+        cft.register_teacher_source(cfmulti.T_NEXT_ID, forbidden, replace=True,
+                                    needs_context=False)
+        try:
+            tr = _trainer(cfj.MECHANISM_NAME, judge=_jspec(cell, k=3),
+                          cfg_kw={"episodes": 2})
+            assert tr._needs_teacher_context is False
+>           logs = tr.train_cf(progress_every=0)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_mc2_judge.py:657: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+src/mcrl/algorithms/cf_dev.py:1195: in train_cf
+    jlab, step_judge = self._judge_step(
+src/mcrl/algorithms/cf_dev.py:1074: in _judge_step
+    challenger = self._challenger_actions(states, masks, legal, is_final)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/test_mc2_judge.py:109: in bad
+    slots = cft.teacher_action_slots(
+src/mcrl/algorithms/cf_teacher.py:352: in teacher_action_slots
+    col = fn(states, masks)
+          ^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+states = [UserState(access_vector=array([0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.,
+       0., 0., 0.,...  , 48.        , 48.        ,  1.1496383 , -0.25725868,
+       -2.3228042 ,  0.46895733,  0.        ], dtype=float32))]
+masks = [ActionMask(mask=array([ True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True,  True,  True,  Tr...rue,  True,  True,  True,  True,
+        True,  True,  True,  True,  True,  True,  True,  True,  True,
+        True]))]
+kw = {}
+
+    def forbidden(states, masks, **kw):
+>       raise AssertionError("the B-null asked T_NEXT for an action")
+E       AssertionError: the B-null asked T_NEXT for an action
+
+tests/test_mc2_judge.py:631: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_mc2_judge.py::test_05_the_b_null_reads_no_tnext_and_draws_once_per_legal_row[v1-A+R]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+MUTANT null_reads_tnext rc=1 RED
+FAILED tests/test_mc2_judge.py::test_02_v1_full_with_the_gate_forced_shut_is_d3_t0
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+FAILED tests/test_mc2_judge.py::test_05_the_b_null_reads_no_tnext_and_draws_once_per_legal_row[v1-A+R]
+=== MUTANT margin_refilled ===
+..F
+=================================== FAILURES ===================================
+_______________ test_02b_v2_full_with_the_gate_forced_shut_is_d0 _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7696f94889b0>
+
+    def test_02b_v2_full_with_the_gate_forced_shut_is_d0(monkeypatch):
+        """(2, v2) With the gate shut v2 keeps x_u everywhere, so no row carries a margin
+        and the arm IS D0 bit for bit -- the same side-effect-freeness receipt for the
+        arbitration path."""
+        d0 = _trainer("D0")
+        logs0 = d0.train_cf(progress_every=0)
+        monkeypatch.setattr(cfj, "strictly_better", lambda a, b: False)
+        v2 = _judge("v2-A+B")
+        logs2 = v2.train_cf(progress_every=0)
+        for x, y in zip(_weights(d0), _weights(v2)):
+>           assert torch.equal(x, y), "v2 at zero dose moved the learner"
+E           AssertionError: v2 at zero dose moved the learner
+E           assert False
+E            +  where False = <built-in method equal of type object at 0x7697168e3c00>(tensor([[ 0.0816,  0.0725,  0.0873,  ...,  0.0944, -0.0701,  0.0683],\n        [ 0.0374, -0.0134, -0.0395,  ..., -0.081...0132,  0.0870,  ...,  0.0553, -0.0135,  0.0411],\n        [-0.0595,  0.0055, -0.0302,  ..., -0.0341,  0.0267, -0.0526]]), tensor([[ 0.0816,  0.0725,  0.0873,  ...,  0.0960, -0.0701,  0.0682],\n        [ 0.0374, -0.0134, -0.0395,  ..., -0.084...0132,  0.0870,  ...,  0.0571, -0.0134,  0.0398],\n        [-0.0595,  0.0055, -0.0303,  ..., -0.0345,  0.0267, -0.0526]]))
+E            +    where <built-in method equal of type object at 0x7697168e3c00> = torch.equal
+
+tests/test_mc2_judge.py:346: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_mc2_judge.py::test_02b_v2_full_with_the_gate_forced_shut_is_d0
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+MUTANT margin_refilled rc=1 RED
+FAILED tests/test_mc2_judge.py::test_04_v1_gate_semantics_are_strict_lexicographic_and_b_abstains
+FAILED tests/test_mc2_judge.py::test_05_the_b_null_reads_no_tnext_and_draws_once_per_legal_row[v1-A+R]
+FAILED tests/test_mc2_judge.py::test_02b_v2_full_with_the_gate_forced_shut_is_d0
+=== MUTANT arb_ties_to_a ===
+..F
+=================================== FAILURES ===================================
+_______________ test_02b_v2_full_with_the_gate_forced_shut_is_d0 _______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x77b4d4b793d0>
+
+    def test_02b_v2_full_with_the_gate_forced_shut_is_d0(monkeypatch):
+        """(2, v2) With the gate shut v2 keeps x_u everywhere, so no row carries a margin
+        and the arm IS D0 bit for bit -- the same side-effect-freeness receipt for the
+        arbitration path."""
+        d0 = _trainer("D0")
+        logs0 = d0.train_cf(progress_every=0)
+        monkeypatch.setattr(cfj, "strictly_better", lambda a, b: False)
+        v2 = _judge("v2-A+B")
+        logs2 = v2.train_cf(progress_every=0)
+        for x, y in zip(_weights(d0), _weights(v2)):
+>           assert torch.equal(x, y), "v2 at zero dose moved the learner"
+E           AssertionError: v2 at zero dose moved the learner
+E           assert False
+E            +  where False = <built-in method equal of type object at 0x77b4f1ee3c00>(tensor([[ 0.0816,  0.0725,  0.0873,  ...,  0.0944, -0.0701,  0.0683],\n        [ 0.0374, -0.0134, -0.0395,  ..., -0.081...0132,  0.0870,  ...,  0.0553, -0.0135,  0.0411],\n        [-0.0595,  0.0055, -0.0302,  ..., -0.0341,  0.0267, -0.0526]]), tensor([[ 0.0816,  0.0725,  0.0873,  ...,  0.0960, -0.0701,  0.0682],\n        [ 0.0374, -0.0134, -0.0395,  ..., -0.084...0132,  0.0870,  ...,  0.0571, -0.0134,  0.0397],\n        [-0.0595,  0.0055, -0.0302,  ..., -0.0345,  0.0267, -0.0526]]))
+E            +    where <built-in method equal of type object at 0x77b4f1ee3c00> = torch.equal
+
+tests/test_mc2_judge.py:346: AssertionError
+=========================== short test summary info ============================
+FAILED tests/test_mc2_judge.py::test_02b_v2_full_with_the_gate_forced_shut_is_d0
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+MUTANT arb_ties_to_a rc=1 RED
+FAILED tests/test_mc2_judge.py::test_05_the_b_null_reads_no_tnext_and_draws_once_per_legal_row[v1-A+R]
+FAILED tests/test_mc2_judge.py::test_02b_v2_full_with_the_gate_forced_shut_is_d0
+FAILED tests/test_mc2_judge.py::test_02b_v2_full_with_the_gate_forced_shut_is_d0
+=== sweep done ===
