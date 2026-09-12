@@ -8,8 +8,14 @@
   arm's configuration hash before training (fail closed on both sides).
 * Plans every requested run as finished / live / resume / fresh and prints the
   plan before anything starts.  "Live" = the PID in the pid file exists AND its
-  command line is this driver with the same --arm, --seed-index and --root AND
-  its cwd is this tree.
+  command line is this driver with the same --arm, --seed-index and --root (and
+  --cell for an MC2 judge arm) AND its cwd is this tree.
+* ``--launch-limit N`` starts at most N of the fresh / resume runs, in the order the
+  specs are given, so one manifest's spec list can be filled in waves (8 + 2)
+  without changing the manifest.
+* Before launching it counts the LIVE scientific workers on this machine by an
+  anchored ``/proc/<pid>/exe`` + ``cwd`` + ``cmdline`` scan (never ``pgrep -f``) and
+  refuses to exceed ``--max-live-workers`` (default 8).
 * Launches with ``systemd-run --user --scope -p MemoryMax=...``, ``nice -n 10``,
   one BLAS thread, a new session and stdin from /dev/null, then verifies every
   launched process is alive with the right command line.
@@ -18,10 +24,13 @@ Usage::
 
     dev_e0_launch.py --root DIR --calibration FILE [--init-manifest] [--smoke]
                      [--episodes 300] [--stop-after N] [--expect N]
+                     [--launch-limit N] [--max-live-workers 8]
                      [--memory-max 5G] [--dry-run] [--verify] [SPEC ...]
     SPEC = ARM:K            for the single-teacher arms 1-7
          = ARM:K:T0+Ti      for the MULTI-D3 FULL arm 8 (order irrelevant)
          = ARM:K:nN         for the MULTI-D3 matched null arm 9 (N = cardinality)
+         = ARM:K:CELL       for the MC2 judge arm 10, CELL in v1-A+B v1-A+R v2-A
+                            v2-A+B v2-A+R B (B = the shared, rule-independent B-only)
     default = arms 1-4 on DEV triple k = 0.
 """
 
@@ -41,13 +50,15 @@ import dev_e0_common as D
 
 DRIVER = "scripts/run_dev_e0.py"
 DEFAULT_SPECS = [f"{arm}:0" for arm in (1, 2, 3, 4)]
+LAUNCHER_NAME = "dev_e0_launch.py"
 
 
 def utc() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def is_live(pidfile: Path, arm: int, k: int, root: Path) -> int | None:
+def is_live(pidfile: Path, arm: int, k: int, root: Path,
+            cell: str | None = None) -> int | None:
     if not pidfile.is_file():
         return None
     try:
@@ -61,9 +72,94 @@ def is_live(pidfile: Path, arm: int, k: int, root: Path) -> int | None:
     joined = " ".join(args)
     if (all(w in args for w in want)
             and f"--arm {arm} --seed-index {k} --root {root}" in joined
+            and (cell is None or f"--cell {cell}" in joined)
             and Path(cwd) == C.REPO):
         return pid
     return None
+
+
+def live_scientific_workers(cwd_prefix: str, exclude: set[int]) -> list[dict]:
+    """Every live Python SCRIPT process of this user under ``cwd_prefix``.
+
+    Anchored, never ``pgrep -f``: ``/proc/<pid>/exe`` must resolve to THIS
+    interpreter binary, ``/proc/<pid>/cwd`` must lie under ``cwd_prefix`` (a
+    workspace, never ``/`` or a system daemon), and ``/proc/<pid>/cmdline`` must run
+    a ``.py`` script.  Every lane's learner / screen counts -- the cap is on the
+    machine, not on this root.  The launcher itself and ``exclude`` are skipped.
+    """
+    interp = os.path.realpath(sys.executable)
+    out: list[dict] = []
+    for d in Path("/proc").iterdir():
+        if not d.name.isdigit():
+            continue
+        pid = int(d.name)
+        if pid in exclude:
+            continue
+        try:
+            exe = os.readlink(d / "exe")
+            cwd = os.readlink(d / "cwd")
+            argv = [x.decode(errors="replace")
+                    for x in (d / "cmdline").read_bytes().split(b"\0") if x]
+        except OSError:
+            continue
+        if not argv or os.path.realpath(exe) != interp:
+            continue
+        if not (cwd == cwd_prefix.rstrip("/") or cwd.startswith(cwd_prefix.rstrip("/") + "/")):
+            continue
+        script = next((x for x in argv[1:] if x.endswith(".py")), None)
+        if script is None or Path(script).name == LAUNCHER_NAME:
+            continue
+        out.append({"pid": pid, "cwd": cwd, "script": script,
+                    "cmdline": " ".join(argv)[:240]})
+    return sorted(out, key=lambda r: r["pid"])
+
+
+def parse_spec(s: str):
+    """``(arm, k, teachers, n_proposals, bernoulli, cell)`` of one SPEC."""
+    parts = s.split(":")
+    if not 2 <= len(parts) <= 3:
+        raise SystemExit(f"bad spec {s}")
+    arm, k = int(parts[0]), int(parts[1])
+    if arm not in D.ARMS or not 0 <= k <= D.MAX_SEED_INDEX:
+        raise SystemExit(f"bad spec {s} (arms {sorted(D.ARMS)}, k in 0..{D.MAX_SEED_INDEX})")
+    if k in D.RESERVED_SEED_INDICES:
+        raise SystemExit(f"k = {k} is a reserved seed index and stays unused: {s}")
+    teachers, n_proposals, bernoulli, cell = None, None, False, None
+    if arm in D.JUDGE_ARMS:
+        if len(parts) != 3:
+            raise SystemExit(
+                f"arm {arm} is an MC2 judge arm: spec it as {arm}:{k}:CELL with CELL "
+                f"one of {D.JUDGE_CELLS}"
+            )
+        cell = D.judge_cell_label(parts[2])
+        if "B" in D.judge_cell(cell)[1]:
+            from mcrl.algorithms import cf_multi_sources as cfmulti
+            cfmulti.register_candidate_sources(replace=True)
+    elif len(parts) == 3:
+        if arm not in D.MULTI_ARMS:
+            raise SystemExit(f"arm {arm} takes no teacher set: {s}")
+        tail = parts[2]
+        if D.MULTI_ARMS[arm] == "NULL":
+            head = tail[:-1] if tail.endswith("b") else tail
+            if not (head.startswith("n") and head[1:].isdigit()):
+                raise SystemExit(
+                    f"the matched null is matched to a CARDINALITY: use "
+                    f"{arm}:{k}:n2b (Bernoulli-matched, the SELECTED k = 8 "
+                    f"null) or {arm}:{k}:n2 (rejected fixed null), not {s}"
+                )
+            n_proposals = int(head[1:])
+            bernoulli = tail.endswith("b")
+        else:
+            teachers = tuple(tail.split("+"))
+            if D.MULTI_ARMS[arm] == "FULL" and "T_NEXT" in teachers:
+                from mcrl.algorithms import cf_multi_sources as cfmulti
+                cfmulti.register_candidate_sources(replace=True)
+    elif arm in D.MULTI_ARMS:
+        raise SystemExit(
+            f"arm {arm} is a MULTI-D3 arm: spec it as {arm}:{k}:T0+Ti (FULL) "
+            f"or {arm}:{k}:n2 (matched null)"
+        )
+    return arm, k, teachers, n_proposals, bernoulli, cell
 
 
 def main() -> int:
@@ -81,7 +177,14 @@ def main() -> int:
     ap.add_argument("--expect", type=int, default=None)
     ap.add_argument("--memory-max", default="5G")
     ap.add_argument("--rss-cap-gb", type=float, default=4.5)
-    ap.add_argument("--max-processes", type=int, default=6)
+    ap.add_argument("--max-processes", type=int, default=6,
+                    help="the most runs ONE invocation may start")
+    ap.add_argument("--launch-limit", type=int, default=None,
+                    help="start at most N of the fresh / resume runs, in spec order")
+    ap.add_argument("--max-live-workers", type=int, default=8,
+                    help="refuse if live scientific workers + new runs would exceed this")
+    ap.add_argument("--worker-cwd-prefix", default=str(Path.home()),
+                    help="cwd prefix under which a Python script counts as a worker")
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("specs", nargs="*")
@@ -94,42 +197,14 @@ def main() -> int:
     expect = a.expect if a.expect is not None else len(specs)
     if len(specs) != expect:
         raise SystemExit(f"planned {len(specs)} runs, expected exactly {expect}")
-    if len(specs) > a.max_processes:
+    if a.launch_limit is not None and a.launch_limit < 0:
+        raise SystemExit("--launch-limit must be >= 0")
+    if a.launch_limit is None and len(specs) > a.max_processes:
         raise SystemExit(f"{len(specs)} runs exceeds --max-processes {a.max_processes}")
-    parsed = []
-    for s in specs:
-        parts = s.split(":")
-        if not 2 <= len(parts) <= 3:
-            raise SystemExit(f"bad spec {s}")
-        arm, k = int(parts[0]), int(parts[1])
-        if arm not in D.ARMS or not 0 <= k <= 9:
-            raise SystemExit(f"bad spec {s}")
-        teachers, n_proposals, bernoulli = None, None, False
-        if len(parts) == 3:
-            if arm not in D.MULTI_ARMS:
-                raise SystemExit(f"arm {arm} takes no teacher set: {s}")
-            tail = parts[2]
-            if D.MULTI_ARMS[arm] == "NULL":
-                head = tail[:-1] if tail.endswith("b") else tail
-                if not (head.startswith("n") and head[1:].isdigit()):
-                    raise SystemExit(
-                        f"the matched null is matched to a CARDINALITY: use "
-                        f"{arm}:{k}:n2b (Bernoulli-matched, the SELECTED k = 8 "
-                        f"null) or {arm}:{k}:n2 (rejected fixed null), not {s}"
-                    )
-                n_proposals = int(head[1:])
-                bernoulli = tail.endswith("b")
-            else:
-                teachers = tuple(tail.split("+"))
-                if D.MULTI_ARMS[arm] == "FULL" and "T_NEXT" in teachers:
-                    from mcrl.algorithms import cf_multi_sources as cfmulti
-                    cfmulti.register_candidate_sources(replace=True)
-        elif arm in D.MULTI_ARMS:
-            raise SystemExit(
-                f"arm {arm} is a MULTI-D3 arm: spec it as {arm}:{k}:T0+Ti (FULL) "
-                f"or {arm}:{k}:n2 (matched null)"
-            )
-        parsed.append((arm, k, teachers, n_proposals, bernoulli))
+    if a.launch_limit is not None and a.launch_limit > a.max_processes:
+        raise SystemExit(f"--launch-limit {a.launch_limit} exceeds --max-processes "
+                         f"{a.max_processes}")
+    parsed = [parse_spec(s) for s in specs]
 
     from mcrl.runtime import training_pipeline as tp
     episodes = 3 if a.smoke else int(a.episodes)
@@ -140,14 +215,14 @@ def main() -> int:
     code = D.code_manifest()
     arm_configs = {}
     arm_payloads = {}
-    for arm, k, teachers, n_proposals, bernoulli in parsed:
+    for arm, k, teachers, n_proposals, bernoulli, cell in parsed:
         payload = D.arm_config_payload(record, calib, arm, k, episodes=episodes,
                                        devval_episodes=n_devval,
                                        calibration_sha256=calib_sha, tau=a.tau,
                                        teachers=teachers, n_proposals=n_proposals,
-                                       bernoulli=bernoulli)
+                                       bernoulli=bernoulli, cell=cell)
         key = D.spec_key(arm, k, teachers, n_proposals=n_proposals,
-                         bernoulli=bernoulli)
+                         bernoulli=bernoulli, cell=cell)
         if key in arm_configs:
             raise SystemExit(f"duplicate run identity {key}")
         arm_payloads[key] = payload
@@ -169,6 +244,7 @@ def main() -> int:
             "DEVVAL": [D.DEVVAL_ENV_BASE, D.DEVVAL_MOB_BASE],
             "DEVVAL_RANDOM": D.DEVVAL_RANDOM_BASE,
             "DEV_NULL_D2": D.DEV_NULL_D2_BASE,
+            "DEV_NULL_MC2": D.DEV_NULL_MC2_BASE,
         },
     }
     if mpath.is_file():
@@ -187,29 +263,57 @@ def main() -> int:
         raise SystemExit(f"no {mpath}; pass --init-manifest for a fresh root")
 
     plan = []
-    for arm, k, teachers, n_proposals, bernoulli in parsed:
+    for arm, k, teachers, n_proposals, bernoulli, cell in parsed:
         key = D.spec_key(arm, k, teachers, n_proposals=n_proposals,
-                         bernoulli=bernoulli)
+                         bernoulli=bernoulli, cell=cell)
         name = D.arm_name(arm, teachers, n_proposals=n_proposals,
-                          bernoulli=bernoulli)
+                          bernoulli=bernoulli, cell=cell)
         d = root / f"{name}-k{k}"
         # pid / log tag: unchanged "E0-<arm>-k<k>" for arms 1-7, plus the MULTI-D3
-        # label so two FULL arms with different teacher sets never share a pid file.
-        tag = (f"E0-{arm}-k{k}" if arm not in D.MULTI_ARMS
-               else f"E0-{arm}-{D.multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli).label()}-k{k}")
+        # label or the MC2 cell so two runs of one arm never share a pid file.
+        if arm in D.JUDGE_ARMS:
+            tag = f"E0-{arm}-{cell}-k{k}"
+        elif arm in D.MULTI_ARMS:
+            tag = (f"E0-{arm}-{D.multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli).label()}"
+                   f"-k{k}")
+        else:
+            tag = f"E0-{arm}-k{k}"
         pidf = root / f"{tag}.pid"
         st = json.loads((d / "status.json").read_text()) if (d / "status.json").is_file() else {}
-        live = is_live(pidf, arm, k, root)
+        live = is_live(pidf, arm, k, root, cell)
         if st.get("status") == "complete":
             state = "finished"
         elif live:
             state = f"live pid {live}"
+        elif st.get("status") == "stopped-at" and a.stop_after is not None \
+                and int(st.get("stopped_at", -1)) >= int(a.stop_after):
+            state = f"stopped-at {st.get('stopped_at')}"
         else:
             state = "resume" if (d / "resume.pt").is_file() else "fresh"
-        plan.append((arm, k, teachers, n_proposals, bernoulli, key, name, tag, d, pidf, state))
+        plan.append((arm, k, teachers, n_proposals, bernoulli, cell, key, name, tag,
+                     d, pidf, state))
+    startable = [p for p in plan if p[-1] in ("fresh", "resume")]
+    to_launch = (startable if a.launch_limit is None
+                 else startable[:int(a.launch_limit)])
+    deferred = [p for p in startable if p not in to_launch]
     print(f"[{utc()}] plan for {root} (commit {code['commit']}):")
-    for arm, k, _t, _n, _b, key, name, _tag, _d, _p, state in plan:
-        print(f"  {name} k{k} [cfg {arm_configs[key][:12]}]: {state}")
+    for p in plan:
+        arm, k, key, name, state = p[0], p[1], p[6], p[7], p[-1]
+        note = ("  -> launch" if p in to_launch
+                else "  -> deferred (launch limit)" if p in deferred else "")
+        print(f"  {name} k{k} [cfg {arm_configs[key][:12]}]: {state}{note}")
+    if len(to_launch) > a.max_processes:
+        raise SystemExit(f"{len(to_launch)} runs exceeds --max-processes {a.max_processes}")
+    workers = live_scientific_workers(a.worker_cwd_prefix,
+                                      exclude={os.getpid(), os.getppid()})
+    print(f"  live scientific workers under {a.worker_cwd_prefix}: {len(workers)}")
+    for w in workers:
+        print(f"    pid {w['pid']} cwd {w['cwd']} :: {w['cmdline']}")
+    if len(workers) + len(to_launch) > a.max_live_workers:
+        raise SystemExit(
+            f"{len(workers)} live workers + {len(to_launch)} new runs exceeds "
+            f"--max-live-workers {a.max_live_workers}; refusing"
+        )
     if a.dry_run:
         return 0
 
@@ -218,15 +322,16 @@ def main() -> int:
     if not env.get("MCRL_TLE_ROOT"):
         raise SystemExit("MCRL_TLE_ROOT must point at the pinned archive copy")
     launched = []
-    for arm, k, teachers, n_proposals, bernoulli, _key, name, tag, d, pidf, state in plan:
-        if state not in ("fresh", "resume"):
-            continue
+    for (arm, k, teachers, n_proposals, bernoulli, cell, _key, name, tag, d, pidf,
+         state) in to_launch:
         cmd = ["systemd-run", "--user", "--scope", "-p", f"MemoryMax={a.memory_max}",
                "--quiet", "nice", "-n", "10", sys.executable, DRIVER,
                "--arm", str(arm), "--seed-index", str(k), "--root", str(root),
                "--calibration", str(a.calibration.resolve()),
                "--episodes", str(episodes), "--devval-episodes", str(n_devval),
                "--rss-cap-gb", str(a.rss_cap_gb)]
+        if cell is not None:
+            cmd += ["--cell", cell]
         if teachers is not None:
             cmd += ["--teachers", "+".join(teachers)]
         if n_proposals is not None:
@@ -243,18 +348,26 @@ def main() -> int:
         p = subprocess.Popen(cmd, cwd=C.REPO, env=env, stdin=subprocess.DEVNULL,
                              stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         pidf.write_text(str(p.pid))
-        launched.append((arm, k, name, tag, p.pid))
+        launched.append((arm, k, name, tag, p.pid, cell))
         print(f"  launched {name} k{k} pid {p.pid} MemoryMax={a.memory_max}")
     time.sleep(10)
-    dead = [(name, k, pid) for arm, k, name, tag, pid in launched
-            if is_live(root / f"{tag}.pid", arm, k, root) != pid]
+    dead = [(name, k, pid) for arm, k, name, tag, pid, cell in launched
+            if is_live(root / f"{tag}.pid", arm, k, root, cell) != pid]
     if dead:
         raise SystemExit(f"FAILED TO START (or died within 10 s): {dead}")
     print(f"[{utc()}] all {len(launched)} launched processes alive")
+    for arm, k, name, tag, pid, cell in launched:
+        try:
+            exe = os.readlink(f"/proc/{pid}/exe")
+            cwd = os.readlink(f"/proc/{pid}/cwd")
+            argv = Path(f"/proc/{pid}/cmdline").read_bytes().replace(b"\0", b" ").decode()
+        except OSError as err:
+            raise SystemExit(f"{name} k{k} pid {pid}: /proc unreadable: {err}")
+        print(f"  /proc/{pid}: exe={exe} cwd={cwd} cmdline={argv.strip()}")
     if a.verify:
         deadline = time.time() + 900
         want_digest = D.manifest_digest(code)
-        pending = [(arm, k, key, name) for arm, k, _t, _n, _b, key, name, *_r in plan]
+        pending = [(p[0], p[1], p[6], p[7]) for p in to_launch]
         while pending and time.time() < deadline:
             nxt = []
             for arm, k, key, name in pending:
@@ -273,7 +386,7 @@ def main() -> int:
                 time.sleep(10)
         if pending:
             raise SystemExit(f"no status fingerprint after 15 min: {pending}")
-        print(f"[{utc()}] verified: {len(plan)} fingerprints carry this code and config")
+        print(f"[{utc()}] verified: {len(to_launch)} fingerprints carry this code and config")
     return 0
 
 

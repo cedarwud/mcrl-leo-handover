@@ -811,7 +811,14 @@ def test_the_cell_table_is_a_function_of_the_frozen_mechanism_id():
         assert [c.sources for c in table.values() if c.is_judge].count(("A", "B")) == 1
         assert table["B-null"].null_role == "MC2-B-null"
         assert table["MODQN-eq16"].kind == "modqn"
-        assert S.MECHANISM_OF[mid] and S.cells(mid, optional=("D3-null", "D3-XEP"))
+        assert S.RULE_PREFIX[mid] and S.cells(mid, optional=("D3-null", "D3-XEP"))
+        # B-only is rule-independent: ONE identity under both versions
+        assert table["B-only"].rule_independent
+        assert table["B-only"].rule_id(mid) == S.BONLY_RULE_ID
+        assert table["FULL"].rule_id(mid) == mid
+        assert table["B-null"].rule_id(mid) == mid
+        assert table["FULL"].cell_label(mid) == f"{S.RULE_PREFIX[mid]}-A+B"
+        assert table["B-only"].cell_label(mid) == "B"
     opt = S.cells(V1, optional=("D3-null", "D3-XEP"))
     assert list(opt)[-2:] == ["D3-null", "D3-XEP"]
     assert len(S.specs(V1, optional=("D3-null", "D3-XEP"))) == 27
@@ -916,7 +923,7 @@ def _stub_judge(monkeypatch) -> bool:
                         lambda spec: {s: {"source_id": s} for s in spec.sources})
     # The judge MECHANISM names are registered by the mechanism commit; pre-merge the
     # declaration can still be structure-tested by registering them here only.
-    judge_mechs = tuple(S.MECHANISM_OF[m] for m in S.MECHANISM_IDS)
+    judge_mechs = ("MC2",)
     monkeypatch.setattr(cft, "MECHANISMS", cft.MECHANISMS + judge_mechs)
     monkeypatch.setattr(cft, "TEACHERS", cft.TEACHERS + ("judge",))
     monkeypatch.setattr(cfd, "EXPECTED_TEACHER",
@@ -970,17 +977,32 @@ def test_the_frozen_manifest_carries_everything_that_must_be_hashed(tmp_path,
         judged = [p for p in m["arm_payloads"].values() if p["kind"] == "judge"]
         assert judged, "no judge cell in the declaration"
         for p in judged:
-            assert p["judge_spec"]["mechanism_id"] == mid
+            srcs = tuple(p["judge_spec"]["sources"])
+            # the frozen version's rule, except the rule-INDEPENDENT shared B-only
+            assert p["judge_spec"]["mechanism_id"] == (
+                S.BONLY_RULE_ID if srcs == ("B",) else mid)
             assert p["judge_source_identities"]
             if "R" in tuple(p["judge_spec"]["sources"]):
                 assert tuple(p["judge_spec"]["null_key"]) == (
                     9_263_000, p["seed_index"])
         if real_judge:      # the library's own dataclass, once it is in the tree
+            import dev_e0_common as D
             import mcrl.algorithms.cf_judge as cfj
+            assert cfj.RULE_OF[mid] == S.RULE_PREFIX[mid]
+            assert S.BONLY_RULE_ID == cfj.BONLY_MECHANISM_ID
+            assert S.judge_mechanism_name() == cfj.MECHANISM_NAME
             for p in judged:
                 assert p["judge_spec"]["judge_id"] == cfj.JUDGE_ID
                 assert p["judge_spec"]["judge_eta0"] == cfj.ETA0_JUDGE
-                assert cfj.MECHANISM_IDS[S.MECHANISM_OF[mid]] == mid
+                assert p["mechanism"] == cfj.MECHANISM_NAME
+                # the rule id is the frozen version's, except for the shared B-only
+                srcs = tuple(p["judge_spec"]["sources"])
+                rid = p["judge_spec"]["mechanism_id"]
+                assert rid == (cfj.BONLY_MECHANISM_ID if srcs == ("B",) else mid)
+                assert rid == p["rule_id"]
+                assert srcs in cfj.DECLARED_CELLS[rid], (rid, srcs)
+                # the development lane's own parser agrees with this cell's label
+                assert D.judge_cell(p["mc2_cell_label"]) == (rid, srcs)
         # the whole declaration hashes deterministically
         again = S.declared_manifest(record, CALIB, "deadbeef", mechanism_id=mid,
                                     optional=("D3-null", "D3-XEP"),

@@ -25,6 +25,7 @@ import cf3_common as C
 import numpy as np
 
 from mcrl.algorithms import cf_dev as cfd
+from mcrl.algorithms import cf_judge as cfj
 from mcrl.algorithms import cf_multi_sources as cfmulti
 from mcrl.algorithms import cf_teacher as cft
 from mcrl.algorithms.cf_ratio import CFRatioSettings, episode_seeds
@@ -37,6 +38,10 @@ DEVVAL_ENV_BASE, DEVVAL_MOB_BASE = 9_211_000, 9_212_000
 DEVVAL_RANDOM_BASE = 9_221_000
 DEV_NULL_D2_BASE = 9_231_000
 DEV_NULL_D3_BASE = 9_241_000
+DEV_NULL_MC2_BASE = cfj.NULL_BASE          # 9_243_000, MC2 contract section 6
+MAX_SEED_INDEX = cfd.MAX_DEV_SEED_INDEX    # 19
+RESERVED_SEED_INDICES: tuple[int, ...] = (9,)
+"""k = 9 is the Amendment-15 index and stays unused (MC2 contract section 6)."""
 N_DEVVAL = 24
 
 # ---------------------------------------------------------------- batch
@@ -58,9 +63,26 @@ ARMS: dict[int, tuple[str, str]] = {
     # so one n = 2 null run is shared by every two-teacher candidate.
     8: ("D3-multi", "equal_share"),
     9: ("D3-multi-null", "equal_share"),
+    # ---- MC2 contract r1 section 6: the judge-gated arm ----------------------
+    # 10 is PARAMETERISED over (rule, source set): v1-A+B, v1-A+R (MC2-JGO-v1),
+    # v2-A, v2-A+B, v2-A+R (MC2-ARB-v2) and the shared, rule-independent B.
+    # A-only-v1 is arm 4 itself and is not an arm-10 cell.
+    10: (cfj.MECHANISM_NAME, "equal_share"),
 }
 MULTI_ARMS: dict[int, str] = {8: "FULL", 9: "NULL"}
 """The MULTI-D3 arms of :data:`ARMS`, and which side of the matrix each one is."""
+
+JUDGE_ARMS: dict[int, str] = {10: cfj.MECHANISM_NAME}
+"""The MC2 judge arms of :data:`ARMS` (parameterised over rule x source set)."""
+
+JUDGE_RULE_IDS: dict[str, str] = {"v1": cfj.JGO_MECHANISM_ID, "v2": cfj.ARB_MECHANISM_ID}
+"""Cell-label rule prefix -> versioned rule identity.  The shared B-only cell has no
+prefix and no rule id (contract r1 section 3)."""
+
+TNEXT_FILE_SHA256: str = (
+    "86f0d6eef483612e28b27ddb5a472c6368563fc41c46feff177367e77df91e1f"
+)
+"""The committed Lane N ``cf_tnext.py`` (Amendment 15 section 2A, unchanged in MC2)."""
 
 MATCHED_NULL_ARM: dict[int, int] = {4: 7, 8: 9}
 """Which arm is the declared matched null of a teacher arm.
@@ -164,10 +186,97 @@ def multi_spec(arm: int, teachers=None, *, n_proposals: int | None = None,
     return cfd.MultiD3Spec(n_proposals=n, null_id=cft.MULTI_NULL_ID)
 
 
+JUDGE_CELLS: tuple[str, ...] = ("v1-A+B", "v1-A+R", "v2-A", "v2-A+B", "v2-A+R", "B")
+"""The six declared MC2 cells, by their canonical labels (contract r1 section 6)."""
+
+
+def judge_cell(cell) -> tuple[str, tuple[str, ...]]:
+    """``(rule id, canonical source set)`` of an MC2 cell label.
+
+    ``v1-A+B`` / ``v2-B+A`` / ... name a rule and a source set; the shared B-only is
+    rule-independent, so ``B``, ``v1-B`` and ``v2-B`` are ONE cell with ONE identity.
+    """
+    raw = str(cell)
+    rule, _sep, src = raw.partition("-") if "-" in raw else ("", "", raw)
+    parts = [s for s in src.split("+")]
+    srcs = tuple(sorted(parts))
+    if len(set(srcs)) != len(srcs) or not all(srcs):
+        raise SystemExit(f"MC2 cell {cell!r} repeats or omits a source")
+    if srcs == ("B",) and rule in ("", "v1", "v2"):
+        return cfj.BONLY_MECHANISM_ID, srcs
+    if rule not in JUDGE_RULE_IDS:
+        raise SystemExit(
+            f"MC2 cell {cell!r} needs its rule: one of {JUDGE_CELLS}"
+        )
+    mid = JUDGE_RULE_IDS[rule]
+    if srcs not in cfj.DECLARED_CELLS[mid]:
+        raise SystemExit(
+            f"MC2 cell {cell!r} is not declared; declared cells: {JUDGE_CELLS} "
+            "(A-only-v1 is arm 4)"
+        )
+    return mid, srcs
+
+
+def judge_cell_label(cell) -> str:
+    mid, srcs = judge_cell(cell)
+    return ("+".join(srcs) if mid == cfj.BONLY_MECHANISM_ID
+            else f"{cfj.RULE_OF[mid]}-{'+'.join(srcs)}")
+
+
+def judge_spec(arm: int, cell, k: int):
+    """The :class:`~mcrl.algorithms.cf_dev.JudgeSpec` of an MC2 judge cell, or None."""
+    a = int(arm)
+    if a not in JUDGE_ARMS:
+        if cell is not None:
+            raise SystemExit(f"arm {a} is not an MC2 judge arm; it takes no cell")
+        return None
+    if cell is None:
+        raise SystemExit(f"arm {a} (MC2 judge) needs a cell: one of {JUDGE_CELLS}")
+    mid, srcs = judge_cell(cell)
+    if "B" in srcs:
+        sha = C.sha256_file(REPO / "src/mcrl/algorithms/cf_tnext.py")
+        if sha != TNEXT_FILE_SHA256:
+            raise SystemExit(f"cf_tnext.py sha256 {sha} is not the committed Lane N source")
+    return cfd.JudgeSpec(
+        mechanism_id=mid, sources=srcs,
+        source_a=(cfj.SOURCE_A_ID if "A" in srcs else None),
+        source_b=(cfj.SOURCE_B_ID if "B" in srcs else None),
+        null_id=(cfj.NULL_ID if "R" in srcs else None),
+        null_key=((DEV_NULL_MC2_BASE, int(k)) if "R" in srcs else None),
+    )
+
+
+def judge_source_identities(spec) -> dict:
+    """Canonical identities of the enabled sources, for the configuration hash."""
+    out: dict = {}
+    if spec.uses_a:
+        out["A"] = {
+            "source_id": cfj.SOURCE_A_ID,
+            "rule": ("LP-prev(c=1,m=0): argmax_{a legal} log2(1+max(gamma_a,0)) "
+                     "- 1[N_a=0], first index on ties (cf_teacher.t0_scores)"),
+        }
+    if spec.uses_b:
+        out["B"] = dict(cfmulti.tnext_identity(), cf_tnext_sha256=TNEXT_FILE_SHA256)
+    if spec.uses_r:
+        out["R"] = {
+            "null_id": cfj.NULL_ID, "null_key": list(spec.null_key),
+            "rule": ("one uniform legal action per user with a legal action at "
+                     "t < T-1 (cf_teacher.random_legal_actions), abstains at T-1, "
+                     "reads no T_NEXT quantity"),
+        }
+    return out
+
+
 def spec_key(arm: int, k: int, teachers=None, *, n_proposals: int | None = None,
-             bernoulli: bool = False) -> str:
+             bernoulli: bool = False, cell=None) -> str:
     """The RUN-MANIFEST key of one run.  Arms 1-7 keep the historical ``ARM:K``."""
     a = int(arm)
+    if a in JUDGE_ARMS:
+        if teachers is not None or n_proposals is not None or bernoulli:
+            raise SystemExit(f"arm {a} is an MC2 judge arm; it takes a cell only")
+        return f"{a}:{int(k)}:{judge_spec(a, cell, k).label()}"
+    if cell is not None:
+        raise SystemExit(f"arm {a} is not an MC2 judge arm; it takes no cell")
     if a not in MULTI_ARMS:
         if teachers is not None or n_proposals is not None or bernoulli:
             raise SystemExit(f"arm {a} is not a MULTI-D3 arm; it takes no teacher set")
@@ -177,8 +286,14 @@ def spec_key(arm: int, k: int, teachers=None, *, n_proposals: int | None = None,
 
 
 def arm_name(arm: int, teachers=None, *, n_proposals: int | None = None,
-             bernoulli: bool = False) -> str:
+             bernoulli: bool = False, cell=None) -> str:
     mech, credit = ARMS[int(arm)]
+    if int(arm) in JUDGE_ARMS:
+        if cell is None:
+            raise SystemExit(f"arm {int(arm)} (MC2 judge) needs a cell")
+        return f"E0-{int(arm)}-{mech}-{judge_cell_label(cell)}-{credit}"
+    if cell is not None:
+        raise SystemExit(f"arm {int(arm)} is not an MC2 judge arm; it takes no cell")
     spec = multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli)
     if spec is None:
         return f"E0-{int(arm)}-{mech}-{credit}"
@@ -250,7 +365,7 @@ def e0_dev_settings(mechanism: str, k: int, *, devval_episodes: int = N_DEVVAL,
     Amendment 6 section 7 allows the soft-distillation temperature to move on DEV /
     DEVVAL evidence).  Every other value stays frozen, and a different tau is a
     DIFFERENT VERSION: it changes the configuration hash."""
-    if mechanism not in cft.MECHANISMS:
+    if mechanism not in cfd.ALL_MECHANISMS:
         raise SystemExit(f"unknown mechanism {mechanism!r}")
     return cfd.DevSettings(
         mechanism=mechanism,
@@ -267,18 +382,22 @@ def arm_config_payload(record, calib: dict, arm: int, k: int, *, episodes: int,
                        devval_episodes: int, calibration_sha256: str,
                        tau: float | None = None, teachers=None,
                        n_proposals: int | None = None,
-                       bernoulli: bool = False) -> dict:
+                       bernoulli: bool = False, cell=None) -> dict:
     """Everything that defines one arm's run, for its configuration hash.
 
     For a MULTI-D3 arm the payload additionally carries ``multi_spec``: the
     versioned MECHANISM identity, the CANONICAL TEACHER identities of a FULL arm,
     and the NULL identity plus cardinality of a matched null (Amendment 15 section
-    6, requirement 9).  Arms 1-7 take no teacher set and their payload -- and so
-    their configuration hash -- is byte-for-byte what it was before MULTI-D3
-    existed (``tests/test_cf_multid3.py`` checks that against the base commit).
+    6, requirement 9).  For an MC2 judge arm it carries ``judge_spec`` (versioned
+    mechanism id, canonical source set, judge id + eta0, null id + key) and the
+    enabled sources' identities (MC2 contract section 5 item 7).  Arms 1-9 take no
+    source set and their payload -- and so their configuration hash -- is
+    byte-for-byte what it was before (``tests/test_mc2_judge.py`` checks that
+    against the base commit and against the launched k = 8 manifest).
     """
     mech, credit = ARMS[int(arm)]
     spec = multi_spec(arm, teachers, n_proposals=n_proposals, bernoulli=bernoulli)
+    jspec = judge_spec(arm, cell, k)
     train_seed, env_seed, mob_seed = dev_triple(k)
     extra: dict = {}
     if spec is not None:
@@ -288,11 +407,15 @@ def arm_config_payload(record, calib: dict, arm: int, k: int, *, episodes: int,
                    else {"source_id": name})
             for name in spec.teachers
         }
+    if jspec is not None:
+        extra["judge_spec"] = dataclasses.asdict(jspec)
+        extra["judge_rule_definition"] = cfj.RULE_DEFINITIONS[jspec.mechanism_id]
+        extra["judge_source_identities"] = judge_source_identities(jspec)
     return {
         **extra,
         "arm": int(arm),
         "arm_name": arm_name(arm, teachers, n_proposals=n_proposals,
-                             bernoulli=bernoulli),
+                             bernoulli=bernoulli, cell=cell),
         "mechanism": mech,
         "credit_mode": credit, "seed_index": int(k),
         "seeds": {"train": train_seed, "env": env_seed, "mobility": mob_seed},
@@ -319,6 +442,9 @@ def config_hash(payload: dict) -> str:
 # ---------------------------------------------------------------- manifest
 MANIFEST_FILES = (
     "src/mcrl/algorithms/cf_dev.py",
+    "src/mcrl/algorithms/cf_judge.py",
+    "src/mcrl/algorithms/cf_tnext.py",
+    "src/mcrl/algorithms/cf_multi_sources.py",
     "src/mcrl/algorithms/cf_teacher.py",
     "src/mcrl/algorithms/cf_ratio.py",
     "src/mcrl/algorithms/cf_credit.py",

@@ -98,15 +98,27 @@ MECHANISM_IDS: tuple[str, ...] = (JGO_MECHANISM_ID, ARB_MECHANISM_ID)
 its own reason; S1 runs exactly ONE of them, the one the owner / controller freezes
 after the DEV screen.  No third version and no sweep."""
 
-MECHANISM_OF: dict[str, str] = {
-    JGO_MECHANISM_ID: "MC2-JGO",
-    ARB_MECHANISM_ID: "MC2-ARB",
-}
-"""Versioned mechanism identity -> the ``DevSettings.mechanism`` that carries it.
+RULE_PREFIX: dict[str, str] = {JGO_MECHANISM_ID: "v1", ARB_MECHANISM_ID: "v2"}
+"""The frozen version -> the cell-label prefix the development lane uses.
 
-Asserted against the library's own table (``cf_judge.MECHANISM_IDS``) by the test
-suite, so a version whose implementation names itself differently fails closed here
-instead of silently running the wrong mechanism."""
+The library is the authority for both (``cf_judge.RULE_OF`` /
+``dev_e0_common.JUDGE_CELLS``); this table exists so the S1 cell names map onto the
+development cell labels, and the test suite asserts the mapping against the library
+rather than trusting it."""
+
+BONLY_RULE_ID: str = "MC2-B-ONLY-SHARED-v1"
+"""The SHARED, rule-independent identity of the B-only cell (``cf_judge``'s own
+``BONLY_MECHANISM_ID``).  ``B-only``'s labels and target are identical under both
+versions, so it carries ONE identity with no version in it -- the method owner's
+co-sign requires exactly that, and it means the cell is the same configuration
+whichever version S1 freezes."""
+
+
+def judge_mechanism_name() -> str:
+    """``DevSettings.mechanism`` of every MC2 judge cell (the rule is in JudgeSpec)."""
+    from mcrl.algorithms import cf_judge as cfj
+
+    return cfj.MECHANISM_NAME
 
 DROP_ONE_OF_B: dict[str, str] = {
     JGO_MECHANISM_ID: "D3-T0",
@@ -126,16 +138,35 @@ class S1Cell:
     name: str
     kind: str                       # "cf" | "judge" | "modqn"
     role: str
-    mechanism: str | None = None    # DevSettings mechanism ("cf" / "judge" cells)
+    mechanism: str | None = None    # DevSettings mechanism ("cf" cells)
     sources: tuple[str, ...] = ()   # judge cells: ("A","B") / ("B",) / ("A","R") / ("A",)
     tau: float | None = None
     null_role: str | None = None    # key into cf_s1_lane.S1_NULL_BASE_FOR
     optional: bool = False
+    rule_independent: bool = False  # judge cells: carries the SHARED rule identity
     serves: tuple[str, ...] = field(default_factory=tuple)
 
     @property
     def is_judge(self) -> bool:
         return self.kind == "judge"
+
+    def rule_id(self, mechanism_id: str) -> str:
+        """The versioned RULE identity this cell runs under.
+
+        Every judge cell but ``B-only`` runs the frozen version's rule; ``B-only`` is
+        rule-independent and carries the shared identity in both, so its
+        configuration -- and therefore its hash -- does not depend on which version
+        S1 freezes.
+        """
+        if not self.is_judge:
+            raise SystemExit(f"cell {self.name} has no rule identity")
+        return BONLY_RULE_ID if self.rule_independent else str(mechanism_id)
+
+    def cell_label(self, mechanism_id: str) -> str:
+        """The development lane's canonical cell label (``v1-A+B``, ``v2-A``, ``B``)."""
+        if self.rule_independent:
+            return "+".join(self.sources)
+        return f"{RULE_PREFIX[str(mechanism_id)]}-{'+'.join(self.sources)}"
 
     @property
     def uses_xep(self) -> bool:
@@ -153,8 +184,9 @@ _BASE_CELLS: tuple[S1Cell, ...] = (
            serves=("FULL_vs_D3T0", "D3T0_vs_D0", "FULL_vs_A_only[v1]")),
     S1Cell("B-only", "judge",
            "drop-one of A: the foresight challenger alone, no anchor; its incumbent "
-           "is the learner's own executed action",
-           sources=("B",), serves=("FULL_vs_B_only",)),
+           "is the learner's own executed action. RULE-INDEPENDENT: identical labels "
+           "and target under both versions, so ONE identity and one cell",
+           sources=("B",), rule_independent=True, serves=("FULL_vs_B_only",)),
     S1Cell("FULL", "judge",
            "the MC2 method under test: both specialists, judge-gated",
            sources=("A", "B"),
@@ -427,7 +459,7 @@ def s1_dev_settings(mechanism_id: str, name: str, k: int, *,
     spec = cell(mechanism_id, name, optional=optional)
     if spec.kind == "modqn":
         raise SystemExit(f"cell {name} has no teacher settings")
-    mech = MECHANISM_OF[str(mechanism_id)] if spec.is_judge else spec.mechanism
+    mech = judge_mechanism_name() if spec.is_judge else spec.mechanism
     teacher = ("judge" if spec.is_judge
                else {"D0": "none", "D3-null": "random",
                      cfs1.XEP_MECHANISM: cfs1.XEP_TEACHER}.get(mech, "T0"))
@@ -465,17 +497,28 @@ def judge_spec(mechanism_id: str, name: str, k: int, *, lane: str = S1_LANE,
         from mcrl.algorithms import cf_judge as cfj
     except ImportError as err:                # pragma: no cover - pre-merge trees
         raise SystemExit(
-            "the MC2 judge module is not in this tree yet: merge lane A's mechanism "
+            "the MC2 judge module is not in this tree yet: merge the mechanism "
             f"commit before declaring a judge cell ({err})"
         ) from err
     if not hasattr(cfd, "JudgeSpec"):         # pragma: no cover - pre-merge trees
         raise SystemExit("cf_dev.JudgeSpec is not in this tree yet (merge required)")
     mid = str(mechanism_id)
-    if cfj.MECHANISM_IDS.get(MECHANISM_OF[mid]) != mid:
+    # The DEVELOPMENT lane's own parser is the authority for what a cell label means,
+    # so an S1 cell cannot be a (rule, source set) pair the development screen would
+    # not accept -- and the rule id it returns is checked against this cell's own.
+    label = spec.cell_label(mid)
+    rule_id, srcs = D.judge_cell(label)
+    if rule_id != spec.rule_id(mid) or srcs != tuple(spec.sources):
         raise SystemExit(
-            f"this tree implements {cfj.MECHANISM_IDS} and cannot run {mid!r}"
+            f"S1 cell {spec.name} declares {spec.rule_id(mid)} / {spec.sources} but "
+            f"the development label {label!r} means {rule_id} / {srcs}"
         )
-    if "B" in spec.sources:
+    if srcs not in cfj.DECLARED_CELLS.get(rule_id, ()):
+        raise SystemExit(
+            f"{srcs} is not a declared cell of {rule_id}: "
+            f"{cfj.DECLARED_CELLS.get(rule_id, ())}"
+        )
+    if "B" in srcs:
         sha = C.sha256_file(REPO / "src/mcrl/algorithms/cf_tnext.py")
         if sha != D.TNEXT_FILE_SHA256:
             raise SystemExit(
@@ -483,11 +526,11 @@ def judge_spec(mechanism_id: str, name: str, k: int, *, lane: str = S1_LANE,
                 f"{D.TNEXT_FILE_SHA256}"
             )
     return cfd.JudgeSpec(
-        mechanism_id=mid, sources=tuple(spec.sources),
-        source_a=(cfj.SOURCE_A_ID if "A" in spec.sources else None),
-        source_b=(cfj.SOURCE_B_ID if "B" in spec.sources else None),
-        null_id=(cfj.NULL_ID if "R" in spec.sources else None),
-        null_key=(null_key(spec, k, lane=lane) if "R" in spec.sources else None),
+        mechanism_id=rule_id, sources=srcs,
+        source_a=(cfj.SOURCE_A_ID if "A" in srcs else None),
+        source_b=(cfj.SOURCE_B_ID if "B" in srcs else None),
+        null_id=(cfj.NULL_ID if "R" in srcs else None),
+        null_key=(null_key(spec, k, lane=lane) if "R" in srcs else None),
     )
 
 
@@ -518,8 +561,7 @@ def cell_config_payload(record, calib: dict, mechanism_id: str, name: str, k: in
         "run_name": run_name(mechanism_id, name, optional=optional),
         "kind": spec.kind, "role": spec.role, "serves": list(spec.serves),
         "optional": bool(spec.optional),
-        "mechanism": (MECHANISM_OF[str(mechanism_id)] if spec.is_judge
-                      else spec.mechanism),
+        "mechanism": (judge_mechanism_name() if spec.is_judge else spec.mechanism),
         "credit_mode": (CREDIT_MODE if spec.kind != "modqn" else None),
         "seed_index": int(k),
         "seeds": {"train": train_seed, "env": env_seed, "mobility": mob_seed},
@@ -541,6 +583,9 @@ def cell_config_payload(record, calib: dict, mechanism_id: str, name: str, k: in
         jspec = judge_spec(mechanism_id, name, k, lane=lane, optional=optional)
         payload["judge_spec"] = dataclasses.asdict(jspec)
         payload["judge_source_identities"] = judge_source_identities(jspec)
+        payload["mc2_cell_label"] = spec.cell_label(str(mechanism_id))
+        payload["rule_id"] = spec.rule_id(str(mechanism_id))
+        payload["rule_independent"] = bool(spec.rule_independent)
     return payload
 
 
@@ -630,7 +675,11 @@ def declared_manifest(record, calib: dict, calibration_sha256: str, *,
             "docs/dev-e0/V025-CONTROLLER-AMENDMENT-12-S1-SECOND-NULL-2026-09-12.md",
         ],
         "mechanism_id": mid,
-        "mechanism": MECHANISM_OF[mid],
+        "mechanism": judge_mechanism_name(),
+        "rule_ids": {name: spec.rule_id(mid) for name, spec in table.items()
+                     if spec.is_judge},
+        "cell_labels": {name: spec.cell_label(mid) for name, spec in table.items()
+                        if spec.is_judge},
         "drop_one_of_B": DROP_ONE_OF_B[mid],
         "declared_versions": list(MECHANISM_IDS),
         "cells": {name: dataclasses.asdict(spec) for name, spec in table.items()},

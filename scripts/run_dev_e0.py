@@ -78,6 +78,9 @@ def main() -> int:
                          "9395/24000 (controller record 716f104e).  Without it the "
                          "rejected fixed two-proposal null is used, which is "
                          "engineering history and not a k = 8 comparator.")
+    ap.add_argument("--cell", default=None,
+                    help="MC2 judge arm only: v1-A+B, v1-A+R, v2-A, v2-A+B, v2-A+R or "
+                         "the shared B; its rule id and source set are in the hash")
     ap.add_argument("--smoke", action="store_true",
                     help="SMOKE ONLY: 3 episodes, 2 DEVVAL episodes, read at episode 1")
     ap.add_argument("--rss-cap-gb", type=float, default=4.5)
@@ -90,10 +93,14 @@ def main() -> int:
     teachers = None if a.teachers is None else tuple(a.teachers.split("+"))
     if teachers is not None and cfmulti.T_NEXT_ID in teachers:
         cfmulti.register_candidate_sources(replace=True)
+    cell = a.cell
+    if cell is not None and "B" in D.judge_cell(cell)[1]:
+        cfmulti.register_candidate_sources(replace=True)
+    jspec = D.judge_spec(arm, cell, k)
     spec = D.multi_spec(arm, teachers, n_proposals=a.n_proposals,
                         bernoulli=a.bernoulli_null)
     name = D.arm_name(arm, teachers, n_proposals=a.n_proposals,
-                      bernoulli=a.bernoulli_null)
+                      bernoulli=a.bernoulli_null, cell=cell)
     out = a.root / f"{name}-k{k}"
     out.mkdir(parents=True, exist_ok=True)
     status_path, logs_path = out / "status.json", out / "episode-logs.json"
@@ -115,7 +122,7 @@ def main() -> int:
                                        devval_episodes=n_devval,
                                        calibration_sha256=calib_sha, tau=a.tau,
                                        teachers=teachers, n_proposals=a.n_proposals,
-                                       bernoulli=a.bernoulli_null)
+                                       bernoulli=a.bernoulli_null, cell=cell)
     cfg_hash = D.config_hash(cfg_payload)
 
     run_manifest_path = a.root / "RUN-MANIFEST.json"
@@ -127,7 +134,7 @@ def main() -> int:
             or bool(run_manifest.get("smoke")) != bool(a.smoke)
             or run_manifest.get("arm_configs", {}).get(
                 D.spec_key(arm, k, teachers, n_proposals=a.n_proposals,
-                           bernoulli=a.bernoulli_null)) != cfg_hash):
+                           bernoulli=a.bernoulli_null, cell=cell)) != cfg_hash):
         raise SystemExit("RUN-MANIFEST.json does not match this code / calibration / "
                          "config; refusing to run (fail closed)")
 
@@ -140,7 +147,7 @@ def main() -> int:
     factory = C.env_factory()
     env = factory()
     env.assert_ready_to_train()
-    trainer = cfd.CFDevTrainer(env, config, settings, dev, multi=spec,
+    trainer = cfd.CFDevTrainer(env, config, settings, dev, multi=spec, judge=jspec,
                                env_factory=factory,
                                train_seed=train_seed, env_seed=env_seed,
                                mobility_seed=mob_seed)
@@ -159,6 +166,8 @@ def main() -> int:
         "code": code, "code_digest": code_digest,
         "lane": "E0-development (Amendment 6): not formal evidence",
     }
+    if jspec is not None:
+        fingerprint["judge_spec"] = asdict(jspec)
     status = {
         "status": "running", "arm": arm, "arm_name": name,
         "mechanism": mech, "credit_mode": credit, "seed_index": k,

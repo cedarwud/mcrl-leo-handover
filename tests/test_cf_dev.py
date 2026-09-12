@@ -803,7 +803,9 @@ def test_composite_dev_null_keys_are_validated_as_base_plus_index():
                 (9_241_000, 9_311_000)):
         with pytest.raises(MCRLContractError):
             cfd.assert_dev_null_key(bad, "test")                    # formal index
-    for bad in ((9_201_000, 0), (42, 0), (9_231_000, 10), (9_231_000, -1),
+    # MC2 contract section 6 raised MAX_DEV_SEED_INDEX 9 -> 19: the first illegal
+    # index is now 20 (was 10).
+    for bad in ((9_201_000, 0), (42, 0), (9_231_000, 20), (9_231_000, -1),
                 (9_231_000,), (9_231_000, 0, 0), 9_231_000, ((9_231_000, 0), 0)):
         with pytest.raises(MCRLContractError):
             cfd.assert_dev_null_key(bad, "test")
