@@ -197,7 +197,8 @@ prospective DEV screen, not a formal significance claim. If both versions fail: 
 downgrade — the data, the smallest blocking reason and the specific hypothesis that would have to change go to the owner.
 
 **Reported beside every reading, never hidden**: FULL vs `D3-T0` bits, joules, served, p10; override / win rates for
-FULL and for B-null (B-null's approval rate is expected to be far lower — FULL vs B-null is **not dose-matched**: it
+FULL and for B-null (measured on the P0 probe at T0's background: `a^B` is approved on 28.6 % of decision rows, a
+uniform `a^R` on 14.1 %, so FULL vs B-null is **not dose-matched**: it
 identifies whether T_NEXT's specific proposals, filtered by this judge on top of the same anchor, beat content-free
 proposals filtered the same way; it does not identify that foresight is the active ingredient, the value of the judge
 itself, a dose-matched effect, or whether the judge's privileged information is necessary); per-episode doses for B-only
@@ -205,7 +206,12 @@ and every v2 cell; per-source margin-loss share and sampled rows per tag; judge 
 `a^A` and with `a^B` where they differ (`B/b_output_change.py`). Readings are computed independently by lane B
 (`B/b_readout.py`) from the raw DEVVAL files.
 
-**Pre-training diagnostic (not a gate; controller probe, run before any ep-100 file exists)**: on the P0 collection
+**Pre-training diagnostic (not a gate; controller probe, run before any ep-100 file existed)**: on the P0 collection
 (env `9_202_500+i` / mobility `9_203_500+i`, 24 episodes) — A/B disagreement, judge override rates of `a^B` and of a
-uniform `a^R` over `a^A` at four backgrounds (T0, composite, D3-T0 learner, random), and the pooled EE of the T0, T_NEXT
-and composite-rule rollouts. `/home/sat/mcrl-v025-mc2-ws/controller-probe/probe-*.json`.
+uniform `a^R` over `a^A` at four backgrounds (T0, composite, D3-T0 learner, random), and the pooled EE of the T0, T_NEXT,
+composite and composite-R rule rollouts. Result, recorded in
+`.scratch/mc2/CONTROLLER-PROBE-READOUT-2026-09-12.md` (`/home/sat/mcrl-v025-mc2-ws/controller-probe/probe-*.json`):
+T0 116.963 M bit/J, T_NEXT 103.111 (−11.84 %), composite **124.130 (+6.13 %, 24/24 paired)**, composite-R 119.691
+(+2.33 %, 24/24), composite over composite-R +3.71 % (23/24); override rates 0.286 (`a^B`) and 0.141 (`a^R`) at T0's
+background, 0.308 and 0.155 at the frozen learner's; judge–step parity exact and zero RNG contamination. B is therefore
+not structurally inert, and the judge alone does not account for the rule-level effect.
